@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "description": "W-Engine database (Lv. 60, R1 — refinement effects are never auto-applied). v1 ships only the DUMMY engine (a copy of Deep Sea Visitor); more engines are added here as a data-only change.",
+    "sources": "DOCS/sources.md (Phase 4 section)",
+    "verified": "2026-07-01",
+    "game_patch": "3.0",
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs."
+  },
+  "engines": {
+    "dummy_engine": {
+      "name": "DUMMY Engine (Deep Sea Visitor copy, R1)",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "passive_note": "R1 passive (Ice DMG +25%, conditional CRIT Rate buffs) is NOT auto-applied; enter it as external buffs when active."
+    }
+  }
+}

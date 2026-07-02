@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "description": "Drive disc set registry: 2-piece passive bonuses (auto-applied when >= 2 pieces are equipped) and 4-piece conditional effects (stack count asked at runtime). Add new sets here as data.",
+    "sources": "DOCS/sources.md (Phase 2 section, 'Disc set bonuses')",
+    "verified": "2026-07-02",
+    "game_patch": "3.0",
+    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too."
+  },
+  "sets": {
+    "TECHNO": {
+      "name": "TECHNO (Woodpecker Electro)",
+      "bonus_2pc": { "CRIT Rate": 0.08 },
+      "bonus_4pc": {
+        "stat": "Combat ATK%",
+        "per_stack": 0.09,
+        "max_stacks": 3,
+        "note": "Basic Attack / Dodge Counter / EX Special crits each grant +9% ATK for 6s - one stack per skill type, up to 3 concurrent. Scales PANEL ATK (measured: +300/+599 on a 3330 panel)."
+      }
+    },
+    "BRANCH_SWORD": {
+      "name": "Branch & Sword (Branch & Blade Song)",
+      "bonus_2pc": { "CRIT DMG": 0.16 },
+      "notes": "4-piece exists in-game (CRIT DMG +30% while Anomaly Mastery >= 115; CRIT Rate +12% on squad Freeze/Shatter) but is not modeled yet — only the 2-piece is used for now."
+    }
+  }
+}

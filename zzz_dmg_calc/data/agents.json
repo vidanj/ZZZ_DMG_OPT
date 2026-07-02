@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "description": "Preset agent list. v1 ships only the DUMMY test agent (a copy of Ellen's Lv. 60 values, per Decision #1); the full roster is added here later as a data-only change.",
+    "sources": "DOCS/sources.md (Phase 4 section)",
+    "verified": "2026-07-01",
+    "game_patch": "3.0",
+    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely."
+  },
+  "agents": {
+    "dummy": {
+      "name": "DUMMY (Ellen copy)",
+      "attribute": "ice",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 863,
+      "base_def": 606,
+      "impact": 93,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": {
+        "base_atk": 75,
+        "crit_rate": 0.144
+      },
+      "default_engine": "dummy_engine"
+    }
+  }
+}

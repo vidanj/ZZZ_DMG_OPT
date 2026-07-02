@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "description": "Saved disc loadouts, selectable at the CLI's disc step instead of manual entry. User data, not game data \u2014 edit freely.",
+    "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1, counting the initial roll). Every disc is validated against discs.json on load: 4 distinct substats, no duplicate of the main stat, <= 6 rolls each, <= 9 total, unique slots per loadout. Optional 'set' names a key in disc_sets.json."
+  },
+  "loadouts": {
+    "TEST": {
+      "description": "Standard test disc set (entered in-game session 2026-07-02)",
+      "discs": [
+        {
+          "slot": 1,
+          "main_stat": "HP",
+          "substats": {
+            "ATK%": 3,
+            "CRIT DMG": 2,
+            "CRIT Rate": 2,
+            "Anomaly Proficiency": 1
+          },
+          "set": "BRANCH_SWORD"
+        },
+        {
+          "slot": 2,
+          "main_stat": "ATK",
+          "substats": {
+            "DEF": 2,
+            "CRIT DMG": 3,
+            "ATK%": 3,
+            "Anomaly Proficiency": 1
+          },
+          "set": "TECHNO"
+        },
+        {
+          "slot": 3,
+          "main_stat": "DEF",
+          "substats": {
+            "ATK": 1,
+            "ATK%": 3,
+            "CRIT Rate": 3,
+            "CRIT DMG": 2
+          },
+          "set": "TECHNO"
+        },
+        {
+          "slot": 4,
+          "main_stat": "CRIT DMG",
+          "substats": {
+            "ATK%": 4,
+            "HP": 1,
+            "PEN": 2,
+            "DEF": 2
+          },
+          "set": "TECHNO"
+        },
+        {
+          "slot": 5,
+          "main_stat": "Attribute DMG%",
+          "substats": {
+            "CRIT Rate": 2,
+            "HP": 1,
+            "ATK%": 3,
+            "ATK": 2
+          },
+          "set": "BRANCH_SWORD"
+        },
+        {
+          "slot": 6,
+          "main_stat": "ATK%",
+          "substats": {
+            "ATK": 1,
+            "CRIT Rate": 2,
+            "PEN": 2,
+            "CRIT DMG": 3
+          },
+          "set": "TECHNO"
+        }
+      ]
+    }
+  }
+}

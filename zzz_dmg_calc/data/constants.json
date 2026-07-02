@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "description": "Global damage-formula constants for the ZZZ DMG Optimizer.",
+    "sources": "DOCS/sources.md (Phase 1 section)",
+    "verified": "2026-07-01",
+    "game_patch": "3.0"
+  },
+  "level_coefficients": {
+    "60": 794
+  },
+  "base_crit_rate": 0.05,
+  "base_crit_dmg": 0.5,
+  "crit_rate_cap": 1.0
+}

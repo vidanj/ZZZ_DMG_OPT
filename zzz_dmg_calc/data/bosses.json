@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "description": "Boss database (bosses only, no mobs). RES convention: fraction of damage resisted; a weakness is negative (-0.20 -> x1.20 damage), a resistance positive (+0.20 -> x0.80).",
+    "sources": "DOCS/sources.md (Phase 3 section)",
+    "verified": "2026-07-01",
+    "game_patch": "3.0",
+    "notes": [
+      "base_def 952.8 = boss Lv.1 DEF (60) x LevelFactor(60) / LevelFactor(1) = 60 x 794 / 50; enemy DEF stops growing after level 60.",
+      "stun_dmg_multiplier defaults to the community-standard 1.5; the real value is shown under the boss's daze bar in-game — correct here if a fight shows otherwise.",
+      "VR GUARDIAN DUMMY is a practice target (Guardian MK II mob) for in-game VR testing, not a boss. Its DEF is elite-mob grade: base 54 at Lv.1 -> 857.52 at Lv.60+ (= 54 x 794/50), measured in-game 2026-07-02.",
+      "Pending verification, not yet listed: Wearied Kaiser, Girtablullu (3.0)."
+    ]
+  },
+  "defaults": {
+    "level": 70,
+    "base_def": 952.8,
+    "stun_dmg_multiplier": 1.5
+  },
+  "bosses": [
+    {
+      "name": "VR GUARDIAN DUMMY",
+      "base_def": 857.52,
+      "res": { "physical": -0.2, "fire": -0.2, "ice": 0.0, "electric": 0.0, "ether": 0.2, "wind": 0.0 }
+    },
+    {
+      "name": "Dead End Butcher",
+      "res": { "physical": 0.0, "fire": 0.0, "ice": -0.2, "electric": 0.0, "ether": -0.2, "wind": 0.0 }
+    },
+    {
+      "name": "Twin Marionettes",
+      "res": { "physical": 0.0, "fire": 0.0, "ice": -0.2, "electric": 0.0, "ether": -0.2, "wind": 0.0 }
+    },
+    {
+      "name": "Sacrifice - Bringer",
+      "res": { "physical": 0.2, "fire": 0.0, "ice": -0.2, "electric": 0.0, "ether": 0.0, "wind": 0.0 }
+    },
+    {
+      "name": "Corrupted Overlord - Pompey",
+      "res": { "physical": 0.0, "fire": -0.2, "ice": 0.0, "electric": 0.2, "ether": 0.0, "wind": 0.0 }
+    },
+    {
+      "name": "Typhon Slugger",
+      "res": { "physical": 0.0, "fire": 0.2, "ice": 0.0, "electric": -0.2, "ether": 0.0, "wind": 0.0 }
+    },
+    {
+      "name": "Miasma Priest",
+      "res": { "physical": 0.0, "fire": 0.0, "ice": 0.2, "electric": 0.0, "ether": -0.2, "wind": 0.0 }
+    },
+    {
+      "name": "Nineveh",
+      "res": { "physical": 0.0, "fire": 0.0, "ice": 0.0, "electric": 0.0, "ether": 0.0, "wind": 0.0 }
+    },
+    {
+      "name": "Discordant Solo - Vesper",
+      "res": { "physical": 0.0, "fire": 0.2, "ice": 0.2, "electric": 0.0, "ether": -0.2, "wind": -0.2 }
+    },
+    {
+      "name": "Sanguine Sweeper",
+      "res": { "physical": 0.0, "fire": 0.2, "ice": 0.0, "electric": -0.2, "ether": -0.2, "wind": 0.2 }
+    },
+    {
+      "name": "Phaethon of the Scorched Horizon",
+      "res": { "physical": 0.2, "fire": 0.0, "ice": -0.2, "electric": 0.0, "ether": 0.0, "wind": -0.2 }
+    }
+  ]
+}

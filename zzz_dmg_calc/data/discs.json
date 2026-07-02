@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "description": "S-rank Lv. 15 drive disc data: main stat values per slot, substat value per roll, and roll-count limits.",
+    "sources": "DOCS/sources.md (Phase 2 section)",
+    "verified": "2026-07-01",
+    "game_patch": "3.0",
+    "conventions": "Percent stats are fractions (0.30 = 30%) and their names end with '%' or are 'CRIT Rate'/'CRIT DMG'/'PEN Ratio'. Flat stats are plain numbers."
+  },
+  "main_stats": {
+    "1": { "HP": 2200 },
+    "2": { "ATK": 316 },
+    "3": { "DEF": 184 },
+    "4": {
+      "ATK%": 0.30,
+      "HP%": 0.30,
+      "DEF%": 0.48,
+      "CRIT Rate": 0.24,
+      "CRIT DMG": 0.48,
+      "Anomaly Proficiency": 92
+    },
+    "5": {
+      "ATK%": 0.30,
+      "HP%": 0.30,
+      "DEF%": 0.48,
+      "Attribute DMG%": 0.30,
+      "PEN Ratio": 0.24
+    },
+    "6": {
+      "ATK%": 0.30,
+      "HP%": 0.30,
+      "DEF%": 0.48,
+      "Anomaly Mastery": 30,
+      "Impact%": 0.18,
+      "Energy Regen%": 0.60
+    }
+  },
+  "substat_rolls": {
+    "HP": 112,
+    "ATK": 19,
+    "DEF": 15,
+    "HP%": 0.03,
+    "ATK%": 0.03,
+    "DEF%": 0.048,
+    "CRIT Rate": 0.024,
+    "CRIT DMG": 0.048,
+    "PEN": 9,
+    "Anomaly Proficiency": 9
+  },
+  "substat_limits": {
+    "substats_per_disc": 4,
+    "max_rolls_per_substat": 6,
+    "max_total_rolls": 9
+  }
+}
