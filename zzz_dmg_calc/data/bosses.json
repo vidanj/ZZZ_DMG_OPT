@@ -20,7 +20,7 @@
     {
       "name": "VR GUARDIAN DUMMY",
       "base_def": 857.52,
-      "res": { "physical": -0.2, "fire": -0.2, "ice": 0.0, "electric": 0.0, "ether": 0.2, "wind": 0.0 }
+      "res": { "physical": 0.0, "fire": 0.2, "ice": 0.0, "electric": -0.2, "ether": 0.0, "wind": 0.0 }
     },
     {
       "name": "Dead End Butcher",

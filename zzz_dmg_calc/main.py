@@ -19,8 +19,9 @@ buffs -> output table (non-crit / crit / average, normal and stunned).
 from __future__ import annotations
 
 try:
-    from .api import CalcConfig, calculate
+    from .api import BuildupSegment, CalcConfig, calculate, calculate_anomaly
     from .agent import load_agents
+    from .anomalies import load_anomalies
     from .constants import load_constants
     from .discs import (
         Disc, DiscError, load_disc_data, load_disc_sets, load_loadouts,
@@ -36,8 +37,11 @@ except ImportError:
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from zzz_dmg_calc.api import CalcConfig, calculate
+    from zzz_dmg_calc.api import (
+        BuildupSegment, CalcConfig, calculate, calculate_anomaly,
+    )
     from zzz_dmg_calc.agent import load_agents
+    from zzz_dmg_calc.anomalies import load_anomalies
     from zzz_dmg_calc.constants import load_constants
     from zzz_dmg_calc.discs import (
         Disc, DiscError, load_disc_data, load_disc_sets, load_loadouts,
@@ -170,6 +174,15 @@ def run() -> None:
     if engines[engine_key].passive_note:
         print(f"  Note: {engines[engine_key].passive_note}")
 
+    # Refinement-scaled engine buff (pilot: Sharpened Stinger) — prompted
+    # later: single stacks value for direct hits, per-segment for anomalies.
+    buff = engines[engine_key].conditional_buff
+    if buff is not None:
+        print(f"\n{buff.name} (R{engines[engine_key].refinement_rank}: "
+              f"+{buff.per_stack:.0%} {buff.element or 'DMG'} per stack)")
+        if buff.note:
+            print(f"  Note: {buff.note}")
+
     # 3-4. Discs: saved loadout or manual entry
     loadouts = load_loadouts(disc_data)
     disc_sets = load_disc_sets()
@@ -220,19 +233,95 @@ def run() -> None:
                             for s, v in applied.items())
         print(f"Set bonuses applied: {summary or 'none (need 2+ pieces)'}")
 
-    # 5. Skill multiplier (total motion value — see README addendum)
-    print("\nNote: enter the move's TOTAL motion value. Results are the")
-    print("whole move; in-game popups are per hit and will show smaller")
-    print("numbers that add up to the result.")
-    skill = _ask_percent("Skill multiplier", 1.0)
+    # 5. Calculation mode
+    print("\nCalculation mode:")
+    mode = _choose("Mode", ["Direct hit", "Anomaly proc", "Disorder"])
 
-    # 6. External buffs (all optional, default 0)
-    print("\nExternal buffs (press Enter to skip):")
-    dmg_bonus = _ask_percent("Extra DMG% bonuses (total)")
-    crit_rate_buff = _ask_percent("Extra CRIT Rate from conditional buffs")
-    crit_dmg_buff = _ask_percent(
-        "Extra CRIT DMG from conditional buffs (e.g. core passive)"
-    )
+    anomaly_data = load_anomalies()
+    agent_attr = agents[agent_key].attribute
+
+    skill = 1.0
+    disorder_replaced = None
+    disorder_remaining = 0.0
+    disorder_elapsed = 0.0
+    if mode == "Direct hit":
+        print("\nNote: enter the move's TOTAL motion value. Results are the")
+        print("whole move; in-game popups are per hit and will show smaller")
+        print("numbers that add up to the result.")
+        skill = _ask_percent("Skill multiplier", 1.0)
+    elif mode == "Anomaly proc":
+        anomaly = anomaly_data.anomalies[agent_attr]
+        print(f"\nAnomaly: {anomaly.name} [{agent_attr}]"
+              + ("" if anomaly.supported else " — NOT YET SUPPORTED"))
+        if anomaly.debuff_note:
+            print(f"  Note: {anomaly.debuff_note}")
+    else:   # Disorder
+        options = [
+            f"{a.name} [{e}]" for e, a in anomaly_data.anomalies.items()
+            if a.supported and e != agent_attr
+        ]
+        picked = _choose("Anomaly being REPLACED", options)
+        disorder_replaced = picked.split("[")[1].rstrip("]")
+        rule = anomaly_data.disorder[disorder_replaced]
+        if rule.mode == "procs":
+            disorder_remaining = _ask_float(
+                "Seconds remaining on the replaced anomaly", 5.0
+            )
+        else:
+            disorder_elapsed = _ask_float(
+                "Seconds elapsed since the replaced anomaly was applied", 5.0
+            )
+
+    # 6. Buffs. Attacker-side buffs snapshot during BUILDUP for anomalies
+    # (mechanic discovery #2), so anomaly modes describe the buildup in
+    # segments; direct hits take instantaneous values.
+    dmg_bonus = 0.0
+    crit_rate_buff = crit_dmg_buff = 0.0
+    engine_buff_stacks = 0.0
+    buildup_segments: list[BuildupSegment] = []
+    if mode == "Direct hit":
+        print("\nExternal buffs (press Enter to skip):")
+        if buff is not None:
+            engine_buff_stacks = _ask_float(
+                f"Active {buff.name} stacks (0-{buff.max_stacks})", 0
+            )
+        dmg_bonus = _ask_percent("Extra DMG% bonuses (total)")
+        crit_rate_buff = _ask_percent("Extra CRIT Rate from conditional buffs")
+        crit_dmg_buff = _ask_percent(
+            "Extra CRIT DMG from conditional buffs (e.g. core passive)"
+        )
+    else:
+        print("\nBuildup segments - the proc snapshots attacker buffs as a")
+        print("buildup-weighted average. Describe roughly what % of the")
+        print("buildup happened under which buffs; whatever you don't")
+        print("assign counts as buff-free buildup.")
+        remaining = 100.0
+        while remaining > 0.5:
+            share = _ask_float(
+                f"% of buildup for next segment (Enter = leave the "
+                f"remaining {remaining:.0f}% buff-free)", 0
+            )
+            if share <= 0:
+                break
+            share = min(share, remaining)
+            seg_stacks = 0.0
+            if buff is not None:
+                seg_stacks = _ask_float(
+                    f"  {buff.name} stacks during this segment "
+                    f"(0-{buff.max_stacks})", 0
+                )
+            seg_dmg = _ask_percent("  Extra DMG% during this segment")
+            seg_ap = _ask_float("  Extra flat AP during this segment", 0.0)
+            buildup_segments.append(BuildupSegment(
+                share=share / 100.0,
+                engine_buff_stacks=seg_stacks,
+                set_stacks=set_stacks,
+                external_dmg_bonuses=[seg_dmg] if seg_dmg else [],
+                external_anomaly_proficiency=seg_ap,
+            ))
+            remaining -= share
+
+    print("\nEnemy-side modifiers (press Enter to skip):")
     res_shred = _ask_percent("Enemy RES shred/ignore (total)")
     dmg_taken = _ask_percent("'DMG taken' debuffs (total)")
     stun_mult = _ask_percent(
@@ -247,36 +336,66 @@ def run() -> None:
         skill_multiplier=skill,
         discs=discs,
         set_stacks=set_stacks,
+        engine_buff_stacks=engine_buff_stacks,
         external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
         external_crit_rate=crit_rate_buff,
         external_crit_dmg=crit_dmg_buff,
         external_res_shred=res_shred,
         external_dmg_taken=[dmg_taken] if dmg_taken else [],
         stun_multiplier_override=stun_mult,
-    )
-    results = calculate(
-        config, consts=consts, disc_data=disc_data, bosses=bosses,
-        agents=agents, engines=engines, disc_sets=disc_sets,
+        buildup_segments=buildup_segments,
+        disorder_replaced=disorder_replaced,
+        disorder_remaining_seconds=disorder_remaining,
+        disorder_elapsed_seconds=disorder_elapsed,
     )
 
     # 7. Output table
-    print(f"\n=== Results vs {boss_name} ===")
-    print(f"Final ATK: {results.atk_final:,.1f}   "
-          f"CRIT: {results.crit_rate:.1%} / {results.crit_dmg:.1%}")
-    print(f"Zones: DMG% x{results.dmg_bonus_mult:.3f} | "
-          f"DEF x{results.def_mult:.4f} | RES x{results.res_mult:.2f} | "
-          f"Taken x{results.dmg_taken_mult:.2f} | "
-          f"Stun x{results.stun_mult:.2f}")
-    header = f"{'Scenario':<12}{'Normal':>14}{'Stunned':>14}"
-    print("\n" + header)
-    print("-" * len(header))
-    rows = (
-        ("Non-crit", results.non_crit, results.non_crit_stunned),
-        ("Crit", results.crit, results.crit_stunned),
-        ("Average", results.average, results.average_stunned),
-    )
-    for label, normal, stunned in rows:
-        print(f"{label:<12}{normal:>14,.1f}{stunned:>14,.1f}")
+    if mode == "Direct hit":
+        results = calculate(
+            config, consts=consts, disc_data=disc_data, bosses=bosses,
+            agents=agents, engines=engines, disc_sets=disc_sets,
+        )
+        print(f"\n=== Results vs {boss_name} ===")
+        print(f"Final ATK: {results.atk_final:,.1f}   "
+              f"CRIT: {results.crit_rate:.1%} / {results.crit_dmg:.1%}")
+        print(f"Zones: DMG% x{results.dmg_bonus_mult:.3f} | "
+              f"DEF x{results.def_mult:.4f} | RES x{results.res_mult:.2f} | "
+              f"Taken x{results.dmg_taken_mult:.2f} | "
+              f"Stun x{results.stun_mult:.2f}")
+        header = f"{'Scenario':<12}{'Normal':>14}{'Stunned':>14}"
+        print("\n" + header)
+        print("-" * len(header))
+        rows = (
+            ("Non-crit", results.non_crit, results.non_crit_stunned),
+            ("Crit", results.crit, results.crit_stunned),
+            ("Average", results.average, results.average_stunned),
+        )
+        for label, normal, stunned in rows:
+            print(f"{label:<12}{normal:>14,.1f}{stunned:>14,.1f}")
+    else:
+        r = calculate_anomaly(
+            config, consts=consts, disc_data=disc_data, bosses=bosses,
+            agents=agents, engines=engines, disc_sets=disc_sets,
+            anomaly_data=anomaly_data,
+        )
+        print(f"\n=== {r.anomaly_name} [{r.element}] vs {boss_name} ===")
+        print(f"Final ATK: {r.atk_final:,.1f}   AP: {r.anomaly_proficiency:g} "
+              f"(x{r.ap_mult:.3f})   Level mult: x{r.anomaly_level_mult:g}")
+        print(f"Zones: DMG% x{r.dmg_bonus_mult:.3f} | "
+              f"DEF x{r.def_mult:.4f} | RES x{r.res_mult:.2f} | "
+              f"Taken x{r.dmg_taken_mult:.2f} | Stun x{r.stun_mult:.2f}")
+        print("(anomalies cannot crit)")
+        header = f"{'Scenario':<22}{'Normal':>14}{'Stunned':>14}"
+        print("\n" + header)
+        print("-" * len(header))
+        if r.hits > 1:
+            print(f"{'Per tick/proc':<22}{r.per_proc:>14,.1f}"
+                  f"{r.per_proc_stunned:>14,.1f}")
+            print(f"{f'Full duration (x{r.hits})':<22}{r.full:>14,.1f}"
+                  f"{r.full_stunned:>14,.1f}")
+        else:
+            print(f"{'Burst':<22}{r.per_proc:>14,.1f}"
+                  f"{r.per_proc_stunned:>14,.1f}")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives (pilot: Sharpened Stinger only): 'rank' selects the row of 'per_stack_by_rank' (index rank-1); 'conditional_buff' is a stacking DMG% buff applied only to damage of its 'element', with active stacks asked at runtime."
   },
   "engines": {
     "dummy_engine": {
@@ -12,6 +12,47 @@
       "base_atk": 713,
       "advanced_stat": { "CRIT Rate": 0.24 },
       "passive_note": "R1 passive (Ice DMG +25%, conditional CRIT Rate buffs) is NOT auto-applied; enter it as external buffs when active."
+    },
+    "sharpened_stinger": {
+      "name": "Sharpened Stinger (R2)",
+      "base_atk": 713,
+      "advanced_stat": { "Anomaly Proficiency": 90 },
+      "refinement": {
+        "rank": 2,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Predatory Instinct",
+          "element": "physical",
+          "per_stack_by_rank": [0.12, 0.15, 0.18, 0.21, 0.24],
+          "max_stacks": 3,
+          "note": "Dash attacks grant stacks; 3 stacks are granted instantly on entering combat or perfect dodge - effectively always max in practice."
+        }
+      },
+      "passive_note": "Anomaly Buildup +40% (R1) to +80% (R5) at max stacks affects buildup speed only, not proc damage. The Physical DMG% stacks are modeled via the refinement system (stacks asked at runtime)."
+    },
+    "heartstring_nocturne": {
+      "name": "Heartstring Nocturne (R1)",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "passive_note": "R1 passive (CRIT DMG +50%; Heartstring stacks ignore part of enemy Fire RES) is NOT auto-applied; enter as external CRIT DMG / RES shred when active."
+    },
+    "timeweaver": {
+      "name": "Timeweaver (R1)",
+      "base_atk": 713,
+      "advanced_stat": { "ATK%": 0.30 },
+      "passive_note": "Advanced stat ATK% 30 PROVISIONAL (one source said 12% - panel-check). R1 passive (Electric Anomaly Buildup +30%; AP +75 for 15s when EX hits an anomalous enemy; Disorder DMG +25% at AP >= 375) is NOT auto-applied."
+    },
+    "flight_of_fancy": {
+      "name": "Flight of Fancy (R1)",
+      "base_atk": 713,
+      "advanced_stat": { "Anomaly Proficiency": 90 },
+      "passive_note": "R1 passive (Anomaly Buildup +40%; stacking AP up to +120 on Ether damage) is NOT auto-applied; enter active AP stacks as external AP when measuring."
+    },
+    "joyau_dore": {
+      "name": "Joyau Dore (R1)",
+      "base_atk": 713,
+      "advanced_stat": { "Energy Regen%": 0.60 },
+      "passive_note": "R1 passive (Windswept/Vortex enhancement; squad AP buff at stacks) is NOT auto-applied."
     }
   }
 }

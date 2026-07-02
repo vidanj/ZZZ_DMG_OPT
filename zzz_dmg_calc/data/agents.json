@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "description": "Preset agent list. v1 ships only the DUMMY test agent (a copy of Ellen's Lv. 60 values, per Decision #1); the full roster is added here later as a data-only change.",
-    "sources": "DOCS/sources.md (Phase 4 section)",
-    "verified": "2026-07-01",
+    "description": "Preset agent list: DUMMY (Ellen copy, game-validated) plus the Phase 5 anomaly roster. Phase 5 agents' stats are stored as published (see sources.md Phase 5 caveat: some tables may already include core bonuses - panel-check before trusting; Evelyn's ATK was corrected to raw 779 = 854 - 75).",
+    "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
+    "verified": "2026-07-02",
     "game_patch": "3.0",
     "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely."
   },
@@ -22,6 +22,71 @@
         "crit_rate": 0.144
       },
       "default_engine": "dummy_engine"
+    },
+    "piper": {
+      "name": "Piper Wheel",
+      "attribute": "physical",
+      "level": 60,
+      "base_hp": 6976,
+      "base_atk": 683,
+      "base_def": 612,
+      "impact": 86,
+      "anomaly_mastery": 116,
+      "anomaly_proficiency": 118,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "default_engine": "sharpened_stinger"
+    },
+    "evelyn": {
+      "name": "Evelyn Chevalier",
+      "attribute": "fire",
+      "level": 60,
+      "base_hp": 7788,
+      "base_atk": 779,
+      "base_def": 612,
+      "impact": 93,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "default_engine": "heartstring_nocturne"
+    },
+    "yanagi": {
+      "name": "Tsukishiro Yanagi",
+      "attribute": "electric",
+      "level": 60,
+      "base_hp": 7788,
+      "base_atk": 797,
+      "base_def": 612,
+      "impact": 86,
+      "anomaly_mastery": 112,
+      "anomaly_proficiency": 114,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 12 },
+      "default_engine": "timeweaver"
+    },
+    "vivian": {
+      "name": "Vivian Banshee",
+      "attribute": "ether",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 805,
+      "base_def": 606,
+      "impact": 86,
+      "anomaly_mastery": 108,
+      "anomaly_proficiency": 118,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
+      "default_engine": "flight_of_fancy"
+    },
+    "velina": {
+      "name": "Velina Airgid",
+      "attribute": "wind",
+      "level": 60,
+      "base_hp": 7788,
+      "base_atk": 797,
+      "base_def": 612,
+      "impact": 86,
+      "anomaly_mastery": 112,
+      "anomaly_proficiency": 111,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_proficiency": 54 },
+      "default_engine": "joyau_dore"
     }
   }
 }

@@ -181,6 +181,85 @@ def stun_mult(
 
 
 # ---------------------------------------------------------------------------
+# Attribute Anomaly zones (Phase 5 — see DOCS/anomaly_plan.md)
+# ---------------------------------------------------------------------------
+
+
+def ap_mult(anomaly_proficiency: float) -> float:
+    """Anomaly Proficiency multiplier: ``AP / 100``.
+
+    ⚠️ Provisional form — one community source suggests ``1 + AP/100``;
+    the first in-game Assault calibration discriminates (~2× apart). If it
+    turns out to be the other form, only this function changes.
+
+    Args:
+        anomaly_proficiency: Total AP (e.g. 118 -> 1.18).
+    """
+    return anomaly_proficiency / 100.0
+
+
+def anomaly_base_dmg(anomaly_mult: float, atk: float) -> float:
+    """Base anomaly damage of one hit/tick/proc: ``mult × ATK``.
+
+    Args:
+        anomaly_mult: Per-proc multiplier as a fraction (7.13 for Assault).
+        atk: Final ATK from :func:`atk_final` (incl. combat buffs).
+    """
+    return anomaly_mult * atk
+
+
+def disorder_procs_mult(
+    proc_mult: float,
+    remaining_seconds: float,
+    interval: float,
+    extra_procs: int = 0,
+) -> float:
+    """Disorder multiplier for proc-based anomalies (Burn/Shock/Corruption).
+
+    Remaining duration converts into remaining ticks (floored), plus any
+    bonus procs the element grants (Shock: +6):
+
+    ``mult_total = proc_mult × (floor(remaining / interval) + extra_procs)``
+
+    ⚠️ Provisional model — calibrate in-game before trusting.
+
+    Args:
+        proc_mult: The replaced anomaly's per-proc multiplier (fraction).
+        remaining_seconds: Time left on the replaced anomaly (clamped >= 0).
+        interval: Seconds between the replaced anomaly's procs.
+        extra_procs: Bonus procs granted by the element's Disorder rule.
+    """
+    remaining = max(remaining_seconds, 0.0)
+    return proc_mult * (int(remaining / interval) + extra_procs)
+
+
+def disorder_decay_mult(
+    hit_mult: float,
+    elapsed_seconds: float,
+    duration: float,
+    min_fraction: float,
+) -> float:
+    """Disorder multiplier for one-shot anomalies (Assault/Shatter).
+
+    The burst is dealt again, decaying linearly with elapsed time down to
+    ``min_fraction`` of the original at full duration:
+
+    ``mult_total = hit_mult × (1 − (1 − min_fraction) × elapsed/duration)``
+
+    ⚠️ Provisional model — calibrate in-game before trusting.
+
+    Args:
+        hit_mult: The replaced anomaly's one-shot multiplier (fraction).
+        elapsed_seconds: Time since the replaced anomaly was applied
+            (clamped to [0, duration]).
+        duration: The replaced anomaly's full duration.
+        min_fraction: Floor fraction at full elapsed duration (0.9).
+    """
+    elapsed = min(max(elapsed_seconds, 0.0), duration)
+    return hit_mult * (1.0 - (1.0 - min_fraction) * elapsed / duration)
+
+
+# ---------------------------------------------------------------------------
 # Composition
 # ---------------------------------------------------------------------------
 

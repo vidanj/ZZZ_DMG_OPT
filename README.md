@@ -114,7 +114,34 @@ For manual entry, each of the six slots asks:
    (Internally the program counts *rolls* — upgrades + the initial roll —
    so validation messages may say "6 rolls max per substat / 9 total".)
 
-### Step 5 — Skill multiplier
+### Step 5 — Calculation mode
+
+Choose **Direct hit**, **Anomaly proc**, or **Disorder**:
+
+- **Direct hit** — the v1 flow: you'll be asked for the skill multiplier
+  (next section) and CRIT buffs.
+- **Anomaly proc** — computes your agent's attribute anomaly (Assault,
+  Burn, Shatter, Shock, Corruption). No skill multiplier or CRIT inputs
+  (anomalies can't crit); instead you can add flat **Anomaly Proficiency**
+  from conditional buffs. Output shows per-tick/proc and full-duration
+  totals. Windswept (Wind) is not yet supported.
+
+  > **Important (game-measured):** anomaly damage is "stored" during
+  > buildup — the proc uses a **buildup-weighted average** of attacker
+  > buffs (and, in teams, of each contributor's stats) active *while
+  > building*, not the state at proc time. The CLI therefore asks for
+  > **buildup segments**: "roughly X% of the buildup happened with these
+  > buffs" (engine stacks, DMG%, flat AP per segment), repeated until you
+  > stop — any unassigned share counts as buff-free buildup. Enemy-side
+  > modifiers (RES shred, DMG taken, stun) are asked once: they apply at
+  > the moment the proc lands. For clean popup comparisons, keep one
+  > constant buff state during the whole buildup (a single 100% segment).
+- **Disorder** — pick which anomaly is being **replaced** and how much
+  time was left on it (or elapsed, for Assault/Shatter). Damage is dealt
+  as the replaced element. ⚠️ Disorder values are provisional pending
+  in-game calibration.
+
+### Step 5b — Skill multiplier (Direct hit only)
 
 Type the skill's damage multiplier **as a percent of ATK** — the number the
 in-game skill description shows. Example: a hit listed as `250% ATK` →

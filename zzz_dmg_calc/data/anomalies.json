@@ -1,0 +1,73 @@
+{
+  "_meta": {
+    "description": "Attribute Anomaly data: per-element base multipliers/proc structure and Disorder conversion rules. Values from community sources; several are PROVISIONAL pending in-game calibration (see DOCS/sources.md Phase 5 and DOCS/anomaly_plan.md).",
+    "sources": "DOCS/sources.md (Phase 5 section)",
+    "verified": "2026-07-02",
+    "game_patch": "3.0",
+    "conventions": "mult is a fraction of ATK per hit/tick/proc (7.13 = 713%). 'hits' is the max number of procs over 'duration' seconds at 'interval' spacing (hits=1, interval=null for one-shot anomalies). supported=false entries are declared but rejected by calculations until values are measured. Disorder modes: 'procs' converts remaining time into ticks (+extra_procs); 'flat_decay' deals burst_mult decaying linearly to min_fraction over the anomaly's duration."
+  },
+  "anomalies": {
+    "physical": {
+      "name": "Assault",
+      "supported": true,
+      "mult": 7.13,
+      "hits": 1,
+      "interval": null,
+      "duration": 10,
+      "debuff_note": "Inflicts stagger and increases Daze taken for a period (no direct damage-formula term)."
+    },
+    "fire": {
+      "name": "Burn",
+      "supported": true,
+      "mult": 0.50,
+      "hits": 20,
+      "interval": 0.5,
+      "duration": 10,
+      "debuff_note": ""
+    },
+    "ice": {
+      "name": "Shatter",
+      "supported": true,
+      "mult": 5.0,
+      "hits": 1,
+      "interval": null,
+      "duration": 10,
+      "debuff_note": "Freeze then Shatter; Frostbite increases CRIT DMG taken by direct hits (~+10%) while active - enter in direct-hit mode as an external CRIT DMG buff."
+    },
+    "electric": {
+      "name": "Shock",
+      "supported": true,
+      "mult": 1.25,
+      "hits": 10,
+      "interval": 1.0,
+      "duration": 10,
+      "debuff_note": "Procs when the enemy is hit; interrupts. Proc count/window provisional."
+    },
+    "ether": {
+      "name": "Corruption",
+      "supported": true,
+      "mult": 0.625,
+      "hits": 20,
+      "interval": 0.5,
+      "duration": 10,
+      "debuff_note": ""
+    },
+    "wind": {
+      "name": "Windswept",
+      "supported": false,
+      "mult": null,
+      "hits": null,
+      "interval": null,
+      "duration": null,
+      "debuff_note": "3.0 anomaly; damage values pending sourcing/in-game measurement with Velina. Vortex (Wind Disorder variant) resolves as the infused attribute's Disorder once measured."
+    }
+  },
+  "disorder": {
+    "_note": "PROVISIONAL conversion rules - calibrate in-game before trusting. Damage is dealt as the REPLACED anomaly's element using the triggering agent's stats.",
+    "fire": { "mode": "procs", "extra_procs": 0 },
+    "electric": { "mode": "procs", "extra_procs": 6 },
+    "ether": { "mode": "procs", "extra_procs": 0 },
+    "physical": { "mode": "flat_decay", "min_fraction": 0.9 },
+    "ice": { "mode": "flat_decay", "min_fraction": 0.9 }
+  }
+}

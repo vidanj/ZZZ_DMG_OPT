@@ -33,12 +33,15 @@ class Constants:
     Attributes:
         level_coefficients: Attacker level -> level factor used in the DEF
             multiplier (e.g. ``{60: 794.0}``).
+        anomaly_level_multipliers: Attacker level -> anomaly level multiplier
+            (e.g. ``{60: 2.0}`` — provisional, see data file note).
         base_crit_rate: CRIT Rate every agent starts with (fraction, 0.05).
         base_crit_dmg: CRIT DMG every agent starts with (fraction, 0.50).
         crit_rate_cap: Maximum effective CRIT Rate (fraction, 1.0).
     """
 
     level_coefficients: dict[int, float]
+    anomaly_level_multipliers: dict[int, float]
     base_crit_rate: float
     base_crit_dmg: float
     crit_rate_cap: float
@@ -56,6 +59,21 @@ class Constants:
             known = sorted(self.level_coefficients)
             raise ConstantsError(
                 f"No level coefficient for attacker level {level}; "
+                f"levels in data file: {known}"
+            ) from None
+
+    def anomaly_level_multiplier(self, level: int) -> float:
+        """Return the anomaly level multiplier for ``level``.
+
+        Raises:
+            ConstantsError: if the level is not in the data table.
+        """
+        try:
+            return self.anomaly_level_multipliers[level]
+        except KeyError:
+            known = sorted(self.anomaly_level_multipliers)
+            raise ConstantsError(
+                f"No anomaly level multiplier for attacker level {level}; "
                 f"levels in data file: {known}"
             ) from None
 
@@ -92,28 +110,32 @@ def load_constants(path: Path = DATA_FILE) -> Constants:
     if not isinstance(raw, dict):
         raise ConstantsError("constants.json must contain a JSON object")
 
-    coeffs_raw = raw.get("level_coefficients")
-    if not isinstance(coeffs_raw, dict) or not coeffs_raw:
-        raise ConstantsError(
-            "'level_coefficients' must be a non-empty object of level -> factor"
-        )
-    coefficients: dict[int, float] = {}
-    for level_str, factor in coeffs_raw.items():
-        try:
-            level = int(level_str)
-        except ValueError:
+    def level_table(key: str) -> dict[int, float]:
+        """Validate a level -> positive-number table under ``key``."""
+        table_raw = raw.get(key)
+        if not isinstance(table_raw, dict) or not table_raw:
             raise ConstantsError(
-                f"Level key {level_str!r} in 'level_coefficients' is not an integer"
-            ) from None
-        if isinstance(factor, bool) or not isinstance(factor, (int, float)) or factor <= 0:
-            raise ConstantsError(
-                f"Level coefficient for level {level} must be a positive number, "
-                f"got {factor!r}"
+                f"'{key}' must be a non-empty object of level -> value"
             )
-        coefficients[level] = float(factor)
+        table: dict[int, float] = {}
+        for level_str, factor in table_raw.items():
+            try:
+                level = int(level_str)
+            except ValueError:
+                raise ConstantsError(
+                    f"Level key {level_str!r} in '{key}' is not an integer"
+                ) from None
+            if isinstance(factor, bool) or not isinstance(factor, (int, float)) or factor <= 0:
+                raise ConstantsError(
+                    f"'{key}' value for level {level} must be a positive "
+                    f"number, got {factor!r}"
+                )
+            table[level] = float(factor)
+        return table
 
     return Constants(
-        level_coefficients=coefficients,
+        level_coefficients=level_table("level_coefficients"),
+        anomaly_level_multipliers=level_table("anomaly_level_multipliers"),
         base_crit_rate=_require_fraction(raw, "base_crit_rate"),
         base_crit_dmg=_require_fraction(raw, "base_crit_dmg"),
         crit_rate_cap=_require_fraction(raw, "crit_rate_cap"),

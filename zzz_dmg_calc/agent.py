@@ -59,8 +59,12 @@ class Agent:
     base_hp: float
     base_atk: float
     base_def: float
+    base_anomaly_mastery: float
+    base_anomaly_proficiency: float
     core_bonus_atk: float
     core_bonus_crit_rate: float
+    core_bonus_anomaly_proficiency: float
+    core_bonus_anomaly_mastery: float
     default_engine: str
 
     def total_base_atk(self) -> float:
@@ -77,9 +81,12 @@ class BuildStats:
         crit_rate: Total CRIT Rate (uncapped — the formula layer caps it).
         crit_dmg: Total CRIT DMG.
         pen_ratio / pen_flat: Penetration stats for the DEF zone.
+        anomaly_proficiency: Total AP (agent base + core + engine + discs).
+        anomaly_mastery: Total AM (buildup speed — informational; not part
+            of the per-proc damage formula).
         dmg_bonuses: DMG% bracket contributions (attribute DMG% from discs;
             external buffs are appended by the API layer).
-        other: Aggregated stats that don't affect direct-hit damage in v1.
+        other: Aggregated stats that don't affect damage in v1.
     """
 
     atk: float
@@ -87,6 +94,8 @@ class BuildStats:
     crit_dmg: float
     pen_ratio: float
     pen_flat: float
+    anomaly_proficiency: float = 0.0
+    anomaly_mastery: float = 0.0
     dmg_bonuses: list[float] = field(default_factory=list)
     other: dict[str, float] = field(default_factory=dict)
 
@@ -151,8 +160,14 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             base_hp=number(entry, "base_hp", key),
             base_atk=number(entry, "base_atk", key),
             base_def=number(entry, "base_def", key),
+            base_anomaly_mastery=number(entry, "anomaly_mastery", key),
+            base_anomaly_proficiency=number(entry, "anomaly_proficiency", key),
             core_bonus_atk=float(core.get("base_atk", 0.0)),
             core_bonus_crit_rate=float(core.get("crit_rate", 0.0)),
+            core_bonus_anomaly_proficiency=float(
+                core.get("anomaly_proficiency", 0.0)
+            ),
+            core_bonus_anomaly_mastery=float(core.get("anomaly_mastery", 0.0)),
             default_engine=default_engine,
         )
     return agents
@@ -186,11 +201,15 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
         build.pen_ratio += value
     elif stat == "PEN":
         build.pen_flat += value
+    elif stat == "Anomaly Proficiency":
+        build.anomaly_proficiency += value
+    elif stat == "Anomaly Mastery":
+        build.anomaly_mastery += value
     elif stat == "Attribute DMG%":
         build.dmg_bonuses.append(value)
     else:
-        # HP, DEF, HP%, DEF%, Anomaly, Impact%, Energy Regen%, ... — tracked
-        # but not part of direct-hit damage in v1.
+        # HP, DEF, HP%, DEF%, Impact%, Energy Regen%, ... — tracked but not
+        # part of damage in v1.
         build.other[stat] = build.other.get(stat, 0.0) + value
 
 
@@ -236,6 +255,13 @@ def aggregate_build(
         crit_dmg=consts.base_crit_dmg,
         pen_ratio=0.0,
         pen_flat=0.0,
+        anomaly_proficiency=(
+            agent.base_anomaly_proficiency
+            + agent.core_bonus_anomaly_proficiency
+        ),
+        anomaly_mastery=(
+            agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
+        ),
     )
 
     for stat, value in engine.advanced_stat.items():
