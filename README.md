@@ -2,7 +2,7 @@
 
 Calculates **direct-hit damage** in Zenless Zone Zero for a Lv. 60 agent
 against a boss. This guide only covers running the program and entering data
-into its prompts. (Design details: [DOCS/zzz_dmg_calc_plan.md](DOCS/zzz_dmg_calc_plan.md).)
+into its prompts.
 
 > Unofficial fan tool, not affiliated with or endorsed by HoYoverse.
 > Zenless Zone Zero and all game content are trademarks of
