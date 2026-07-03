@@ -16,6 +16,9 @@ Endpoints::
     GET    /data        databases the form needs (agents, engines, bosses,
                         disc tables, sets, user disc inventory, loadouts)
     POST   /calculate   CalcConfig fields as JSON -> CalcResults as JSON
+    POST   /optimize    same payload + an ``optimize`` options object ->
+                        best build from the saved disc inventory
+                        (DOCS/optimizer_plan.md)
     POST   /discs       save one disc to the inventory (deduped) -> its id
     DELETE /discs/{id}  remove an inventory disc (blocked if referenced)
     POST   /loadouts    save equipped discs as a loadout of inventory
@@ -50,6 +53,7 @@ try:
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
+    from ..optimizer import OptimizeOptions, optimize
 except ImportError:
     # Executed directly as a script (``py server.py``): no parent package,
     # so relative imports fail. Same fallback as main.py.
@@ -66,6 +70,7 @@ except ImportError:
     )
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
+    from zzz_dmg_calc.optimizer import OptimizeOptions, optimize
 
 
 #: The single page served at ``/`` (self-contained: inline CSS/JS).
@@ -115,6 +120,7 @@ def _disc_json(disc: Disc) -> dict:
         "main_stat": disc.main_stat,
         "substats": disc.substats,
         "set": disc.disc_set,
+        "element": disc.element,
     }
 
 
@@ -288,6 +294,7 @@ def _parse_disc(entry) -> Disc:
         main_stat=str(entry.get("main_stat", "")),
         substats={str(s): int(r) for s, r in substats_raw.items()},
         disc_set=entry.get("set") or None,
+        element=entry.get("element") or None,
     )
 
 
@@ -301,17 +308,17 @@ def _number(body: dict, key: str, default: float = 0.0) -> float:
     return float(value)
 
 
-def run_calculation(data: AppData, body: dict) -> dict:
-    """Build a CalcConfig from the request body and run the calculation.
+def _build_config(body: dict) -> CalcConfig:
+    """Build a CalcConfig from a request body (shared by /calculate and
+    /optimize).
 
     The body mirrors :class:`~zzz_dmg_calc.api.CalcConfig` (fractions, not
     human percentages — the page converts). Substats arrive as TOTAL rolls,
     same convention as ``loadouts.json``.
 
     Raises:
-        ValueError: any invalid input — malformed body fields here, or the
-            lower layers' CalcError/DiscError/etc. (all ValueError
-            subclasses) with their own messages.
+        ValueError: malformed body fields (the lower layers validate the
+            game rules later, during calculation).
     """
     if not isinstance(body, dict):
         raise ValueError("Request body must be a JSON object")
@@ -360,7 +367,7 @@ def run_calculation(data: AppData, body: dict) -> dict:
                           for n, s in engine_buffs_raw.items() if int(s)},
         ))
 
-    config = CalcConfig(
+    return CalcConfig(
         agent_key=str(body.get("agent_key", "")),
         engine_key=body.get("engine_key") or None,
         engine_rank=(
@@ -394,6 +401,16 @@ def run_calculation(data: AppData, body: dict) -> dict:
         ),
     )
 
+
+def run_calculation(data: AppData, body: dict) -> dict:
+    """Run one calculation for the request body (see :func:`_build_config`).
+
+    Raises:
+        ValueError: any invalid input — malformed body fields, or the lower
+            layers' CalcError/DiscError/etc. (all ValueError subclasses)
+            with their own messages.
+    """
+    config = _build_config(body)
     results = calculate(
         config, consts=data.consts, disc_data=data.disc_data,
         bosses=data.bosses, agents=data.agents, engines=data.engines,
@@ -403,14 +420,90 @@ def run_calculation(data: AppData, body: dict) -> dict:
     payload = asdict(results)
     # Echo the applied set bonuses so the page can display them (calculate()
     # already validated the discs, so this cannot raise new errors).
-    payload["set_bonuses"] = set_bonus_stats(discs, data.disc_sets, set_stacks)
+    payload["set_bonuses"] = set_bonus_stats(
+        config.discs, data.disc_sets, config.set_stacks
+    )
     payload["tag_dmg_bonuses"] = {
         data.disc_sets[key].name: value
         for key, value in set_tagged_dmg_bonuses(
-            discs, data.disc_sets, config.skill_tag
+            config.discs, data.disc_sets, config.skill_tag
         ).items()
     }
     return payload
+
+
+def run_optimization(data: AppData, body: dict) -> dict:
+    """Search the saved disc inventory for the best build (plan §3/§7).
+
+    The body is the same payload as ``/calculate`` plus an ``optimize``
+    object: ``{objective, set_assumption, locked_slots, top_n}``. The
+    response serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`;
+    each build carries its discs (with inventory ids), the 4-piece stacks
+    it was evaluated at (for Apply), and its full verified results table.
+
+    Raises:
+        ValueError: invalid body/options, an invalid baseline config, or
+            an over-budget search (OptimizeError) — all with user-facing
+            messages.
+    """
+    config = _build_config(body)
+    opt_raw = body.get("optimize") or {}
+    if not isinstance(opt_raw, dict):
+        raise ValueError("'optimize' must be a JSON object")
+    locked_raw = opt_raw.get("locked_slots") or []
+    if not isinstance(locked_raw, list):
+        raise ValueError("'locked_slots' must be a list of slot numbers")
+    min_stats_raw = opt_raw.get("min_stats") or {}
+    if not isinstance(min_stats_raw, dict):
+        raise ValueError("'min_stats' must be an object of stat -> minimum")
+    options = OptimizeOptions(
+        objective=str(opt_raw.get("objective") or "average"),
+        set_assumption=str(opt_raw.get("set_assumption") or "max"),
+        locked_slots=frozenset(int(s) for s in locked_raw),
+        top_n=int(opt_raw.get("top_n") or 5),
+        min_stats={str(stat): float(minimum)
+                   for stat, minimum in min_stats_raw.items()},
+        required_4pc=opt_raw.get("required_4pc") or None,
+    )
+
+    result = optimize(
+        config, options, consts=data.consts, disc_data=data.disc_data,
+        bosses=data.bosses, agents=data.agents, engines=data.engines,
+        disc_sets=data.disc_sets, user_discs=data.user_discs,
+    )
+
+    def build_option(option) -> dict:
+        return {
+            "value": option.value,
+            "delta": option.delta,
+            "discs": [
+                dict(_disc_json(disc), id=disc_id)
+                for disc, disc_id in zip(option.discs, option.disc_ids)
+            ],
+            "set_stacks": option.set_stacks,
+            "changed_slots": list(option.changed_slots),
+            "results": asdict(option.results),
+            "set_bonuses": set_bonus_stats(
+                list(option.discs), data.disc_sets, option.set_stacks
+            ),
+        }
+
+    return {
+        "objective": result.objective,
+        "set_assumption": result.set_assumption,
+        "baseline_value": result.baseline_value,
+        "baseline_feasible": result.baseline_feasible,
+        "already_optimal": result.already_optimal,
+        "min_stats": result.min_stats,
+        "required_4pc": result.required_4pc,
+        "best": build_option(result.best),
+        "alternatives": [build_option(o) for o in result.alternatives],
+        "combos_evaluated": result.combos_evaluated,
+        "candidates_per_slot": {
+            str(slot): n for slot, n in result.candidates_per_slot.items()
+        },
+        "discs_pruned": result.discs_pruned,
+    }
 
 
 class UIRequestHandler(BaseHTTPRequestHandler):
@@ -460,6 +553,7 @@ class UIRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:   # noqa: N802 (stdlib naming)
         routes = {
             "/calculate": self._post_calculate,
+            "/optimize": self._post_optimize,
             "/discs": self._post_disc,
             "/loadouts": self._post_loadout,
         }
@@ -500,6 +594,9 @@ class UIRequestHandler(BaseHTTPRequestHandler):
 
     def _post_calculate(self, body: dict) -> None:
         self._send_json(run_calculation(self.app_data, body))
+
+    def _post_optimize(self, body: dict) -> None:
+        self._send_json(run_optimization(self.app_data, body))
 
     def _post_disc(self, body: dict) -> None:
         """Save one disc to the inventory (validated, deduped)."""

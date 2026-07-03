@@ -16,8 +16,10 @@ Bucket rules enforced here (plan §2):
 
 - ATK% scales only (agent base + core flat ATK + engine base); flat ATK from
   discs is added after — the buckets never mix.
-- "Attribute DMG%" from a slot-5 disc main is assumed to match the agent's
-  attack attribute and lands in the DMG% bonus bracket.
+- "Attribute DMG%" from a slot-5 disc main lands in the DMG% bonus bracket
+  only when the disc's ``element`` matches the agent's attack attribute
+  (optimizer_plan.md §11 E1). A disc without an element (legacy data) keeps
+  the original assume-it-matches behavior.
 - Stats irrelevant to direct-hit damage (HP, DEF, Anomaly, Impact, Energy
   Regen) are aggregated into ``BuildStats.other`` so nothing is silently
   dropped, but they do not affect the damage math in v1.
@@ -517,6 +519,15 @@ def aggregate_build(
 
     for disc in discs:
         for stat, value in disc_stats(disc, disc_data).items():
+            if (stat == "Attribute DMG%" and disc.element is not None
+                    and disc.element != agent.attribute):
+                # Off-element disc: the DMG% buffs a different element, so
+                # it contributes nothing to this agent (tracked, not lost).
+                build.other["Attribute DMG% (off-element)"] = (
+                    build.other.get("Attribute DMG% (off-element)", 0.0)
+                    + value
+                )
+                continue
             _fold_stat(build, stat, value)
 
     if disc_sets is not None:

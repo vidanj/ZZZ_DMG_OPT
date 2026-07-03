@@ -97,6 +97,21 @@
     width: 100%; padding: 10px;
   }
   button.primary:hover { background: #e2fc60; }
+  button.primary.optimize { background: #7fd0ff; margin-top: 10px; }
+  button.primary.optimize:hover { background: #a5deff; }
+  button.primary:disabled { opacity: .55; cursor: wait; }
+
+  /* Optimizer comparison panel */
+  .verdict { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .verdict.better { color: #7fd0ff; }
+  .verdict.optimal { color: var(--accent); }
+  .delta-up { color: #7fd0ff; font-weight: 600; }
+  .delta-down { color: #ffb46b; font-weight: 600; }
+  .swap { font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #333; }
+  .swap b { color: #7fd0ff; }
+  details.alts { margin-top: 10px; }
+  details.alts summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .alt { border-top: 1px solid #333; padding: 6px 0; font-size: 12px; }
 
   /* Results */
   #results { position: sticky; top: 16px; }
@@ -206,6 +221,39 @@
 
   <button class="primary" id="calc">Calculate</button>
   <p class="hint" style="text-align:center">Recalculates automatically after the first run. Inputs are remembered between sessions.</p>
+
+  <div id="optimize-wrap" style="display:none">
+    <div class="card" style="margin-top:14px">
+      <h2>Optimizer <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(searches your saved discs for a better build)</span></h2>
+      <div class="row c3">
+        <div><label>Optimize for</label>
+          <select id="opt-objective">
+            <option value="average" selected>Average damage (normal)</option>
+            <option value="crit">Crit damage (normal)</option>
+            <option value="non_crit">Non-crit damage (normal)</option>
+            <option value="average_stunned">Average damage (stunned)</option>
+            <option value="crit_stunned">Crit damage (stunned)</option>
+            <option value="non_crit_stunned">Non-crit damage (stunned)</option>
+          </select></div>
+        <div><label>Newly formed 4pc set effects</label>
+          <select id="opt-assumption">
+            <option value="max" selected>Assume active (max stacks, itemized)</option>
+            <option value="current">Never assume (2pc value only)</option>
+          </select></div>
+        <div><label>Build around 4pc set (synergy is your call)</label>
+          <select id="opt-required"></select></div>
+      </div>
+      <div id="opt-constraints"></div>
+      <button class="mini" id="opt-add-constraint" style="margin-bottom:4px">
+        + Minimum-stat constraint</button>
+      <button class="primary optimize" id="optimize">Optimize discs</button>
+      <p class="hint">Uses everything above as-is and only swaps discs —
+      candidates are your saved inventory plus what's equipped. Tick 🔒 on a
+      disc card to keep that slot's current disc. Constraints require the
+      build to keep at least the given total (the best build meeting them
+      may deal less than your current one).</p>
+    </div>
+  </div>
 </div>
 
 <div id="results">
@@ -213,6 +261,10 @@
   <div class="card">
     <h2>Results</h2>
     <div id="out" class="placeholder">Fill in the build and hit Calculate.</div>
+  </div>
+  <div class="card" id="opt-card" style="display:none">
+    <h2>Optimizer</h2>
+    <div id="opt-out"></div>
   </div>
 </div>
 </div>
@@ -222,6 +274,8 @@
 
 let DB = null;
 let autoCalc = false;
+let lastResults = null;    // last /calculate response (optimizer baseline)
+let lastOptimize = null;   // last /optimize response (for Apply buttons)
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = "zzz-dmg-ui-state";
 const SLOTS = [1, 2, 3, 4, 5, 6];
@@ -249,6 +303,8 @@ function buildStaticSelects() {
     ([k, e]) => [k, `${e.name} — ${e.base_atk} ATK`]));
   fillSelect($("skill-tag"), [["", "Untyped / not relevant"],
     ...Object.entries(DB.skill_tags).map(([k, label]) => [k, label])]);
+  fillSelect($("opt-required"), [["", "(none — any sets)"],
+    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
   rebuildLoadoutSelect();
 }
 
@@ -272,7 +328,10 @@ function buildDiscGrid() {
     card.innerHTML = `
       <header>
         <span>Slot ${slot}</span>
-        <label><input type="checkbox" class="equipped" checked> equipped</label>
+        <span style="display:flex;gap:10px">
+          <label title="Lock: the optimizer keeps this slot as it is now"><input type="checkbox" class="locked"> 🔒</label>
+          <label><input type="checkbox" class="equipped" checked> equipped</label>
+        </span>
       </header>
       <div class="actions">
         <button class="mini save-disc" title="Save this disc to the inventory">Save</button>
@@ -285,6 +344,10 @@ function buildDiscGrid() {
       </div>
       <label>Main stat${fixed ? " (fixed)" : ""}</label>
       <select class="main" ${fixed ? "disabled" : ""}></select>
+      <div class="attr-el" hidden>
+        <label style="margin-top:6px">Element (this disc's Attribute DMG% only buffs that element)</label>
+        <select class="element"></select>
+      </div>
       <label style="margin-top:6px">Set</label>
       <select class="set"></select>
       <label style="margin-top:6px">Substats (stat / +N)</label>
@@ -295,6 +358,9 @@ function buildDiscGrid() {
     const setSel = card.querySelector(".set");
     fillSelect(setSel, [["", "No set / not modeled"],
       ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+    fillSelect(card.querySelector(".element"),
+      [["", "(not set — matches any agent)"],
+       ...elementsList().map(e => [e, e])]);
     const rows = card.querySelector(".subrows");
     for (let i = 0; i < DB.disc.substats_per_disc; i++) {
       const row = document.createElement("div");
@@ -310,9 +376,14 @@ function buildDiscGrid() {
     }
     wrap.appendChild(card);
     refreshSubstatOptions(card);
-    mainSel.addEventListener("change", () => refreshSubstatOptions(card));
+    refreshElementControl(card);
+    mainSel.addEventListener("change", () => {
+      refreshSubstatOptions(card);
+      refreshElementControl(card, true);
+    });
     card.querySelector(".equipped").addEventListener("change", ev => {
       card.classList.toggle("off", !ev.target.checked);
+      refreshSetStacks();   // un-equipping can break a 4pc — drop its control
     });
     setSel.addEventListener("change", refreshSetStacks);
     card.querySelector(".save-disc").addEventListener("click", () => saveDisc(card));
@@ -327,6 +398,23 @@ function buildDiscGrid() {
     card.querySelector(".picker-filter").addEventListener("input",
       () => renderPicker(card));
   }
+}
+
+function elementsList() {
+  return Object.keys(DB.bosses[0].res);
+}
+
+/* The element dropdown only applies to an Attribute DMG% main (the disc
+   drop is element-specific — a Fire DMG% disc doesn't buff an ice agent).
+   ``defaultToAgent`` fills the current agent's element when the user just
+   switched the main onto Attribute DMG%. */
+function refreshElementControl(card, defaultToAgent = false) {
+  const isAttr = card.querySelector(".main").value === "Attribute DMG%";
+  card.querySelector(".attr-el").hidden = !isAttr;
+  const sel = card.querySelector(".element");
+  if (!isAttr) sel.value = "";
+  else if (defaultToAgent && !sel.value)
+    sel.value = DB.agents[$("agent").value].attribute;
 }
 
 /* Substat dropdowns list every legal substat except the disc's main stat;
@@ -910,6 +998,8 @@ function clearDiscs() {
     card.classList.remove("off");
     card.querySelector(".main").selectedIndex = 0;
     card.querySelector(".set").value = "";
+    card.querySelector(".element").value = "";
+    refreshElementControl(card);
     refreshSubstatOptions(card);
     for (const sel of card.querySelectorAll(".substat")) sel.value = "";
     for (const n of card.querySelectorAll(".upgrades")) n.value = 0;
@@ -923,6 +1013,8 @@ function fillCard(card, disc) {
   card.classList.remove("off");
   card.querySelector(".main").value = disc.main_stat;
   card.querySelector(".set").value = disc.set || "";
+  card.querySelector(".element").value = disc.element || "";
+  refreshElementControl(card);
   refreshSubstatOptions(card);
   const rows = [...card.querySelectorAll(".sub")];
   for (const row of rows) {
@@ -998,7 +1090,9 @@ function discLabel(disc) {
     .map(([s, rolls]) => `${s} +${rolls - 1}`).join(", ");
   const setName = disc.set
     ? (DB.sets[disc.set] ? DB.sets[disc.set].name : disc.set) : "no set";
-  return `${disc.main_stat} · ${setName} · ${subs}`;
+  const main = disc.main_stat === "Attribute DMG%"
+    ? `${disc.main_stat} [${disc.element || "any"}]` : disc.main_stat;
+  return `${main} · ${setName} · ${subs}`;
 }
 
 /* The per-card inventory browser: saved discs of that slot, narrowed by a
@@ -1115,8 +1209,11 @@ function collectDisc(card) {
       throw new Error(`Disc slot ${slot}: substat '${stat}' is picked twice`);
     substats[stat] = (parseInt(nums[i].value, 10) || 0) + 1;  // +N -> rolls
   }
-  return { slot, main_stat: card.querySelector(".main").value, substats,
-           set: card.querySelector(".set").value || null };
+  const main = card.querySelector(".main").value;
+  return { slot, main_stat: main, substats,
+           set: card.querySelector(".set").value || null,
+           element: main === "Attribute DMG%"
+             ? (card.querySelector(".element").value || null) : null };
 }
 
 function equippedDiscs() {
@@ -1198,7 +1295,9 @@ async function runCalc() {
     const data = await resp.json();
     if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
     renderResults(data);
+    lastResults = data;
     autoCalc = true;
+    $("optimize-wrap").style.display = "";
   } catch (exc) {
     showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
@@ -1269,23 +1368,274 @@ function averageNote(r) {
 }
 
 // ---------------------------------------------------------------------------
+// Optimizer: POST /optimize -> comparison panel -> Apply
+// (thin front end — the search and its policies live in optimizer.py;
+//  see DOCS/optimizer_plan.md §7)
+// ---------------------------------------------------------------------------
+
+const SCENARIOS = [
+  ["Non-crit", "non_crit"], ["Crit", "crit"], ["Average", "average"],
+  ["Non-crit (stunned)", "non_crit_stunned"],
+  ["Crit (stunned)", "crit_stunned"], ["Average (stunned)", "average_stunned"],
+];
+
+function lockedSlots() {
+  return [...document.querySelectorAll(".disc")]
+    .filter(card => card.querySelector(".locked").checked)
+    .map(card => parseInt(card.dataset.slot, 10));
+}
+
+/* Minimum-stat constraints (§11 E3). Percent-like stats are entered as
+   human percentages and converted to fractions on send; the totals are
+   the ones the results panel reports. */
+const CONSTRAINT_DEFS = [
+  ["ATK", "ATK (final panel)", false],
+  ["CRIT Rate", "CRIT Rate %", true],
+  ["CRIT DMG", "CRIT DMG %", true],
+  ["PEN Ratio", "PEN Ratio %", true],
+  ["PEN", "PEN (flat)", false],
+  ["Anomaly Proficiency", "Anomaly Proficiency", false],
+  ["Anomaly Mastery", "Anomaly Mastery", false],
+];
+
+function addConstraintRow(stat = "CRIT Rate", value = "") {
+  const row = document.createElement("div");
+  row.className = "constraint-row";
+  row.style.cssText = "display:grid;grid-template-columns:1fr 110px 28px;"
+    + "gap:8px;margin-bottom:8px;align-items:end";
+  const sel = document.createElement("select");
+  sel.className = "constraint-stat";
+  fillSelect(sel, CONSTRAINT_DEFS.map(([k, label]) => [k, `min ${label}`]));
+  sel.value = stat;
+  const num = document.createElement("input");
+  num.type = "number"; num.min = 0; num.step = "any";
+  num.className = "constraint-min"; num.value = value;
+  num.placeholder = "minimum";
+  const del = document.createElement("button");
+  del.className = "mini"; del.textContent = "✕";
+  del.title = "Remove this constraint";
+  del.addEventListener("click", () => { row.remove(); onAnyChange(); });
+  row.appendChild(sel); row.appendChild(num); row.appendChild(del);
+  $("opt-constraints").appendChild(row);
+  return row;
+}
+
+function collectMinStats() {
+  const pctStats = new Set(
+    CONSTRAINT_DEFS.filter(([, , pct]) => pct).map(([k]) => k));
+  const minStats = {};
+  for (const row of document.querySelectorAll(".constraint-row")) {
+    const stat = row.querySelector(".constraint-stat").value;
+    const raw = parseFloat(row.querySelector(".constraint-min").value);
+    if (!raw || raw <= 0) continue;
+    minStats[stat] = pctStats.has(stat) ? raw / 100 : raw;
+  }
+  return minStats;
+}
+
+async function runOptimize() {
+  $("error").style.display = "none";
+  let body;
+  try {
+    body = collectConfig();
+  } catch (exc) {
+    showError(exc.message);
+    return;
+  }
+  body.optimize = {
+    objective: $("opt-objective").value,
+    set_assumption: $("opt-assumption").value,
+    locked_slots: lockedSlots(),
+    top_n: 5,
+    min_stats: collectMinStats(),
+    required_4pc: $("opt-required").value || null,
+  };
+  const btn = $("optimize");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Optimizing…";
+  try {
+    const data = await postJSON("/optimize", body);
+    lastOptimize = data;
+    // Snapshot what's equipped right now, so the per-slot diff can show
+    // "was -> becomes" even after the user keeps editing the form.
+    lastOptimize.currentBySlot = {};
+    for (const disc of body.discs)
+      lastOptimize.currentBySlot[disc.slot] = disc;
+    renderOptimize(data);
+  } catch (exc) {
+    showError(exc.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+/* One build's per-slot changes vs the snapshot taken at optimize time. */
+function swapLines(option) {
+  return option.changed_slots.map(slot => {
+    const now = lastOptimize.currentBySlot[slot];
+    const next = option.discs.find(d => d.slot === slot);
+    const id = next.id || "current, unsaved";
+    return `<div class="swap">Slot ${slot}: ${now ? discLabel(now) : "(empty)"}
+      <br>→ <b>${id}</b> · ${discLabel(next)}</div>`;
+  }).join("");
+}
+
+function assumedStacksNote(option) {
+  const parts = Object.entries(option.set_stacks || {}).map(([key, stacks]) => {
+    const set = DB.sets[key];
+    const label = set ? set.name : key;
+    const max = set && set.bonus_4pc ? set.bonus_4pc.max_stacks : stacks;
+    return max === 1 ? `${label} 4pc active` : `${label} 4pc ×${stacks}`;
+  });
+  return parts.length
+    ? `<p class="note">Evaluated with: ${parts.join(" · ")}. Set the same
+       stacks after applying to reproduce the number.</p>`
+    : "";
+}
+
+function fmtDelta(delta) {
+  const cls = delta >= 0 ? "delta-up" : "delta-down";
+  const sign = delta >= 0 ? "+" : "";
+  return `<span class="${cls}">${sign}${(delta * 100).toFixed(1)}%</span>`;
+}
+
+function constraintsNote(data) {
+  const pctStats = new Set(
+    CONSTRAINT_DEFS.filter(([, , pct]) => pct).map(([k]) => k));
+  const parts = [];
+  if (data.required_4pc) {
+    const set = DB.sets[data.required_4pc];
+    parts.push(`build around ${set ? set.name : data.required_4pc} 4pc`);
+  }
+  for (const [stat, minimum] of Object.entries(data.min_stats || {}))
+    parts.push(`${stat} ≥ ${pctStats.has(stat)
+      ? (minimum * 100).toFixed(1) + "%" : minimum}`);
+  if (!parts.length) return "";
+  const infeasible = data.baseline_feasible === false
+    ? ` <span class="delta-down">— your current build does not meet
+       these requirements</span>` : "";
+  return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}</p>`;
+}
+
+function renderOptimize(data) {
+  $("opt-card").style.display = "";
+  const out = $("opt-out");
+  const objectiveLabel =
+    $("opt-objective").selectedOptions[0].textContent.toLowerCase();
+  const searched = `<p class="note">Searched ${data.combos_evaluated
+    .toLocaleString("en-US")} build(s)`
+    + (data.discs_pruned ? `, ${data.discs_pruned} dominated disc(s) skipped`
+                         : "") + `.</p>`;
+
+  if (data.already_optimal) {
+    out.innerHTML = `
+      <div class="verdict optimal">✅ Your current discs are already optimal
+        for ${objectiveLabel}.</div>
+      <p class="note">No combination of your saved discs beats the equipped
+      build for this calculation.</p>${constraintsNote(data)}${searched}`;
+    return;
+  }
+
+  const best = data.best;
+  const cur = lastResults || {};
+  const rows = SCENARIOS.map(([label, key]) => {
+    const highlight = key === data.objective ? ' class="avg"' : "";
+    const c = cur[key];
+    const b = best.results[key];
+    const delta = c ? ` ${fmtDelta((b - c) / c)}` : "";
+    return `<tr${highlight}><td>${label}</td>
+      <td class="num">${c != null ? fmtNum(c) : "—"}</td>
+      <td class="num">${fmtNum(b)}${delta}</td></tr>`;
+  }).join("");
+
+  const alts = data.alternatives.map((alt, i) => `
+    <div class="alt">
+      #${i + 2}: <b>${fmtNum(alt.value)}</b>
+      (${fmtDelta(alt.delta)}, ${alt.changed_slots.length} change(s))
+      <button class="mini apply-alt" data-alt="${i}">Apply</button>
+      ${swapLines(alt)}
+    </div>`).join("");
+
+  const verdict = best.delta >= 0
+    ? `▲ ${fmtDelta(best.delta)} ${objectiveLabel} with
+       ${best.changed_slots.length} disc change(s)`
+    : `◆ Best build meeting your constraints: ${fmtDelta(best.delta)}
+       ${objectiveLabel} (${best.changed_slots.length} disc change(s))`;
+  out.innerHTML = `
+    <div class="verdict better">${verdict}</div>
+    ${constraintsNote(data)}
+    <table>
+      <thead><tr><th>Scenario</th><th>Current</th><th>Best found</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:10px">${swapLines(best)}</div>
+    ${assumedStacksNote(best)}
+    <button class="primary" id="apply-best" style="margin-top:10px">
+      Apply best build</button>
+    ${data.alternatives.length
+      ? `<details class="alts"><summary>${data.alternatives.length}
+         runner(s)-up</summary>${alts}</details>` : ""}
+    ${searched}`;
+
+  $("apply-best").addEventListener("click", () => applyBuild(best));
+  for (const btn of out.querySelectorAll(".apply-alt")) {
+    btn.addEventListener("click", () =>
+      applyBuild(data.alternatives[parseInt(btn.dataset.alt, 10)]));
+  }
+}
+
+/* Equip a searched build into the disc grid (sets + 4pc stacks included);
+   the normal auto-recalc then confirms the exact number the optimizer
+   reported (they match by the exactness guarantee, plan §4). */
+function applyBuild(option) {
+  const bySlot = {};
+  for (const disc of option.discs) bySlot[disc.slot] = disc;
+  for (const card of document.querySelectorAll(".disc")) {
+    const disc = bySlot[card.dataset.slot];
+    if (disc) {
+      fillCard(card, disc);
+    } else {
+      card.querySelector(".equipped").checked = false;
+      card.classList.add("off");
+    }
+  }
+  refreshSetStacks();
+  for (const inp of $("set-stacks").querySelectorAll("input")) {
+    const stacks = (option.set_stacks || {})[inp.dataset.set] || 0;
+    if (inp.type === "checkbox") inp.checked = stacks > 0;
+    else inp.value = stacks;
+  }
+  onAnyChange();
+}
+
+// ---------------------------------------------------------------------------
 // State persistence (localStorage) — inputs survive reloads
 // ---------------------------------------------------------------------------
 
 function saveState() {
   const state = { fields: {}, discs: [], setStacks: {}, kit: kitState(),
                   supports: [...document.querySelectorAll(".support")]
-                    .map(supportSlotState) };
+                    .map(supportSlotState),
+                  constraints: [...document.querySelectorAll(".constraint-row")]
+                    .map(row => ({
+                      stat: row.querySelector(".constraint-stat").value,
+                      min: row.querySelector(".constraint-min").value,
+                    })) };
   for (const el of document.querySelectorAll("#inputs select, #inputs input")) {
     if (el.closest(".disc") || el.closest("#set-stacks")
-        || el.closest("#kit-controls") || el.closest(".support")) continue;
+        || el.closest("#kit-controls") || el.closest(".support")
+        || el.closest(".constraint-row")) continue;
     if (el.id) state.fields[el.id] = el.type === "checkbox" ? el.checked : el.value;
   }
   for (const card of document.querySelectorAll(".disc")) {
     state.discs.push({
       equipped: card.querySelector(".equipped").checked,
+      locked: card.querySelector(".locked").checked,
       main: card.querySelector(".main").value,
       set: card.querySelector(".set").value,
+      element: card.querySelector(".element").value,
       subs: [...card.querySelectorAll(".sub")].map(row => ({
         stat: row.querySelector(".substat").value,
         n: row.querySelector(".upgrades").value,
@@ -1313,8 +1663,11 @@ function restoreState() {
     if (!card) return;
     card.querySelector(".equipped").checked = d.equipped;
     card.classList.toggle("off", !d.equipped);
+    card.querySelector(".locked").checked = !!d.locked;
     if (d.main) card.querySelector(".main").value = d.main;
     card.querySelector(".set").value = d.set || "";
+    card.querySelector(".element").value = d.element || "";
+    refreshElementControl(card);
     refreshSubstatOptions(card);
     const rows = card.querySelectorAll(".sub");
     (d.subs || []).forEach((s, j) => {
@@ -1330,6 +1683,8 @@ function restoreState() {
     if (inp.type === "checkbox") inp.checked = saved > 0;
     else inp.value = saved;
   }
+  for (const c of state.constraints || [])
+    addConstraintRow(c.stat, c.min);
   return state;
 }
 
@@ -1386,6 +1741,10 @@ async function init() {
   $("engine").addEventListener("change", () => { updateDerived(true); });
   $("engine-rank").addEventListener("change", () => updateDerived());
   $("calc").addEventListener("click", runCalc);
+  $("optimize").addEventListener("click", runOptimize);
+  $("opt-add-constraint").addEventListener("click", () => {
+    addConstraintRow().querySelector(".constraint-min").focus();
+  });
   $("load-loadout").addEventListener("click", () => {
     loadLoadout($("loadout").value); onAnyChange();
   });

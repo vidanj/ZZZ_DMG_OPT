@@ -30,6 +30,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .enemies import ELEMENTS
+
 #: Default location of the disc data file, relative to this package.
 DATA_FILE = Path(__file__).parent / "data" / "discs.json"
 
@@ -80,12 +82,18 @@ class Disc:
             substat's initial appearance).
         disc_set: Key into the set registry (``data/disc_sets.json``), or
             ``None`` for a disc whose set doesn't matter / isn't modeled.
+        element: Which element an **Attribute DMG%** main belongs to (the
+            physical drop is element-specific, e.g. a Fire DMG% disc). Only
+            allowed on Attribute DMG% mains. ``None`` on such a main is
+            legacy data: it keeps the original assume-it-matches behavior
+            (optimizer_plan.md §11 E1) — set the element and re-save.
     """
 
     slot: int
     main_stat: str
     substats: dict[str, int] = field(default_factory=dict)
     disc_set: str | None = None
+    element: str | None = None
 
 
 def _require_positive_int(data: dict, key: str) -> int:
@@ -182,6 +190,18 @@ def validate_disc(disc: Disc, data: DiscData) -> None:
             f"'{disc.main_stat}' is not a legal main stat for slot {disc.slot}; "
             f"options: {sorted(slot_table)}"
         )
+
+    if disc.element is not None:
+        if disc.main_stat != "Attribute DMG%":
+            raise DiscError(
+                f"'element' only applies to an Attribute DMG% main "
+                f"(slot {disc.slot} has '{disc.main_stat}')"
+            )
+        if disc.element not in ELEMENTS:
+            raise DiscError(
+                f"Unknown element '{disc.element}'; "
+                f"options: {list(ELEMENTS)}"
+            )
 
     if len(disc.substats) != data.substats_per_disc:
         raise DiscError(
@@ -592,6 +612,7 @@ def load_loadouts(
                         main_stat=disc_raw["main_stat"],
                         substats=dict(disc_raw.get("substats", {})),
                         disc_set=disc_raw.get("set"),
+                        element=disc_raw.get("element"),
                     )
                 except KeyError as exc:
                     raise DiscError(
@@ -646,6 +667,8 @@ def _disc_payload(disc: Disc) -> dict:
     }
     if disc.disc_set:
         payload["set"] = disc.disc_set
+    if disc.element:
+        payload["element"] = disc.element
     return payload
 
 
@@ -686,6 +709,7 @@ def load_user_discs(
                 main_stat=entry["main_stat"],
                 substats=dict(entry.get("substats", {})),
                 disc_set=entry.get("set"),
+                element=entry.get("element"),
             )
         except KeyError as exc:
             raise DiscError(f"User disc '{disc_id}' is missing {exc}") from None
