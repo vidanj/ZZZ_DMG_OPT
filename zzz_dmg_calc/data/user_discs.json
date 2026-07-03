@@ -1,0 +1,96 @@
+{
+  "_meta": {
+    "description": "User disc inventory: discs saved from the UI, referenced by saved loadouts via their id. User data, not game data.",
+    "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1). Every disc is validated against discs.json on load. Optional 'set' names a key in disc_sets.json."
+  },
+  "discs": {
+    "d1": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 3,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 1
+      },
+      "set": "BRANCH_BLADE_SONG"
+    },
+    "d2": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP": 1,
+        "ATK%": 3,
+        "ATK": 2
+      },
+      "set": "BRANCH_BLADE_SONG"
+    },
+    "d3": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "DEF%": 1,
+        "CRIT Rate": 1,
+        "ATK%": 4
+      },
+      "set": "PUFFER_ELECTRO"
+    },
+    "d4": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 3,
+        "ATK%": 2,
+        "CRIT Rate": 2
+      },
+      "set": "PUFFER_ELECTRO"
+    },
+    "d5": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 1,
+        "ATK": 2,
+        "CRIT DMG": 4,
+        "ATK%": 2
+      },
+      "set": "HORMONE_PUNK"
+    },
+    "d7": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "DEF": 1,
+        "ATK%": 3,
+        "ATK": 1,
+        "CRIT DMG": 3
+      },
+      "set": "HORMONE_PUNK"
+    },
+    "d8": {
+      "slot": 4,
+      "main_stat": "ATK%",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 3,
+        "CRIT Rate": 3,
+        "ATK": 1
+      },
+      "set": "PUFFER_ELECTRO"
+    },
+    "d9": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "DEF%": 1,
+        "CRIT DMG": 3,
+        "HP%": 2,
+        "PEN": 2
+      },
+      "set": "PUFFER_ELECTRO"
+    }
+  }
+}

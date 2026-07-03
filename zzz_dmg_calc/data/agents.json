@@ -4,12 +4,13 @@
     "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely."
+    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
   },
   "agents": {
     "dummy": {
       "name": "DUMMY (Ellen copy)",
       "attribute": "ice",
+      "specialty": "attack",
       "level": 60,
       "base_hp": 7673,
       "base_atk": 863,
@@ -23,9 +24,247 @@
       },
       "default_engine": "dummy_engine"
     },
+    "nekomata": {
+      "name": "Nekomata (Nekomiya Mana)",
+      "attribute": "physical",
+      "specialty": "attack",
+      "faction": "cunning_hares",
+      "level": 60,
+      "base_hp": 7560,
+      "base_atk": 835,
+      "base_def": 587,
+      "impact": 92,
+      "anomaly_mastery": 96,
+      "anomaly_proficiency": 97,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "core_passive": {
+        "name": "Stealthy Paws",
+        "max_stacks": 1,
+        "effects": [ { "kind": "dmg_bonus", "value": 0.60 } ],
+        "note": "When her Dodge Counter or Quick Assist hits an enemy, DMG +60% for 6s (max core rank F). CONFIRMED in-game 2026-07-02: additive in the DMG% bracket (validation #3)."
+      },
+      "additional_ability": {
+        "name": "Catwalk",
+        "max_stacks": 2,
+        "condition": { "teammate_shares_attribute_or_faction": true },
+        "effects": [ { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "ex_special" } ],
+        "note": "Requires a teammate sharing her Attribute (physical) or Faction (Cunning Hares). After any squad member inflicts Assault, her next EX Special Attack deals +35% DMG per stack (max 2) - only applies when the damage type is EX Special Attack. Verified 2026-07-03 (Game8)."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Bird Hunter",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.16 } ],
+          "note": "Back attacks ignore 16% of the target's Physical RES; while the enemy is Stunned, ALL her attacks count as back attacks (also satisfies Steel Cushion's back-attack buff)."
+        },
+        "2": {
+          "name": "Cat & Mouse",
+          "note": "Energy Generation Rate +25% while only one enemy is on the field - no damage-formula effect, not modeled."
+        },
+        "3": {
+          "name": "Curious Left Tail",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only; enter the higher multipliers manually (project convention: MV mindscapes are never modeled)."
+        },
+        "4": {
+          "name": "Sharpen Claws",
+          "max_stacks": 2,
+          "effects": [ { "kind": "crit_rate", "value": 0.07 } ],
+          "note": "Using her EX Special Attack grants +7% CRIT Rate for 15s, stacking up to 2 times (durations tracked separately)."
+        },
+        "5": {
+          "name": "Lucky Right Tail",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Predator Lineage",
+          "max_stacks": 3,
+          "effects": [ { "kind": "crit_dmg", "value": 0.18 } ],
+          "note": "Launching a Chain Attack or Ultimate grants +18% CRIT DMG, stacking up to 3 times; expires out of combat."
+        }
+      },
+      "default_engine": "steel_cushion"
+    },
+    "zhao": {
+      "name": "Zhao",
+      "attribute": "ice",
+      "specialty": "defense",
+      "faction": "krampus",
+      "level": 60,
+      "base_hp": 9117,
+      "base_atk": 690,
+      "base_def": 701,
+      "impact": 93,
+      "anomaly_mastery": 93,
+      "anomaly_proficiency": 96,
+      "core_skill_bonuses": {},
+      "core_passive": {
+        "name": "Ideal Colleague: self CRIT from HP",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "crit_rate",
+            "scaling": { "input": "initial_max_hp", "per_step": 1000, "per_value": 0.014 } }
+        ],
+        "note": "SELF-ONLY (validation #4): +1.4% CRIT Rate per 1,000 initial Max HP, always active on her stat sheet. Only matters when Zhao is the attacker - enter her panel Max HP."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Righteous Verdict",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "Squad-wide 15% Attribute RES ignore on switching out - includes her own attacks. Same effect as her 'M1: squad RES ignore' team buff: never apply both at once."
+        },
+        "2": {
+          "name": "Krampus Senior",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.20 } ],
+          "note": "Self part: when she recovers HP, HER ATK +20% for 50s (the squad's +15% is the 'M2: squad ATK%' team buff). Panel ATK% bracket assumed (validation #4 analogy)."
+        },
+        "3": {
+          "name": "Frostveil Edge",
+          "note": "Basic/Dodge/Assist/Special/Chain Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "Quick as a Hare",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_dmg", "value": 0.40, "skill_tag": "ultimate" },
+            { "kind": "crit_dmg", "value": 0.40, "skill_tag": "chain" },
+            { "kind": "crit_dmg", "value": 0.40, "skill_tag": "basic" }
+          ],
+          "note": "Her Ultimate / Chain Attack / Basic (Final Verdict) gain +40% CRIT DMG - applies when the hit's damage type matches. The +250 Decibels part is resource-only."
+        },
+        "5": {
+          "name": "Fuzzy Listener",
+          "note": "Basic/Dodge/Assist/Special/Chain Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "No Value Has Its Own Value",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_rate",
+              "scaling": { "input": "initial_max_hp", "per_step": 1000, "per_value": 0.0035 } }
+          ],
+          "note": "Core passive CRIT buff x1.25: +0.35% extra CRIT Rate per 1,000 initial Max HP ON TOP of the base 1.4% - check together with the core passive. The charged Basic DMG x1.40 part is motion value, not modeled."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Ether Veil: squad ATK",
+          "max_stacks": 1,
+          "effects": [ { "kind": "flat_atk", "value": 1000 } ],
+          "note": "While within an Ether Veil (core passive, max rank): all squad members' ATK +1,000 flat for 50s. CONFIRMED in-game 2026-07-03 (validation #4): added after the panel ATK bracket."
+        },
+        {
+          "name": "Additional Ability: squad DMG (HP-scaled)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["attack", "anomaly", "support"] },
+          "effects": [
+            { "kind": "dmg_bonus",
+              "scaling": { "input": "initial_max_hp", "base": 0.10, "threshold": 15000, "per_step": 400, "per_value": 0.01, "cap": 0.40 } }
+          ],
+          "note": "Needs an Attack/Anomaly/Support squadmate. While within an Ether Veil: squad DMG +10%; +1% per 400 initial Max HP above 15,000, capped at +40% (reached at 27,000 HP)."
+        },
+        {
+          "name": "M1: squad RES ignore",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "Requires Zhao at Mindscape 1 (Righteous Verdict). When she switches out (quick assists count), all squad members' DMG ignores 15% of the target's Attribute RES for 50s - effectively always up. CONFIRMED in-game 2026-07-03 (validation #5: explained the +12.9% popup surplus to 0.01%)."
+        },
+        {
+          "name": "M2: squad ATK%",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.15 } ],
+          "note": "Requires Zhao at Mindscape 2 (Krampus Senior). When she recovers HP: OTHER squad members' ATK +15% for 50s (her own +20% is self-only). Joins the panel ATK% bracket by analogy with her signature engine (validation #4) - not yet popup-checked."
+        }
+      ],
+      "default_engine": "half_sugar_bunny",
+      "_note": "Support entry (verified 2026-07-03, Game8/BlueStacks). Squad Max HP +5% not modeled (no damage effect). Her HP-scaled CRIT Rate (1.4%/1000 HP) is SELF-ONLY, not squad-wide - community sources misread it; corrected by in-game panel check 2026-07-03 (validation #4). Core stat boosts not modeled - she is not intended as the on-field attacker. AM/AP from Game8. CONVENTION: support mindscapes with TEAM-facing damage effects are modeled as extra team_buffs entries named 'M<level>: ...' (relevance clause applies; the user only checks what their copy has unlocked). Her full kit incl. self-only mindscapes (M4 tag-gated CRIT DMG, M6 core-CRIT x1.25) is modeled under 'mindscapes'/'core_passive' for when SHE is the attacker (off-field damage feature); M3/M5 are motion values (not modeled). Her M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once."
+    },
+    "dialyn": {
+      "name": "Dialyn",
+      "attribute": "physical",
+      "specialty": "stun",
+      "faction": "krampus",
+      "level": 60,
+      "base_hp": 8250,
+      "base_atk": 683,
+      "base_def": 612,
+      "impact": 110,
+      "anomaly_mastery": 0,
+      "anomaly_proficiency": 0,
+      "core_skill_bonuses": {},
+      "mindscapes": {
+        "1": {
+          "name": "Boundless Hospitality",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "During Overwhelmingly Positive: everyone (incl. her own attacks) ignores 15% All-Attribute RES. Same effect as her M1 team buff: never apply both at once. Positive Reviews +16% is resource-only."
+        },
+        "2": {
+          "name": "24/7 Hotline",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_taken", "value": 0.15 },
+            { "kind": "daze_bonus", "value": 0.10 }
+          ],
+          "note": "Enemy debuff on Malicious Complaint targets: +15% DMG taken (bracket PROVISIONAL) and stunned +10% Stun DMG Multiplier - applies to her own attacks too. Same effect as her M2 team buff: never apply both at once."
+        },
+        "3": {
+          "name": "Call from the Hollow",
+          "note": "Skill Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "The Past Never Fades",
+          "max_stacks": 1,
+          "effects": [ { "kind": "flat_atk", "value": 500 } ],
+          "note": "During Overwhelmingly Positive: HER ATK +500 flat (self-only; added after the panel bracket like Zhao's flat, validation #4). The 20-Energy part is resource-only."
+        },
+        "5": {
+          "name": "Lies",
+          "note": "Skill Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Truth",
+          "note": "Aftertone: the chosen ally's attacks trigger an extra Physical hit of 480% of DIALYN's ATK - off-field damage, deferred to that feature (its own calculate() run with Dialyn as attacker)."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Overwhelmingly Positive: squad DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.40 } ],
+          "note": "Additional Ability - needs an Attack/Rupture squadmate. After her EX Special or Ultimate: squad DMG +40% for 15s. Verified 2026-07-03 (Game8)."
+        },
+        {
+          "name": "Malicious Complaint: stunned vulnerability",
+          "max_stacks": 1,
+          "effects": [ { "kind": "daze_bonus", "value": 0.30 } ],
+          "note": "EX 'Paper!' debuff: while the target is Stunned, its Stun DMG Multiplier +30% (and stun lasts +2s) - affects the Stunned columns only. One overview claimed 35%/+3s; Game8 max-rank says 30%/+2s - the in-game daze bar shows the truth (use the stun override if it differs)."
+        },
+        {
+          "name": "M1: squad RES ignore (during Overwhelmingly Positive)",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "Requires Dialyn at Mindscape 1 (Boundless Hospitality). While her Overwhelmingly Positive effect is active, all characters ignore 15% of enemy All-Attribute RES. Verified 2026-07-03 (Game8) - check together with the Overwhelmingly Positive buff."
+        },
+        {
+          "name": "M2: DMG taken vs Malicious Complaint targets",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_taken", "value": 0.15 },
+            { "kind": "daze_bonus", "value": 0.10 }
+          ],
+          "note": "Requires Dialyn at Mindscape 2 (24/7 Hotline). All units deal +15% DMG to targets under Malicious Complaint (modeled in the 'DMG taken' bracket - PROVISIONAL, popup-check the bracket), and stunned targets take another +10% Stun DMG Multiplier. Verified 2026-07-03 (Game8)."
+        }
+      ],
+      "default_engine": "yesterday_calls",
+      "_note": "Support/stunner entry (verified 2026-07-03, Game8). AM/AP unverified (stored 0 - do NOT use her as the attacker in anomaly modes). Core stat boosts not modeled. Her full kit incl. self-only mindscapes (M4 flat ATK during Overwhelmingly Positive) is modeled under 'mindscapes' for when SHE is the attacker; M3/M5 are motion values (not modeled). M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once. M6 Truth (Aftertone: ally attacks trigger an extra Physical hit of 480% of DIALYN's ATK) is OFF-FIELD DAMAGE - deferred to that feature."
+    },
     "piper": {
       "name": "Piper Wheel",
       "attribute": "physical",
+      "specialty": "anomaly",
       "level": 60,
       "base_hp": 6976,
       "base_atk": 683,
@@ -39,6 +278,7 @@
     "evelyn": {
       "name": "Evelyn Chevalier",
       "attribute": "fire",
+      "specialty": "attack",
       "level": 60,
       "base_hp": 7788,
       "base_atk": 779,
@@ -52,6 +292,7 @@
     "yanagi": {
       "name": "Tsukishiro Yanagi",
       "attribute": "electric",
+      "specialty": "anomaly",
       "level": 60,
       "base_hp": 7788,
       "base_atk": 797,
@@ -65,6 +306,7 @@
     "vivian": {
       "name": "Vivian Banshee",
       "attribute": "ether",
+      "specialty": "anomaly",
       "level": 60,
       "base_hp": 7673,
       "base_atk": 805,
@@ -78,6 +320,7 @@
     "velina": {
       "name": "Velina Airgid",
       "attribute": "wind",
+      "specialty": "anomaly",
       "level": 60,
       "base_hp": 7788,
       "base_atk": 797,

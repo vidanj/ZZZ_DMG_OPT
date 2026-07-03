@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Global damage-formula constants for the ZZZ DMG Optimizer. anomaly_level_multipliers: community curve gives 1.9971 at 60, stored as the commonly quoted 2.0 - PROVISIONAL until in-game anomaly calibration pins it.",
+    "description": "Global damage-formula constants for the ZZZ DMG Optimizer. anomaly_level_multipliers: community curve gives 1.9971 at 60, stored as the commonly quoted 2.0 - PROVISIONAL until in-game anomaly calibration pins it. skill_tags: the game's skill-type categories (Fandom Combat Skill page, verified 2026-07-02) used to gate skill-type-conditional DMG% bonuses like Puffer Electro's Ultimate DMG +20%.",
     "sources": "DOCS/sources.md (Phase 1 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0"
@@ -13,5 +13,17 @@
   },
   "base_crit_rate": 0.05,
   "base_crit_dmg": 0.5,
-  "crit_rate_cap": 1.0
+  "crit_rate_cap": 1.0,
+  "skill_tags": {
+    "basic": "Basic Attack",
+    "dash": "Dash Attack",
+    "dodge_counter": "Dodge Counter",
+    "special": "Special Attack",
+    "ex_special": "EX Special Attack",
+    "chain": "Chain Attack",
+    "ultimate": "Ultimate",
+    "quick_assist": "Quick Assist",
+    "defensive_assist": "Defensive Assist",
+    "assist_followup": "Assist Follow-Up"
+  }
 }

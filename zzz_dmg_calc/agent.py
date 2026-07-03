@@ -43,6 +43,95 @@ class AgentError(ValueError):
     """Raised for invalid agent data files or invalid build descriptions."""
 
 
+#: Effect kinds a kit buff (core passive / mindscape / team buff) may carry.
+#: Only damage-relevant effects are modeled (project convention): stat buffs
+#: and enemy debuffs. Motion-value increases (skill Lv. +N) are documented in
+#: notes but never modeled — the user enters multipliers manually.
+KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
+                    "dmg_taken", "flat_atk", "atk_pct", "daze_bonus")
+
+
+@dataclass(frozen=True)
+class EffectScaling:
+    """A kit effect whose value scales with a build stat of its OWNER.
+
+    Pilot: Zhao — her squad buffs scale with her initial Max HP, so the
+    support entry asks for that number (``input`` names it) and the value
+    resolves as ``base + floor(max(x - threshold, 0) / per_step) ×
+    per_value``, clamped to ``cap`` when one is set.
+    """
+
+    input: str                # e.g. "initial_max_hp" (asked at runtime)
+    base: float = 0.0
+    threshold: float = 0.0
+    per_step: float = 1.0
+    per_value: float = 0.0
+    cap: float | None = None
+
+    def resolve(self, x: float) -> float:
+        value = self.base + (max(x - self.threshold, 0.0) // self.per_step) * self.per_value
+        return min(value, self.cap) if self.cap is not None else value
+
+
+@dataclass(frozen=True)
+class KitEffect:
+    """One damage-relevant effect of a kit buff, per active stack.
+
+    ``kind`` routes the value into the damage formula: ``crit_rate`` /
+    ``crit_dmg`` add to the crit totals, ``dmg_bonus`` joins the additive
+    DMG% bracket, ``res_shred`` adds enemy RES ignore, ``dmg_taken`` adds
+    a "DMG taken" bracket entry, ``flat_atk`` adds flat ATK to the final
+    panel, ``daze_bonus`` adds to the stunned-state multiplier. Values are
+    fractions per stack (``flat_atk`` is a plain number).
+
+    ``skill_tag`` gates the effect to hits of that damage type (e.g.
+    Nekomata's Catwalk applies only to EX Specials). ``scaling`` replaces
+    the fixed ``value`` with an owner-stat-scaled one (see
+    :class:`EffectScaling`).
+    """
+
+    kind: str
+    value: float = 0.0
+    skill_tag: str | None = None
+    scaling: EffectScaling | None = None
+
+
+@dataclass(frozen=True)
+class KitBuff:
+    """A conditional kit effect group (core passive, mindscape, additional
+    ability, or team buff).
+
+    Active stacks are a runtime input (0..``max_stacks``); ``max_stacks``
+    of 1 means a plain on/off effect (the UI shows a checkbox).
+    ``condition`` optionally describes a team-composition requirement as
+    data (e.g. ``{"teammate_specialty_any_of": ["attack"]}`` or
+    ``{"teammate_shares_attribute_or_faction": true}``) — the front ends
+    use it to pre-check the toggle; the calculation itself always obeys
+    the user's runtime choice.
+    """
+
+    name: str
+    max_stacks: int
+    effects: tuple[KitEffect, ...]
+    note: str = ""
+    condition: dict | None = None
+
+
+@dataclass(frozen=True)
+class Mindscape:
+    """One Mindscape Cinema level (M1-M6), modeled or documentation-only.
+
+    ``buff`` is ``None`` for levels with no damage-relevant effect (energy,
+    motion values, QoL) — they stay in the data so the kit is complete, but
+    the calculation ignores them (see ``note`` for why).
+    """
+
+    level: int
+    name: str
+    buff: KitBuff | None = None
+    note: str = ""
+
+
 @dataclass(frozen=True)
 class Agent:
     """Preset agent at Lv. 60 with max core skill.
@@ -66,6 +155,12 @@ class Agent:
     core_bonus_anomaly_proficiency: float
     core_bonus_anomaly_mastery: float
     default_engine: str
+    specialty: str = ""          # attack / stun / anomaly / support / defense
+    faction: str | None = None
+    core_passive: KitBuff | None = None
+    additional_ability: KitBuff | None = None
+    mindscapes: dict[int, Mindscape] = field(default_factory=dict)
+    team_buffs: tuple[KitBuff, ...] = ()
 
     def total_base_atk(self) -> float:
         """Agent-side base ATK bucket: own base + flat core skill ATK."""
@@ -98,6 +193,130 @@ class BuildStats:
     anomaly_mastery: float = 0.0
     dmg_bonuses: list[float] = field(default_factory=list)
     other: dict[str, float] = field(default_factory=dict)
+    # Panel ATK before the combat bracket, and that bracket's sum — kept
+    # separate so team ATK% buffs can join the same additive bracket
+    # (in-game finding 2026-07-03): atk = atk_pre_combat × (1 + bracket).
+    atk_pre_combat: float = 0.0
+    combat_atk_pct: float = 0.0
+
+
+def _parse_kit_buff(raw, where: str) -> KitBuff:
+    """Validate and build one kit buff (core passive / modeled mindscape).
+
+    Raises:
+        AgentError: missing name, bad stacks, unknown effect kind, or a
+            non-positive value.
+    """
+    if not isinstance(raw, dict):
+        raise AgentError(f"{where} must be an object")
+    name = raw.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise AgentError(f"{where} is missing a valid 'name'")
+    max_stacks = raw.get("max_stacks", 1)
+    if isinstance(max_stacks, bool) or not isinstance(max_stacks, int) or max_stacks < 1:
+        raise AgentError(f"{where}: 'max_stacks' must be an integer >= 1")
+    effects_raw = raw.get("effects")
+    if not isinstance(effects_raw, list) or not effects_raw:
+        raise AgentError(f"{where}: 'effects' must be a non-empty list")
+    effects: list[KitEffect] = []
+    for item in effects_raw:
+        if not isinstance(item, dict):
+            raise AgentError(f"{where}: effect entries must be objects")
+        kind = item.get("kind")
+        if kind not in KIT_EFFECT_KINDS:
+            raise AgentError(
+                f"{where}: unknown effect kind {kind!r}; "
+                f"options: {list(KIT_EFFECT_KINDS)}"
+            )
+        scaling = None
+        scaling_raw = item.get("scaling")
+        if scaling_raw is not None:
+            if not isinstance(scaling_raw, dict) or not isinstance(
+                    scaling_raw.get("input"), str):
+                raise AgentError(
+                    f"{where}: effect 'scaling' must be an object with an "
+                    f"'input' name"
+                )
+            def scale_num(key: str, default: float) -> float:
+                v = scaling_raw.get(key, default)
+                if isinstance(v, bool) or not isinstance(v, (int, float)):
+                    raise AgentError(
+                        f"{where}: scaling '{key}' must be a number"
+                    )
+                return float(v)
+            per_step = scale_num("per_step", 1.0)
+            if per_step <= 0:
+                raise AgentError(f"{where}: scaling 'per_step' must be > 0")
+            cap_raw = scaling_raw.get("cap")
+            scaling = EffectScaling(
+                input=scaling_raw["input"],
+                base=scale_num("base", 0.0),
+                threshold=scale_num("threshold", 0.0),
+                per_step=per_step,
+                per_value=scale_num("per_value", 0.0),
+                cap=None if cap_raw is None else scale_num("cap", 0.0),
+            )
+            value = 0.0
+        else:
+            value = item.get("value")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise AgentError(f"{where}: effect 'value' must be positive")
+        skill_tag = item.get("skill_tag")
+        if skill_tag is not None and (not isinstance(skill_tag, str) or not skill_tag.strip()):
+            raise AgentError(f"{where}: effect 'skill_tag' must be a string")
+        effects.append(KitEffect(kind=kind, value=float(value),
+                                 skill_tag=skill_tag, scaling=scaling))
+    condition = raw.get("condition")
+    if condition is not None and not isinstance(condition, dict):
+        raise AgentError(f"{where}: 'condition' must be an object")
+    return KitBuff(
+        name=name,
+        max_stacks=max_stacks,
+        effects=tuple(effects),
+        note=str(raw.get("note", "")),
+        condition=condition,
+    )
+
+
+def _parse_mindscapes(raw, agent_key: str) -> dict[int, Mindscape]:
+    """Validate the optional 'mindscapes' block (levels "1".."6").
+
+    A level with an 'effects' list is modeled (parsed as a kit buff);
+    a level without one is documentation-only (name + note).
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise AgentError(f"Agent '{agent_key}': 'mindscapes' must be an object")
+    mindscapes: dict[int, Mindscape] = {}
+    for level_str, entry in raw.items():
+        if level_str not in {"1", "2", "3", "4", "5", "6"}:
+            raise AgentError(
+                f"Agent '{agent_key}': mindscape level must be '1'..'6', "
+                f"got {level_str!r}"
+            )
+        level = int(level_str)
+        if not isinstance(entry, dict):
+            raise AgentError(
+                f"Agent '{agent_key}': mindscape {level} must be an object"
+            )
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise AgentError(
+                f"Agent '{agent_key}': mindscape {level} is missing a 'name'"
+            )
+        buff = None
+        if entry.get("effects") is not None:
+            buff = _parse_kit_buff(
+                entry, f"Agent '{agent_key}' mindscape {level}"
+            )
+        mindscapes[level] = Mindscape(
+            level=level,
+            name=name,
+            buff=buff,
+            note=str(entry.get("note", "")),
+        )
+    return mindscapes
 
 
 def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
@@ -152,6 +371,29 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
                 f"data/engines.json)"
             )
 
+        core_passive = None
+        if entry.get("core_passive") is not None:
+            core_passive = _parse_kit_buff(
+                entry["core_passive"], f"Agent '{key}' core_passive"
+            )
+        additional_ability = None
+        if entry.get("additional_ability") is not None:
+            additional_ability = _parse_kit_buff(
+                entry["additional_ability"], f"Agent '{key}' additional_ability"
+            )
+        mindscapes = _parse_mindscapes(entry.get("mindscapes"), key)
+
+        team_buffs_raw = entry.get("team_buffs", [])
+        if not isinstance(team_buffs_raw, list):
+            raise AgentError(f"Agent '{key}': 'team_buffs' must be a list")
+        team_buffs = tuple(
+            _parse_kit_buff(item, f"Agent '{key}' team_buffs[{i}]")
+            for i, item in enumerate(team_buffs_raw)
+        )
+        seen_names = [b.name for b in team_buffs]
+        if len(seen_names) != len(set(seen_names)):
+            raise AgentError(f"Agent '{key}': duplicate team buff names")
+
         agents[key] = Agent(
             key=key,
             name=name,
@@ -169,6 +411,12 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             ),
             core_bonus_anomaly_mastery=float(core.get("anomaly_mastery", 0.0)),
             default_engine=default_engine,
+            specialty=str(entry.get("specialty", "")),
+            faction=entry.get("faction"),
+            core_passive=core_passive,
+            additional_ability=additional_ability,
+            mindscapes=mindscapes,
+            team_buffs=team_buffs,
         )
     return agents
 
@@ -275,12 +523,17 @@ def aggregate_build(
         for stat, value in set_bonus_stats(discs, disc_sets, set_stacks).items():
             _fold_stat(build, stat, value)
 
-    build.atk = formulas.atk_final(
+    build.atk_pre_combat = formulas.atk_final(
         agent_base_atk=agent.total_base_atk(),
         engine_base_atk=engine.base_atk,
         atk_pct_total=build.other.pop("_atk_pct", 0.0),
         atk_flat_total=build.other.pop("_atk_flat", 0.0),
     )
-    # Combat ATK% buffs (e.g. set 4pc stacks) multiply the finished panel ATK.
-    build.atk *= 1.0 + build.other.pop("_combat_atk_pct", 0.0)
+    # Combat ATK% buffs (set 4pc stacks, team ATK% buffs) multiply the
+    # finished panel ATK in ONE additive bracket — measured in-game
+    # 2026-07-03 (validation #4: Puffer 15% + Half-Sugar Bunny 10% each
+    # applied to the unbuffed panel, not compounding). The API adds team
+    # ATK% entries into the same bracket.
+    build.combat_atk_pct = build.other.pop("_combat_atk_pct", 0.0)
+    build.atk = build.atk_pre_combat * (1.0 + build.combat_atk_pct)
     return build

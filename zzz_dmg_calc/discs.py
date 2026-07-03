@@ -26,6 +26,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,6 +38,9 @@ LOADOUTS_FILE = Path(__file__).parent / "data" / "loadouts.json"
 
 #: Default location of the disc set registry.
 SETS_FILE = Path(__file__).parent / "data" / "disc_sets.json"
+
+#: Default location of the user disc inventory (user data, optional).
+USER_DISCS_FILE = Path(__file__).parent / "data" / "user_discs.json"
 
 #: Slots whose main stat is fixed (single option in the table).
 SLOTS = (1, 2, 3, 4, 5, 6)
@@ -229,6 +233,43 @@ class SetBonus4pc:
 
 
 @dataclass(frozen=True)
+class SetDmgBonus:
+    """A skill-type-conditional DMG% bonus granted by a 4-piece set.
+
+    Applies (unconditionally, no stacks) only when the calculated hit's
+    skill tag matches ``skill_tag`` — e.g. Puffer Electro's Ultimate DMG
+    +20% applies only to hits tagged ``"ultimate"``. Tag keys are defined
+    in ``constants.json`` (``skill_tags``) and validated at calculation
+    time so a typo here can't silently never-apply.
+    """
+
+    skill_tag: str
+    value: float
+    note: str = ""
+
+
+#: Effect kinds a squad-facing 4-piece may grant the on-field agent.
+SQUAD_4PC_KINDS = ("dmg_bonus", "crit_rate", "crit_dmg", "res_shred",
+                   "dmg_taken", "daze_bonus")
+
+
+@dataclass(frozen=True)
+class SquadBonus4pc:
+    """A team-facing 4-piece effect granted to the ON-FIELD agent.
+
+    Worn by an off-field support (e.g. Swing Jazz on a stunner); the
+    on-field attacker receives ``value × active stacks`` of ``kind``
+    (DMG%, CRIT DMG, ...). Active stacks are a runtime input
+    (``max_stacks`` 1 = on/off).
+    """
+
+    value: float
+    kind: str = "dmg_bonus"
+    max_stacks: int = 1
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class DiscSet:
     """One entry of the disc set registry (``data/disc_sets.json``).
 
@@ -237,12 +278,18 @@ class DiscSet:
             2+ pieces are equipped (the in-game stat sheet shows these).
         bonus_4pc: Modeled stacking effect, or ``None`` if the set's 4-piece
             isn't modeled (its ``notes`` say why).
+        bonus_4pc_dmg: Skill-type-conditional DMG% bonuses that come with
+            the 4-piece (gated by the hit's skill tag, not by stacks).
+        squad_4pc: Team-facing 4-piece part (worn by a support, buffs the
+            on-field agent), or ``None``.
     """
 
     key: str
     name: str
     bonus_2pc: dict[str, float]
     bonus_4pc: SetBonus4pc | None = None
+    bonus_4pc_dmg: tuple[SetDmgBonus, ...] = ()
+    squad_4pc: SquadBonus4pc | None = None
     notes: str = ""
 
 
@@ -301,11 +348,64 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 note=str(raw_4pc.get("note", "")),
             )
 
+        dmg_bonuses: list[SetDmgBonus] = []
+        raw_dmg = entry.get("bonus_4pc_dmg", [])
+        if not isinstance(raw_dmg, list):
+            raise DiscError(f"Set '{key}': 'bonus_4pc_dmg' must be a list")
+        for item in raw_dmg:
+            if not isinstance(item, dict):
+                raise DiscError(
+                    f"Set '{key}': 'bonus_4pc_dmg' entries must be objects"
+                )
+            tag = item.get("skill_tag")
+            value = item.get("value")
+            if not isinstance(tag, str) or not tag.strip():
+                raise DiscError(
+                    f"Set '{key}': typed DMG bonus needs a 'skill_tag'"
+                )
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise DiscError(
+                    f"Set '{key}': typed DMG bonus 'value' must be positive"
+                )
+            dmg_bonuses.append(SetDmgBonus(
+                skill_tag=tag,
+                value=float(value),
+                note=str(item.get("note", "")),
+            ))
+
+        squad_4pc = None
+        raw_squad = entry.get("squad_4pc")
+        if raw_squad is not None:
+            if not isinstance(raw_squad, dict):
+                raise DiscError(f"Set '{key}': 'squad_4pc' must be an object")
+            value = raw_squad.get("value")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise DiscError(f"Set '{key}': squad 'value' must be positive")
+            max_stacks = raw_squad.get("max_stacks", 1)
+            if isinstance(max_stacks, bool) or not isinstance(max_stacks, int) or max_stacks < 1:
+                raise DiscError(
+                    f"Set '{key}': squad 'max_stacks' must be an integer >= 1"
+                )
+            kind = raw_squad.get("kind", "dmg_bonus")
+            if kind not in SQUAD_4PC_KINDS:
+                raise DiscError(
+                    f"Set '{key}': squad 'kind' must be one of "
+                    f"{list(SQUAD_4PC_KINDS)}, got {kind!r}"
+                )
+            squad_4pc = SquadBonus4pc(
+                value=float(value),
+                kind=kind,
+                max_stacks=max_stacks,
+                note=str(raw_squad.get("note", "")),
+            )
+
         sets[key] = DiscSet(
             key=key,
             name=name,
             bonus_2pc={s: float(v) for s, v in bonus_2pc.items()},
             bonus_4pc=bonus_4pc,
+            bonus_4pc_dmg=tuple(dmg_bonuses),
+            squad_4pc=squad_4pc,
             notes=str(entry.get("notes", "")),
         )
     return sets
@@ -377,6 +477,51 @@ def set_bonus_stats(
     return bonuses
 
 
+def set_tagged_dmg_bonuses(
+    discs: list[Disc] | tuple[Disc, ...],
+    sets: dict[str, DiscSet],
+    skill_tag: str | None,
+    valid_tags: set[str] | frozenset[str] | None = None,
+) -> dict[str, float]:
+    """Skill-type-conditional DMG% granted by equipped 4-piece sets.
+
+    Returns:
+        set key -> total DMG% (fraction) for every set with >= 4 equipped
+        pieces whose typed bonuses match the hit's ``skill_tag``.
+        ``skill_tag=None`` (untyped hit) matches nothing.
+
+    Raises:
+        DiscError: unknown set key on a disc, or — when ``valid_tags`` is
+            given — a set's typed bonus naming a tag that isn't in it
+            (protects against data-file typos that would otherwise
+            silently never apply).
+    """
+    counts: dict[str, int] = {}
+    for disc in discs:
+        if disc.disc_set is None:
+            continue
+        if disc.disc_set not in sets:
+            raise DiscError(
+                f"Disc in slot {disc.slot} names unknown set "
+                f"'{disc.disc_set}'; options: {sorted(sets)}"
+            )
+        counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+
+    bonuses: dict[str, float] = {}
+    for key, count in counts.items():
+        if count < 4:
+            continue
+        for bonus in sets[key].bonus_4pc_dmg:
+            if valid_tags is not None and bonus.skill_tag not in valid_tags:
+                raise DiscError(
+                    f"Set '{key}': typed DMG bonus names unknown skill tag "
+                    f"'{bonus.skill_tag}'; valid tags: {sorted(valid_tags)}"
+                )
+            if skill_tag is not None and bonus.skill_tag == skill_tag:
+                bonuses[key] = bonuses.get(key, 0.0) + bonus.value
+    return bonuses
+
+
 @dataclass(frozen=True)
 class Loadout:
     """A named, pre-validated set of discs from ``data/loadouts.json``."""
@@ -387,18 +532,26 @@ class Loadout:
 
 
 def load_loadouts(
-    disc_data: DiscData, path: Path = LOADOUTS_FILE
+    disc_data: DiscData, path: Path = LOADOUTS_FILE,
+    user_discs: dict[str, Disc] | None = None,
+    user_discs_path: Path = USER_DISCS_FILE,
 ) -> dict[str, Loadout]:
     """Load saved disc loadouts and validate every disc in them.
 
-    Loadouts are user convenience data (recurring test sets), stored with
-    substats as TOTAL rolls. A missing file is not an error — loadouts are
-    optional — but a malformed file or an invalid disc is, so a stale
-    loadout can't silently corrupt a calculation.
+    Loadouts are user convenience data (recurring test sets). A disc entry
+    is either an embedded disc (substats as TOTAL rolls) or a reference
+    into the user disc inventory: ``{"disc_id": "d1"}``. A missing file is
+    not an error — loadouts are optional — but a malformed file or an
+    invalid disc is, so a stale loadout can't silently corrupt a
+    calculation.
+
+    Args:
+        user_discs: Already-loaded inventory to resolve references against;
+            ``None`` loads it from ``user_discs_path``.
 
     Raises:
-        DiscError: on malformed JSON, invalid discs, or duplicate slots
-            within a loadout.
+        DiscError: on malformed JSON, invalid discs, unknown ``disc_id``
+            references, or duplicate slots within a loadout.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -411,6 +564,9 @@ def load_loadouts(
     if not isinstance(entries, dict):
         raise DiscError("'loadouts' must be an object of name -> loadout")
 
+    if user_discs is None:
+        user_discs = load_user_discs(disc_data, user_discs_path)
+
     loadouts: dict[str, Loadout] = {}
     for name, entry in entries.items():
         if not isinstance(entry, dict) or not isinstance(entry.get("discs"), list):
@@ -421,18 +577,27 @@ def load_loadouts(
         for disc_raw in entry["discs"]:
             if not isinstance(disc_raw, dict):
                 raise DiscError(f"Loadout '{name}': disc entries must be objects")
-            try:
-                disc = Disc(
-                    slot=disc_raw["slot"],
-                    main_stat=disc_raw["main_stat"],
-                    substats=dict(disc_raw.get("substats", {})),
-                    disc_set=disc_raw.get("set"),
-                )
-            except KeyError as exc:
-                raise DiscError(
-                    f"Loadout '{name}': disc is missing {exc}"
-                ) from None
-            validate_disc(disc, disc_data)   # raises DiscError with details
+            if "disc_id" in disc_raw:
+                disc_id = disc_raw["disc_id"]
+                if disc_id not in user_discs:
+                    raise DiscError(
+                        f"Loadout '{name}': unknown disc_id '{disc_id}' "
+                        f"(not in the user disc inventory)"
+                    )
+                disc = user_discs[disc_id]
+            else:
+                try:
+                    disc = Disc(
+                        slot=disc_raw["slot"],
+                        main_stat=disc_raw["main_stat"],
+                        substats=dict(disc_raw.get("substats", {})),
+                        disc_set=disc_raw.get("set"),
+                    )
+                except KeyError as exc:
+                    raise DiscError(
+                        f"Loadout '{name}': disc is missing {exc}"
+                    ) from None
+                validate_disc(disc, disc_data)   # raises DiscError with details
             if disc.slot in seen_slots:
                 raise DiscError(f"Loadout '{name}': duplicate slot {disc.slot}")
             seen_slots.add(disc.slot)
@@ -444,6 +609,195 @@ def load_loadouts(
             discs=tuple(discs),
         )
     return loadouts
+
+
+# ---------------------------------------------------------------------------
+# User disc inventory (data/user_discs.json) and loadout saving
+#
+# User data like loadouts: discs the user has entered, stored with substats
+# as TOTAL rolls and keyed by a stable generated id ("d1", "d2", ...).
+# Saved loadouts reference these ids ({"disc_id": "d1"}), so a disc lives in
+# one place and editing it updates every loadout that uses it.
+# ---------------------------------------------------------------------------
+
+_USER_DISCS_META = {
+    "description": ("User disc inventory: discs saved from the UI, referenced "
+                    "by saved loadouts via their id. User data, not game data."),
+    "conventions": ("Substats are stored as TOTAL rolls (in-game '+N' + 1). "
+                    "Every disc is validated against discs.json on load. "
+                    "Optional 'set' names a key in disc_sets.json."),
+}
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Write JSON via a temp file + replace, so a crash can't corrupt data."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _disc_payload(disc: Disc) -> dict:
+    """A disc's JSON form (loadouts/inventory convention: total rolls)."""
+    payload: dict = {
+        "slot": disc.slot,
+        "main_stat": disc.main_stat,
+        "substats": dict(disc.substats),
+    }
+    if disc.disc_set:
+        payload["set"] = disc.disc_set
+    return payload
+
+
+def _read_user_discs_raw(path: Path) -> dict:
+    """The inventory file as raw JSON; a missing file is an empty inventory."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"_meta": dict(_USER_DISCS_META), "discs": {}}
+    except json.JSONDecodeError as exc:
+        raise DiscError(f"User discs file is not valid JSON: {exc}") from None
+    if not isinstance(raw.get("discs", {}), dict):
+        raise DiscError("'discs' must be an object of id -> disc")
+    raw.setdefault("discs", {})
+    return raw
+
+
+def load_user_discs(
+    disc_data: DiscData, path: Path = USER_DISCS_FILE
+) -> dict[str, Disc]:
+    """Load the user disc inventory, validating every disc.
+
+    Returns:
+        Mapping of disc id -> :class:`Disc`, in file order.
+
+    Raises:
+        DiscError: malformed file or any invalid disc (so a corrupt
+            inventory can't silently poison a calculation).
+    """
+    raw = _read_user_discs_raw(path)
+    discs: dict[str, Disc] = {}
+    for disc_id, entry in raw["discs"].items():
+        if not isinstance(entry, dict):
+            raise DiscError(f"User disc '{disc_id}' must be an object")
+        try:
+            disc = Disc(
+                slot=entry["slot"],
+                main_stat=entry["main_stat"],
+                substats=dict(entry.get("substats", {})),
+                disc_set=entry.get("set"),
+            )
+        except KeyError as exc:
+            raise DiscError(f"User disc '{disc_id}' is missing {exc}") from None
+        validate_disc(disc, disc_data)
+        discs[disc_id] = disc
+    return discs
+
+
+def save_user_disc(
+    disc: Disc, disc_data: DiscData, path: Path = USER_DISCS_FILE
+) -> tuple[str, bool]:
+    """Add ``disc`` to the inventory (validated); dedupes identical discs.
+
+    Returns:
+        ``(disc_id, created)`` — ``created`` is False when an identical
+        disc (same slot/main/substats/set) already existed, in which case
+        its id is returned instead of storing a duplicate.
+
+    Raises:
+        DiscError: invalid disc, or a malformed/invalid inventory file.
+    """
+    validate_disc(disc, disc_data)
+    raw = _read_user_discs_raw(path)
+    existing = load_user_discs(disc_data, path) if raw["discs"] else {}
+    for disc_id, other in existing.items():
+        if other == disc:
+            return disc_id, False
+
+    numbers = [int(k[1:]) for k in raw["discs"]
+               if k.startswith("d") and k[1:].isdigit()]
+    disc_id = f"d{max(numbers, default=0) + 1}"
+    raw["discs"][disc_id] = _disc_payload(disc)
+    _atomic_write_json(path, raw)
+    return disc_id, True
+
+
+def delete_user_disc(
+    disc_id: str, path: Path = USER_DISCS_FILE,
+    loadouts_path: Path = LOADOUTS_FILE,
+) -> None:
+    """Remove a disc from the inventory.
+
+    Raises:
+        DiscError: unknown id, or the disc is referenced by a saved
+            loadout (delete/overwrite the loadout first).
+    """
+    raw = _read_user_discs_raw(path)
+    if disc_id not in raw["discs"]:
+        raise DiscError(f"Unknown user disc id '{disc_id}'")
+
+    try:
+        loadouts_raw = json.loads(loadouts_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        loadouts_raw = {}
+    except json.JSONDecodeError as exc:
+        raise DiscError(f"Loadouts file is not valid JSON: {exc}") from None
+    for name, entry in (loadouts_raw.get("loadouts") or {}).items():
+        discs_list = entry.get("discs") if isinstance(entry, dict) else None
+        for disc_raw in discs_list or []:
+            if isinstance(disc_raw, dict) and disc_raw.get("disc_id") == disc_id:
+                raise DiscError(
+                    f"Disc '{disc_id}' is used by loadout '{name}'; "
+                    f"delete or overwrite that loadout first"
+                )
+
+    del raw["discs"][disc_id]
+    _atomic_write_json(path, raw)
+
+
+def save_loadout(
+    name: str, description: str, disc_ids: list[str], disc_data: DiscData,
+    *, overwrite: bool = False, path: Path = LOADOUTS_FILE,
+    user_discs_path: Path = USER_DISCS_FILE,
+) -> None:
+    """Save a loadout as references into the user disc inventory.
+
+    Raises:
+        DiscError: empty name, unknown disc ids, duplicate slots, a name
+            collision without ``overwrite``, or a malformed loadouts file.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise DiscError("Loadout name must be a non-empty string")
+    name = name.strip()
+
+    inventory = load_user_discs(disc_data, user_discs_path)
+    seen_slots: set[int] = set()
+    for disc_id in disc_ids:
+        if disc_id not in inventory:
+            raise DiscError(f"Unknown user disc id '{disc_id}'")
+        slot = inventory[disc_id].slot
+        if slot in seen_slots:
+            raise DiscError(f"Duplicate slot {slot} in loadout '{name}'")
+        seen_slots.add(slot)
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raw = {"loadouts": {}}
+    except json.JSONDecodeError as exc:
+        raise DiscError(f"Loadouts file is not valid JSON: {exc}") from None
+    if not isinstance(raw.get("loadouts", {}), dict):
+        raise DiscError("'loadouts' must be an object of name -> loadout")
+    raw.setdefault("loadouts", {})
+
+    if name in raw["loadouts"] and not overwrite:
+        raise DiscError(f"Loadout '{name}' already exists")
+
+    raw["loadouts"][name] = {
+        "description": str(description or ""),
+        "discs": [{"disc_id": disc_id} for disc_id in disc_ids],
+    }
+    _atomic_write_json(path, raw)
 
 
 def disc_stats(disc: Disc, data: DiscData) -> dict[str, float]:

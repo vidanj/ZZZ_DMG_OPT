@@ -4,3 +4,4 @@ tests
 CLAUDE.md
 NOTES
 */__pycache__/
+*/*/__pycache__/

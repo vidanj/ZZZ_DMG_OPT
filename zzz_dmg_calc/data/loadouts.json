@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Saved disc loadouts, selectable at the CLI's disc step instead of manual entry. User data, not game data \u2014 edit freely.",
+    "description": "Saved disc loadouts, selectable at the CLI's disc step instead of manual entry. User data, not game data — edit freely.",
     "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1, counting the initial roll). Every disc is validated against discs.json on load: 4 distinct substats, no duplicate of the main stat, <= 6 rolls each, <= 9 total, unique slots per loadout. Optional 'set' names a key in disc_sets.json."
   },
   "loadouts": {
@@ -16,7 +16,7 @@
             "CRIT Rate": 2,
             "Anomaly Proficiency": 1
           },
-          "set": "BRANCH_SWORD"
+          "set": "BRANCH_BLADE_SONG"
         },
         {
           "slot": 2,
@@ -27,7 +27,7 @@
             "ATK%": 3,
             "Anomaly Proficiency": 1
           },
-          "set": "TECHNO"
+          "set": "WOODPECKER_ELECTRO"
         },
         {
           "slot": 3,
@@ -38,7 +38,7 @@
             "CRIT Rate": 3,
             "CRIT DMG": 2
           },
-          "set": "TECHNO"
+          "set": "WOODPECKER_ELECTRO"
         },
         {
           "slot": 4,
@@ -49,7 +49,7 @@
             "PEN": 2,
             "DEF": 2
           },
-          "set": "TECHNO"
+          "set": "WOODPECKER_ELECTRO"
         },
         {
           "slot": 5,
@@ -60,7 +60,7 @@
             "ATK%": 3,
             "ATK": 2
           },
-          "set": "BRANCH_SWORD"
+          "set": "BRANCH_BLADE_SONG"
         },
         {
           "slot": 6,
@@ -71,7 +71,30 @@
             "PEN": 2,
             "CRIT DMG": 3
           },
-          "set": "TECHNO"
+          "set": "WOODPECKER_ELECTRO"
+        }
+      ]
+    },
+    "NEKO Build 1": {
+      "description": "Crit build Neko 02072026",
+      "discs": [
+        {
+          "disc_id": "d3"
+        },
+        {
+          "disc_id": "d4"
+        },
+        {
+          "disc_id": "d5"
+        },
+        {
+          "disc_id": "d8"
+        },
+        {
+          "disc_id": "d7"
+        },
+        {
+          "disc_id": "d9"
         }
       ]
     }

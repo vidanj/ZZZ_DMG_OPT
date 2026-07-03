@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives (pilot: Sharpened Stinger only): 'rank' selects the row of 'per_stack_by_rank' (index rank-1); 'conditional_buff' is a stacking DMG% buff applied only to damage of its 'element', with active stacks asked at runtime."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'conditional_buff' is a stacking DMG% buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox)."
   },
   "engines": {
     "dummy_engine": {
@@ -12,6 +12,72 @@
       "base_atk": 713,
       "advanced_stat": { "CRIT Rate": 0.24 },
       "passive_note": "R1 passive (Ice DMG +25%, conditional CRIT Rate buffs) is NOT auto-applied; enter it as external buffs when active."
+    },
+    "steel_cushion": {
+      "name": "Steel Cushion",
+      "base_atk": 684,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_dmg_by_rank": [
+          {
+            "element": "physical",
+            "values": [0.20, 0.25, 0.30, 0.35, 0.40],
+            "note": "Metal Cat Claws: Physical DMG increase, always active while equipped."
+          }
+        ],
+        "conditional_buff": {
+          "name": "Metal Cat Claws (back attack)",
+          "element": null,
+          "per_stack_by_rank": [0.25, 0.315, 0.38, 0.44, 0.50],
+          "max_stacks": 1,
+          "note": "Equipper's DMG increases when hitting the enemy from behind. Nekomata M1: while the enemy is Stunned, all her attacks count as back attacks."
+        }
+      },
+      "passive_note": "Both passive parts are modeled: Physical DMG% applies automatically at the selected rank; toggle the back-attack bonus when the hit lands from behind. Verified 2026-07-02 (Game8/zzz.gg): Lv.60 base ATK 684, CRIT Rate 24%."
+    },
+    "half_sugar_bunny": {
+      "name": "Half-Sugar Bunny",
+      "base_atk": 713,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Fragile Sweetness: squad ATK%",
+            "kind": "atk_pct",
+            "values": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "note": "All squad members' ATK% (unique to the squad). CONFIRMED in-game 2026-07-03 (validation #4): panel-multiplying, sharing ONE additive bracket with Combat ATK% set effects (both apply to the unbuffed panel)."
+          },
+          {
+            "name": "Fragile Sweetness: squad CRIT DMG (Ether Veil)",
+            "kind": "crit_dmg",
+            "values": [0.30, 0.345, 0.39, 0.435, 0.48],
+            "note": "When the equipper activates/extends an Ether Veil: squad CRIT DMG for 60s."
+          }
+        ]
+      },
+      "passive_note": "Zhao's signature (verified 2026-07-03, Game8). Squad Max HP% and Energy Regen parts are not modeled (no damage effect). Squad buffs apply via the Team card when a support wears it."
+    },
+    "yesterday_calls": {
+      "name": "Yesterday Calls",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Yesterday Calls: squad CRIT DMG (3 Daze stacks)",
+            "kind": "crit_dmg",
+            "values": [0.30, 0.345, 0.39, 0.435, 0.48],
+            "note": "At 3 stacks of the equipper's EX-Special Daze buff: squad CRIT DMG for 40s. R1 30% / R5 48% verified (Game8); R2-R4 interpolated on the standard refinement progression."
+          }
+        ]
+      },
+      "passive_note": "Dialyn's signature (verified 2026-07-03, Game8). Off-field Energy Regen and the Daze +9-14.5%/stack parts affect buildup only, not proc damage - not modeled."
     },
     "sharpened_stinger": {
       "name": "Sharpened Stinger (R2)",

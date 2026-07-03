@@ -30,6 +30,46 @@ python main.py
 
 On Windows, `py` can replace `python`.
 
+### Web UI (direct hit)
+
+A local browser form covers the **Direct hit** mode with every input visible
+and editable at once — change any field and the result updates instantly:
+
+```bash
+python run_ui.py                # starts a local server and opens the browser
+python run_ui.py --port 9000    # pick another port
+python run_ui.py --no-browser   # don't auto-open the browser
+```
+
+It serves only on your machine (`127.0.0.1`), uses the same calculation and
+validation as the CLI (invalid input shows the same error messages inline),
+and remembers your inputs between sessions. Loadouts from
+[zzz_dmg_calc/data/loadouts.json](zzz_dmg_calc/data/loadouts.json) can be
+loaded as a starting point. Anomaly proc and Disorder modes are CLI-only for
+now.
+
+The web UI mirrors all of this with form controls: an engine **rank
+selector**, and an **Agent Kit** card with checkboxes/stack inputs for the
+modeled core passive, Additional Ability, and mindscapes (unmodeled ones
+are listed for reference).
+
+A **Team** card adds up to two **off-field supports** (e.g. Zhao, Dialyn):
+their team buffs (with owner-stat inputs where a buff scales, like Zhao's
+Max HP), their signature engine's squad buffs (with its own refinement
+rank), and any squad-facing 4-piece set they wear (Swing Jazz, Proto Punk,
+Astral Voice). Team-conditional abilities show a live "condition met"
+hint — e.g. Nekomata's Catwalk lights up when a Physical/Cunning Hares
+teammate is picked. The CLI asks the same things as numbered/y-N prompts.
+
+The UI also manages a **disc inventory**
+([zzz_dmg_calc/data/user_discs.json](zzz_dmg_calc/data/user_discs.json)):
+each disc card has **Save** (stores the disc, skipping exact duplicates) and
+**Equip…** (searches your saved discs for that slot by main stat, set, or
+substat and fills the card). **Save loadout** stores the currently equipped
+discs as a named loadout — discs go into the inventory and the loadout
+references their ids, so re-rolling a saved disc updates every loadout using
+it. Deleting a disc that a loadout still references is blocked.
+
 ## 3. Answering the prompts, step by step
 
 Every menu is numbered — type the **number** of your choice and press Enter.
@@ -44,16 +84,26 @@ weakness/resistance, and the stun multiplier — all loaded automatically.
 
 ### Step 2 — Agent
 
-Pick the agent. **v1 has one entry: `DUMMY (Ellen copy) [ice]`** — a test
-agent using Ellen's Lv. 60 stats with max core skill. Its attack element
-(ice) is matched against the boss's RES automatically.
+Pick the agent. The roster includes the `DUMMY (Ellen copy) [ice]` test
+agent, **Nekomata [physical]** (the first fully-modeled agent: core
+passive and damage-relevant mindscapes are asked as toggles), and the
+Phase 5 anomaly roster. The attack element is matched against the boss's
+RES automatically.
+
+For agents with a modeled kit (Nekomata), the program asks about each
+**conditional**: core passive active? (y/N), mindscape stacks, etc. Only
+mindscapes that buff stats/DMG or debuff the enemy are modeled — motion
+value mindscapes (skill Lv. +2) are noted but you enter the higher
+multiplier yourself in Step 5b.
 
 ### Step 3 — W-Engine
 
-Pick the W-Engine. If only one exists (v1: the DUMMY engine, a Deep Sea
-Visitor copy) it is selected automatically. **Engine passives are never
-auto-applied** — the program prints a note telling you what to add manually
-as external buffs in Step 6 (e.g. Ice DMG +25% while active).
+Pick the W-Engine, then its **refinement rank** (R1–R5, Enter = the data
+default) — one engine entry covers every rank. Modeled passive parts are
+applied automatically at the chosen rank (e.g. Steel Cushion's Physical
+DMG +20–40%, plus a y/N toggle for its back-attack bonus); anything not
+modeled is printed as a note to add manually as external buffs in Step 6
+(e.g. the DUMMY engine's Ice DMG +25% while active).
 
 ### Step 4 — Drive discs (slots 1–6)
 
@@ -74,9 +124,10 @@ For manual entry, each of the six slots asks:
 
    After the main stat, pick the disc's **set** (or "No set / not modeled").
    Set bonuses are applied automatically: **2-piece bonuses always** (e.g.
-   TECHNO/Woodpecker +8% CRIT Rate, Branch & Sword +16% CRIT DMG), and if
-   you equip a **4-piece** with a modeled effect, the program asks how many
-   stacks are active (e.g. TECHNO: 0-3 stacks of +9% ATK; Enter = 0, since
+   Woodpecker Electro +8% CRIT Rate, Branch & Blade Song +16% CRIT DMG), and
+   if you equip a **4-piece** with a modeled effect, the program asks how many
+   stacks are active (e.g. Woodpecker Electro: 0-3 stacks of +9% ATK; Enter =
+   0, since
    stacks only exist in combat after crits land). Sets live in
    [zzz_dmg_calc/data/disc_sets.json](zzz_dmg_calc/data/disc_sets.json) —
    add new ones there.
@@ -146,6 +197,13 @@ Choose **Direct hit**, **Anomaly proc**, or **Disorder**:
 Type the skill's damage multiplier **as a percent of ATK** — the number the
 in-game skill description shows. Example: a hit listed as `250% ATK` →
 type `250`.
+
+Then pick the move's **damage type** (Basic Attack, Dash Attack, Dodge
+Counter, Special, EX Special, Chain Attack, Ultimate, Assists — or
+"Untyped" to skip). This gates skill-type-conditional bonuses: e.g. with a
+4-piece Puffer Electro equipped, its **Ultimate DMG +20%** applies
+automatically when — and only when — the damage type is Ultimate. The web
+UI has the same selector next to the skill multiplier.
 
 > **Addendum — whole-move convention.** The calculator assumes the move
 > **hits in its entirety**: enter the skill's TOTAL motion value, and the

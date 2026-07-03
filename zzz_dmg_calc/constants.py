@@ -38,6 +38,9 @@ class Constants:
         base_crit_rate: CRIT Rate every agent starts with (fraction, 0.05).
         base_crit_dmg: CRIT DMG every agent starts with (fraction, 0.50).
         crit_rate_cap: Maximum effective CRIT Rate (fraction, 1.0).
+        skill_tags: Skill-type tag key -> display name (e.g. ``"ultimate"``
+            -> ``"Ultimate"``). Gates skill-type-conditional DMG% bonuses:
+            a hit's tag is chosen by the user before calculating.
     """
 
     level_coefficients: dict[int, float]
@@ -45,6 +48,7 @@ class Constants:
     base_crit_rate: float
     base_crit_dmg: float
     crit_rate_cap: float
+    skill_tags: dict[str, str]
 
     def level_coefficient(self, level: int) -> float:
         """Return the attacker level factor for ``level``.
@@ -133,10 +137,26 @@ def load_constants(path: Path = DATA_FILE) -> Constants:
             table[level] = float(factor)
         return table
 
+    tags_raw = raw.get("skill_tags")
+    if not isinstance(tags_raw, dict) or not tags_raw:
+        raise ConstantsError(
+            "'skill_tags' must be a non-empty object of tag key -> display name"
+        )
+    skill_tags: dict[str, str] = {}
+    for tag, label in tags_raw.items():
+        if not isinstance(tag, str) or not tag.strip():
+            raise ConstantsError(f"skill_tags key {tag!r} must be a non-empty string")
+        if not isinstance(label, str) or not label.strip():
+            raise ConstantsError(
+                f"skill_tags['{tag}'] must be a non-empty display name"
+            )
+        skill_tags[tag] = label
+
     return Constants(
         level_coefficients=level_table("level_coefficients"),
         anomaly_level_multipliers=level_table("anomaly_level_multipliers"),
         base_crit_rate=_require_fraction(raw, "base_crit_rate"),
         base_crit_dmg=_require_fraction(raw, "base_crit_dmg"),
         crit_rate_cap=_require_fraction(raw, "crit_rate_cap"),
+        skill_tags=skill_tags,
     )

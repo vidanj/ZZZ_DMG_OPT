@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZZZ DMG Optimizer</title>
+<style>
+  :root {
+    --bg: #141414;
+    --card: #1e1e1e;
+    --card-edge: #2c2c2c;
+    --text: #e8e8e8;
+    --muted: #9a9a9a;
+    --accent: #d4f04a;      /* ZZZ lime */
+    --accent-dim: #90a332;
+    --error: #ff6b6b;
+    --input-bg: #262626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  h1 span { color: var(--accent); }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--accent); margin: 0 0 10px;
+  }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--card-edge);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  select, input[type=number], input[type=text] {
+    width: 100%; padding: 6px 8px;
+    background: var(--input-bg); color: var(--text);
+    border: 1px solid #3a3a3a; border-radius: 6px;
+    font: inherit;
+  }
+  select:focus, input:focus { outline: 1px solid var(--accent-dim); }
+  .row { display: grid; gap: 10px; margin-bottom: 10px; }
+  .row.c2 { grid-template-columns: 1fr 1fr; }
+  .row.c3 { grid-template-columns: 1fr 1fr 1fr; }
+  .hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+  .note { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 6px; }
+
+  /* Disc grid */
+  .discs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .disc {
+    background: var(--input-bg); border: 1px solid #333; border-radius: 8px;
+    padding: 10px;
+  }
+  .disc.off { opacity: .45; }
+  .disc header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-weight: 600;
+  }
+  .disc header label { display: flex; gap: 5px; align-items: center; margin: 0; cursor: pointer; }
+  .disc .sub { display: grid; grid-template-columns: 1fr 64px; gap: 6px; margin-top: 6px; }
+  .disc .sub input { text-align: center; }
+  .disc .actions { display: flex; gap: 6px; margin-bottom: 8px; }
+  button.mini {
+    padding: 3px 10px; font-size: 12px; border: 1px solid #444;
+    background: #2a2a2a; border-radius: 5px;
+  }
+  button.mini:hover { border-color: var(--accent-dim); }
+
+  /* Inventory picker (per disc card) */
+  .picker { margin: 6px 0 8px; border: 1px solid #3a3a3a; border-radius: 6px;
+            padding: 6px; background: #1b1b1b; }
+  .picker input { margin-bottom: 6px; }
+  .picker-list { max-height: 180px; overflow-y: auto; }
+  .picker-item {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 6px; padding: 4px 6px; border-radius: 5px; cursor: pointer;
+    font-size: 12px;
+  }
+  .picker-item:hover { background: #2e2e2e; }
+  .picker-item .del { color: var(--muted); background: none; border: none;
+                      padding: 0 4px; font-size: 13px; }
+  .picker-item .del:hover { color: var(--error); }
+  .picker-empty { color: var(--muted); font-size: 12px; padding: 4px 6px;
+                  font-style: italic; }
+  .toolbar { display: flex; gap: 8px; align-items: end; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar > div { flex: 1; min-width: 160px; }
+  button {
+    padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer;
+    background: #333; color: var(--text); font: inherit;
+  }
+  button:hover { background: #3d3d3d; }
+  button.primary {
+    background: var(--accent); color: #111; font-weight: 700; font-size: 15px;
+    width: 100%; padding: 10px;
+  }
+  button.primary:hover { background: #e2fc60; }
+
+  /* Results */
+  #results { position: sticky; top: 16px; }
+  .banner {
+    display: none; background: #3a1c1c; border: 1px solid var(--error);
+    color: var(--error); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+    white-space: pre-wrap;
+  }
+  .stat-line { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; }
+  .stat-line b { color: var(--accent); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { padding: 6px 8px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--muted); font-size: 12px; text-transform: uppercase; border-bottom: 1px solid #383838; }
+  tbody tr:nth-child(odd) { background: #232323; }
+  td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+  tr.avg td { color: var(--accent); }
+  .placeholder { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<h1>ZZZ <span>DMG Optimizer</span> — Direct Hit</h1>
+
+<div class="layout">
+<div id="inputs">
+
+  <div class="card">
+    <h2>Target &amp; Agent</h2>
+    <div class="row c3">
+      <div><label>Boss</label><select id="boss"></select></div>
+      <div><label>Agent</label><select id="agent"></select></div>
+      <div style="display:grid;grid-template-columns:1fr 72px;gap:6px">
+        <div><label>W-Engine</label><select id="engine"></select></div>
+        <div><label>Rank</label><select id="engine-rank"></select></div>
+      </div>
+    </div>
+    <div class="hint" id="matchup"></div>
+    <div class="hint" id="engine-auto" style="color:var(--accent)"></div>
+    <div class="note" id="engine-note"></div>
+  </div>
+
+  <div class="card" id="kit-card" style="display:none">
+    <h2>Agent Kit <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(conditionals — activate what applies to the hit)</span></h2>
+    <div id="kit-controls"></div>
+    <p class="note" id="kit-unmodeled"></p>
+  </div>
+
+  <div class="card" id="team-card">
+    <h2>Team <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(off-field supports — their buffs applied to the on-field agent)</span></h2>
+    <div class="row c2">
+      <div class="support" data-slot="0"></div>
+      <div class="support" data-slot="1"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Drive Discs</h2>
+    <div class="toolbar">
+      <div><label>Loadout</label><select id="loadout"></select></div>
+      <button id="load-loadout">Load</button>
+      <button id="clear-discs">Clear all</button>
+    </div>
+    <div class="discs" id="discs"></div>
+    <p class="hint">Substats: pick the stat, then its in-game <b>+N</b> upgrade
+    count (0 = base substat). Exactly 4 distinct substats per equipped disc,
+    max +5 on one substat, max 5 upgrades total per disc.
+    <b>Save</b> stores a card's disc in your inventory
+    (<code>user_discs.json</code>); <b>Equip…</b> searches the inventory for
+    that slot.</p>
+    <div class="toolbar" style="margin-top:12px">
+      <div><label>Save equipped discs as a new loadout — name</label>
+        <input type="text" id="loadout-name" placeholder="e.g. NEKO CRIT"></div>
+      <div><label>Description (optional)</label>
+        <input type="text" id="loadout-desc"></div>
+      <button id="save-loadout">Save loadout</button>
+    </div>
+    <div class="hint" id="save-feedback"></div>
+    <div id="set-stacks"></div>
+  </div>
+
+  <div class="card">
+    <h2>Skill &amp; Buffs <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(percentages, e.g. 250 = 250%)</span></h2>
+    <div class="row c3">
+      <div><label>Skill multiplier % (total motion value)</label>
+        <input type="number" id="skill" value="100" min="1" step="any"></div>
+      <div><label>Damage type (gates typed bonuses, e.g. Ultimate DMG%)</label>
+        <select id="skill-tag"></select></div>
+      <div id="engine-buff-wrap" style="display:none"></div>
+    </div>
+    <div class="row c3">
+      <div><label>Extra DMG% bonuses (total)</label>
+        <input type="number" id="dmg-bonus" placeholder="0" step="any"></div>
+      <div><label>Extra CRIT Rate %</label>
+        <input type="number" id="crit-rate" placeholder="0" step="any"></div>
+      <div><label>Extra CRIT DMG %</label>
+        <input type="number" id="crit-dmg" placeholder="0" step="any"></div>
+    </div>
+    <div class="row c3">
+      <div><label>Enemy RES shred/ignore %</label>
+        <input type="number" id="res-shred" placeholder="0" step="any"></div>
+      <div><label>'DMG taken' debuffs %</label>
+        <input type="number" id="dmg-taken" placeholder="0" step="any"></div>
+      <div><label>Stun multiplier % (daze bar)</label>
+        <input type="number" id="stun" placeholder="" step="any"></div>
+    </div>
+  </div>
+
+  <button class="primary" id="calc">Calculate</button>
+  <p class="hint" style="text-align:center">Recalculates automatically after the first run. Inputs are remembered between sessions.</p>
+</div>
+
+<div id="results">
+  <div class="banner" id="error"></div>
+  <div class="card">
+    <h2>Results</h2>
+    <div id="out" class="placeholder">Fill in the build and hit Calculate.</div>
+  </div>
+</div>
+</div>
+
+<script>
+"use strict";
+
+let DB = null;
+let autoCalc = false;
+const $ = id => document.getElementById(id);
+const STORAGE_KEY = "zzz-dmg-ui-state";
+const SLOTS = [1, 2, 3, 4, 5, 6];
+
+// ---------------------------------------------------------------------------
+// Form construction
+// ---------------------------------------------------------------------------
+
+function option(value, text) {
+  const o = document.createElement("option");
+  o.value = value; o.textContent = text;
+  return o;
+}
+
+function fillSelect(sel, entries) {   // entries: [value, label][]
+  sel.innerHTML = "";
+  for (const [v, t] of entries) sel.appendChild(option(v, t));
+}
+
+function buildStaticSelects() {
+  fillSelect($("boss"), DB.bosses.map(b => [b.name, b.name]));
+  fillSelect($("agent"), Object.entries(DB.agents).map(
+    ([k, a]) => [k, `${a.name} [${a.attribute}]`]));
+  fillSelect($("engine"), Object.entries(DB.engines).map(
+    ([k, e]) => [k, `${e.name} — ${e.base_atk} ATK`]));
+  fillSelect($("skill-tag"), [["", "Untyped / not relevant"],
+    ...Object.entries(DB.skill_tags).map(([k, label]) => [k, label])]);
+  rebuildLoadoutSelect();
+}
+
+function rebuildLoadoutSelect(selected) {
+  const names = Object.keys(DB.loadouts);
+  fillSelect($("loadout"), names.length
+    ? names.map(n => [n, `${n} — ${DB.loadouts[n].description}`])
+    : [["", "(no saved loadouts)"]]);
+  if (selected) $("loadout").value = selected;
+}
+
+function buildDiscGrid() {
+  const wrap = $("discs");
+  wrap.innerHTML = "";
+  for (const slot of SLOTS) {
+    const mains = Object.keys(DB.disc.main_stats[String(slot)]);
+    const fixed = mains.length === 1;
+    const card = document.createElement("div");
+    card.className = "disc";
+    card.dataset.slot = slot;
+    card.innerHTML = `
+      <header>
+        <span>Slot ${slot}</span>
+        <label><input type="checkbox" class="equipped" checked> equipped</label>
+      </header>
+      <div class="actions">
+        <button class="mini save-disc" title="Save this disc to the inventory">Save</button>
+        <button class="mini equip-disc" title="Equip a saved disc">Equip…</button>
+      </div>
+      <div class="picker" hidden>
+        <input type="text" class="picker-filter"
+               placeholder="filter: main stat / set / substat">
+        <div class="picker-list"></div>
+      </div>
+      <label>Main stat${fixed ? " (fixed)" : ""}</label>
+      <select class="main" ${fixed ? "disabled" : ""}></select>
+      <label style="margin-top:6px">Set</label>
+      <select class="set"></select>
+      <label style="margin-top:6px">Substats (stat / +N)</label>
+      <div class="subrows"></div>`;
+    const mainSel = card.querySelector(".main");
+    fillSelect(mainSel, mains.map(m =>
+      [m, `${m} (${fmtStat(m, DB.disc.main_stats[String(slot)][m])})`]));
+    const setSel = card.querySelector(".set");
+    fillSelect(setSel, [["", "No set / not modeled"],
+      ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+    const rows = card.querySelector(".subrows");
+    for (let i = 0; i < DB.disc.substats_per_disc; i++) {
+      const row = document.createElement("div");
+      row.className = "sub";
+      const sel = document.createElement("select");
+      sel.className = "substat";
+      const n = document.createElement("input");
+      n.type = "number"; n.className = "upgrades";
+      n.min = 0; n.max = DB.disc.max_rolls_per_substat - 1;
+      n.value = 0; n.step = 1;
+      row.appendChild(sel); row.appendChild(n);
+      rows.appendChild(row);
+    }
+    wrap.appendChild(card);
+    refreshSubstatOptions(card);
+    mainSel.addEventListener("change", () => refreshSubstatOptions(card));
+    card.querySelector(".equipped").addEventListener("change", ev => {
+      card.classList.toggle("off", !ev.target.checked);
+    });
+    setSel.addEventListener("change", refreshSetStacks);
+    card.querySelector(".save-disc").addEventListener("click", () => saveDisc(card));
+    card.querySelector(".equip-disc").addEventListener("click", () => {
+      const picker = card.querySelector(".picker");
+      picker.hidden = !picker.hidden;
+      if (!picker.hidden) {
+        renderPicker(card);
+        picker.querySelector(".picker-filter").focus();
+      }
+    });
+    card.querySelector(".picker-filter").addEventListener("input",
+      () => renderPicker(card));
+  }
+}
+
+/* Substat dropdowns list every legal substat except the disc's main stat;
+   an empty first entry means "not chosen yet". Duplicates are caught in
+   collectConfig with a friendly message. */
+function refreshSubstatOptions(card) {
+  const main = card.querySelector(".main").value;
+  for (const sel of card.querySelectorAll(".substat")) {
+    const keep = sel.value;
+    fillSelect(sel, [["", "—"],
+      ...Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
+        .map(s => [s, s])]);
+    if (keep && keep !== main) sel.value = keep;
+  }
+}
+
+/* Show a control for each set with >= 4 equipped pieces and a modeled
+   4-piece effect: a number input for stacking effects (e.g. Woodpecker
+   Electro's 0-3 Combat ATK% stacks), or a simple active? checkbox when
+   the effect is on/off (max_stacks = 1, e.g. Hormone Punk / Puffer
+   Electro) — internally the checkbox is just stacks 1/0. */
+function refreshSetStacks() {
+  const counts = {};
+  for (const card of document.querySelectorAll(".disc")) {
+    if (!card.querySelector(".equipped").checked) continue;
+    const key = card.querySelector(".set").value;
+    if (key) counts[key] = (counts[key] || 0) + 1;
+  }
+  const wrap = $("set-stacks");
+  const previous = {};
+  for (const inp of wrap.querySelectorAll("input"))
+    previous[inp.dataset.set] = setStackValue(inp);
+  wrap.innerHTML = "";
+  for (const [key, count] of Object.entries(counts)) {
+    const bonus = DB.sets[key].bonus_4pc;
+    if (count < 4 || !bonus) continue;
+    const div = document.createElement("div");
+    div.style.marginTop = "10px";
+    if (bonus.max_stacks === 1) {
+      div.innerHTML = `
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                      font-size:13px;color:var(--text)">
+          <input type="checkbox" data-set="${key}"
+                 ${previous[key] > 0 ? "checked" : ""}>
+          ${DB.sets[key].name} 4pc active —
+          +${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat}
+        </label>
+        <p class="note">${bonus.note}</p>`;
+    } else {
+      div.innerHTML = `
+        <label>${DB.sets[key].name} 4pc — active stacks of
+          +${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat} (0–${bonus.max_stacks})</label>
+        <input type="number" min="0" max="${bonus.max_stacks}" step="1"
+               data-set="${key}" value="${previous[key] || 0}">
+        <p class="note">${bonus.note}</p>`;
+    }
+    wrap.appendChild(div);
+  }
+}
+
+/* A set-stacks control's value as a stack count (checkbox -> 1/0). */
+function setStackValue(inp) {
+  if (inp.type === "checkbox") return inp.checked ? 1 : 0;
+  return parseInt(inp.value, 10) || 0;
+}
+
+// ---------------------------------------------------------------------------
+// Derived UI: matchup line, engine note, conditional-buff input, stun default
+// ---------------------------------------------------------------------------
+
+function currentBoss() { return DB.bosses.find(b => b.name === $("boss").value); }
+function currentRank() {
+  return parseInt($("engine-rank").value, 10)
+    || DB.engines[$("engine").value].refinement_rank;
+}
+
+/* resetRank: true when the engine (or agent) changed — rank snaps back to
+   the engine's data-file default; false keeps the user's chosen rank. */
+function updateDerived(resetRank = false) {
+  const agent = DB.agents[$("agent").value];
+  const engine = DB.engines[$("engine").value];
+  const boss = currentBoss();
+
+  const res = boss.res[agent.attribute];
+  const mult = 1 - res;
+  const kind = res < 0 ? "weakness" : res > 0 ? "resists" : "neutral";
+  $("matchup").innerHTML =
+    `${boss.name} vs <b>${agent.attribute}</b>: RES ${(res * 100).toFixed(0)}% ` +
+    `(${kind}, ×${mult.toFixed(2)}) · DEF ${boss.base_def} · ` +
+    `default stun ×${boss.stun_dmg_multiplier}`;
+  $("stun").placeholder = `boss default: ${boss.stun_dmg_multiplier * 100}`;
+
+  // Refinement rank selector (R1..max_rank; single-rank engines lock it)
+  const rankSel = $("engine-rank");
+  const kept = parseInt(rankSel.value, 10);
+  fillSelect(rankSel, Array.from({ length: engine.max_rank },
+    (_, i) => [String(i + 1), `R${i + 1}`]));
+  rankSel.value = String(
+    !resetRank && kept >= 1 && kept <= engine.max_rank
+      ? kept : engine.refinement_rank);
+  rankSel.disabled = engine.max_rank === 1;
+
+  // Always-on rank-scaled passive parts (e.g. Steel Cushion Physical DMG%)
+  const rank = currentRank();
+  $("engine-auto").textContent = engine.passive_dmg.map(pd =>
+    `Auto-applied at R${rank}: +${(pd.values_by_rank[rank - 1] * 100).toFixed(0)}% `
+    + `${pd.element || "all"} DMG`).join(" · ");
+  $("engine-note").textContent = engine.passive_note || "";
+
+  renderEngineBuff(engine, rank);
+}
+
+/* The engine's conditional buff control: checkbox when on/off
+   (max_stacks 1, e.g. Steel Cushion's back-attack bonus), number input
+   for stacking buffs (e.g. Sharpened Stinger). Rebuilt on engine/rank
+   change, preserving the current value. */
+function renderEngineBuff(engine, rank) {
+  const wrap = $("engine-buff-wrap");
+  const previous = engineBuffValue();
+  const buff = engine.conditional_buff;
+  if (!buff) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  const per = `+${+(buff.per_stack_by_rank[rank - 1] * 100).toFixed(1)}% `
+    + `${buff.element || "DMG"}`;
+  wrap.style.display = "";
+  if (buff.max_stacks === 1) {
+    wrap.innerHTML = `
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                    color:var(--text);font-size:13px;margin-top:18px"
+             title="${buff.note.replace(/"/g, "&quot;")}">
+        <input type="checkbox" id="engine-buff-stacks"
+               ${previous > 0 ? "checked" : ""}>
+        ${buff.name} — ${per}
+      </label>`;
+  } else {
+    wrap.innerHTML = `
+      <label>${buff.name} stacks (0–${buff.max_stacks}, ${per} each)</label>
+      <input type="number" id="engine-buff-stacks" value="${previous || 0}"
+             min="0" max="${buff.max_stacks}" step="1">`;
+  }
+}
+
+function engineBuffValue() {
+  const el = $("engine-buff-stacks");
+  if (!el) return 0;
+  return el.type === "checkbox" ? (el.checked ? 1 : 0)
+                                : (parseFloat(el.value) || 0);
+}
+
+// ---------------------------------------------------------------------------
+// Agent Kit: modeled core passive / mindscape conditionals (checkbox when
+// on/off, stacks input otherwise); unmodeled mindscapes listed for reference
+// ---------------------------------------------------------------------------
+
+const KIT_KIND_LABELS = {
+  crit_rate: "CRIT Rate", crit_dmg: "CRIT DMG", dmg_bonus: "DMG",
+  res_shred: "enemy RES ignore", dmg_taken: "DMG taken",
+  flat_atk: "flat ATK", atk_pct: "panel ATK%", daze_bonus: "stunned DMG mult",
+};
+
+const fmtBuff = (kind, v) =>
+  kind === "flat_atk" ? `+${+v.toFixed(1)}` : `+${+(v * 100).toFixed(1)}%`;
+
+/* Itemized "Active buffs" block under the damage table: every active
+   conditional (kit, team, engines, squad sets) grouped by what it buffs,
+   with per-source amounts and the group total. */
+function buffSummary(r) {
+  const items = r.buff_breakdown || [];
+  if (!items.length) return "";
+  const groups = {};
+  for (const it of items) (groups[it.kind] = groups[it.kind] || []).push(it);
+  const lines = Object.entries(groups).map(([kind, list]) => {
+    const total = list.reduce((sum, it) => sum + it.value, 0);
+    const parts = list
+      .map(it => `${it.source} ${fmtBuff(kind, it.value)}`).join(" · ");
+    return `
+      <div class="stat-line"><span>${KIT_KIND_LABELS[kind] || kind}</span>
+        <b>${fmtBuff(kind, total)}</b></div>
+      <p class="note" style="margin:0 0 6px">${parts}</p>`;
+  });
+  return `
+    <div style="margin-top:10px;border-top:1px solid #383838;padding-top:8px">
+      <div style="color:var(--accent);font-size:12px;text-transform:uppercase;
+                  letter-spacing:.08em;margin-bottom:4px">Active buffs</div>
+      ${lines.join("")}
+    </div>`;
+}
+
+function effectLabel(effect, maxStacks) {
+  const kind = KIT_KIND_LABELS[effect.kind] || effect.kind;
+  const perStack = maxStacks > 1 ? "/stack" : "";
+  if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})`;
+  if (effect.kind === "flat_atk") return `${kind} +${effect.value}${perStack}`;
+  const tag = effect.skill_tag ? ` on ${DB.skill_tags[effect.skill_tag] || effect.skill_tag}` : "";
+  return `${kind} +${+(effect.value * 100).toFixed(1)}%${perStack}${tag}`;
+}
+
+/* Data-driven team-condition check for the hint next to conditional buffs.
+   ownerKey = the buff's owner ("" = the on-field agent's own ability). */
+function conditionHint(condition, ownerKey) {
+  if (!condition) return "";
+  const onField = DB.agents[$("agent").value];
+  const supports = supportKeys();
+  let met = false, text = "";
+  if (condition.teammate_specialty_any_of) {
+    const list = condition.teammate_specialty_any_of;
+    const others = ownerKey
+      ? [$("agent").value, ...supports.filter(k => k !== ownerKey)]
+      : supports;
+    met = others.some(k => DB.agents[k] && list.includes(DB.agents[k].specialty));
+    text = `needs ${list.join("/")} in squad`;
+  } else if (condition.teammate_shares_attribute_or_faction) {
+    met = supports.some(k => {
+      const a = DB.agents[k];
+      return a && (a.attribute === onField.attribute
+        || (a.faction && a.faction === onField.faction));
+    });
+    text = "needs a teammate sharing attribute/faction";
+  } else {
+    return "";
+  }
+  return met
+    ? ` <span style="color:var(--accent)">(condition met ✓)</span>`
+    : ` <span style="color:var(--error)">(${text} — not met)</span>`;
+}
+
+function renderKit() {
+  const agent = DB.agents[$("agent").value];
+  const previous = kitState();
+  const controls = $("kit-controls");
+  controls.innerHTML = "";
+  $("kit-unmodeled").textContent = "";
+
+  const rows = [];
+  if (agent.core_passive) {
+    rows.push({ attr: 'data-kit="core"', buff: agent.core_passive,
+                label: `Core passive — ${agent.core_passive.name}` });
+  }
+  if (agent.additional_ability) {
+    rows.push({ attr: 'data-kit="aa"', buff: agent.additional_ability,
+                label: `Additional Ability — ${agent.additional_ability.name}`,
+                hint: conditionHint(agent.additional_ability.condition, "") });
+  }
+  for (const [level, m] of Object.entries(agent.mindscapes || {})) {
+    if (m.buff) rows.push({ attr: `data-kit="m" data-level="${level}"`,
+                            buff: m.buff, label: `M${level} — ${m.name}` });
+  }
+  const skipped = Object.entries(agent.mindscapes || {})
+    .filter(([, m]) => !m.buff)
+    .map(([lv, m]) => `M${lv} ${m.name}: ${m.note}`);
+
+  $("kit-card").style.display = rows.length || skipped.length ? "" : "none";
+
+  // Owner-stat inputs for the ON-FIELD agent's scaled effects
+  // (e.g. Zhao as attacker: her core-passive CRIT scales with her HP).
+  const scalingInputs = [...new Set(rows.flatMap(row =>
+    row.buff.effects.filter(e => e.scaling).map(e => e.scaling.input)))];
+  for (const name of scalingInputs) {
+    controls.insertAdjacentHTML("beforeend", `
+      <div style="margin-bottom:10px">
+        <label>${agent.name}'s ${name.replace(/_/g, " ")} (panel value)</label>
+        <input type="number" data-kitscaling="${name}" min="0" step="any"
+               value="" placeholder="e.g. 27000">
+      </div>`);
+  }
+
+  for (const row of rows) {
+    const effects = row.buff.effects
+      .map(e => effectLabel(e, row.buff.max_stacks)).join(", ");
+    const hint = row.hint || "";
+    const div = document.createElement("div");
+    div.style.marginBottom = "10px";
+    if (row.buff.max_stacks === 1) {
+      div.innerHTML = `
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                      color:var(--text);font-size:13px">
+          <input type="checkbox" ${row.attr}> ${row.label} — ${effects}${hint}
+        </label>
+        <p class="note" style="margin:2px 0 0">${row.buff.note || ""}</p>`;
+    } else {
+      div.innerHTML = `
+        <label>${row.label} — ${effects} (stacks 0–${row.buff.max_stacks})${hint}</label>
+        <input type="number" min="0" max="${row.buff.max_stacks}" step="1"
+               value="0" ${row.attr}>
+        <p class="note" style="margin:2px 0 0">${row.buff.note || ""}</p>`;
+    }
+    controls.appendChild(div);
+  }
+  applyKit(previous);
+  if (skipped.length) {
+    $("kit-unmodeled").textContent = "Not modeled (no damage effect): "
+      + skipped.join("  ·  ");
+  }
+}
+
+/* Read the kit controls:
+   { core: 0|1, aa: stacks, mind: {level: stacks}, scaling: {name: value} }. */
+function kitState() {
+  const state = { core: 0, aa: 0, mind: {}, scaling: {} };
+  for (const inp of $("kit-controls").querySelectorAll("input")) {
+    if (inp.dataset.kitscaling !== undefined) {
+      state.scaling[inp.dataset.kitscaling] = parseFloat(inp.value) || 0;
+      continue;
+    }
+    const value = inp.type === "checkbox" ? (inp.checked ? 1 : 0)
+                                          : (parseInt(inp.value, 10) || 0);
+    if (inp.dataset.kit === "core") state.core = value;
+    else if (inp.dataset.kit === "aa") state.aa = value;
+    else state.mind[inp.dataset.level] = value;
+  }
+  return state;
+}
+
+function applyKit(state) {
+  if (!state) return;
+  for (const inp of $("kit-controls").querySelectorAll("input")) {
+    if (inp.dataset.kitscaling !== undefined) {
+      const saved = (state.scaling || {})[inp.dataset.kitscaling];
+      if (saved) inp.value = saved;
+      continue;
+    }
+    const saved = inp.dataset.kit === "core" ? state.core
+      : inp.dataset.kit === "aa" ? state.aa
+      : (state.mind || {})[inp.dataset.level];
+    if (saved == null) continue;
+    if (inp.type === "checkbox") inp.checked = saved > 0;
+    else inp.value = saved;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Team: off-field support slots (their team buffs, scaling inputs, squad set)
+// ---------------------------------------------------------------------------
+
+function supportKeys() {
+  return [...document.querySelectorAll(".support .support-agent")]
+    .map(sel => sel.value).filter(v => v);
+}
+
+/* Read one support slot's full state (null when no agent picked). */
+function supportSlotState(slot) {
+  const sel = slot.querySelector(".support-agent");
+  if (!sel || !sel.value) return null;
+  const state = { agent: sel.value, buffs: {}, scaling: {}, set: "",
+                  setStacks: 0, engineRank: 0, engineBuffs: {} };
+  for (const inp of slot.querySelectorAll("[data-sbuff]")) {
+    state.buffs[inp.dataset.sbuff] = inp.type === "checkbox"
+      ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
+  }
+  for (const inp of slot.querySelectorAll("[data-scaling]"))
+    state.scaling[inp.dataset.scaling] = parseFloat(inp.value) || 0;
+  const rankSel = slot.querySelector(".support-engine-rank");
+  if (rankSel) state.engineRank = parseInt(rankSel.value, 10) || 0;
+  for (const inp of slot.querySelectorAll("[data-ebuff]")) {
+    state.engineBuffs[inp.dataset.ebuff] = inp.type === "checkbox"
+      ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
+  }
+  const setSel = slot.querySelector(".squad-set");
+  if (setSel && setSel.value) {
+    state.set = setSel.value;
+    const st = slot.querySelector("[data-squadstacks]");
+    if (st) state.setStacks = st.type === "checkbox"
+      ? (st.checked ? 1 : 0) : (parseInt(st.value, 10) || 0);
+  }
+  return state;
+}
+
+function renderSupportSlot(slot, saved) {
+  const prev = saved !== undefined ? saved : supportSlotState(slot);
+  slot.innerHTML = `
+    <label>Support ${+slot.dataset.slot + 1}</label>
+    <select class="support-agent"></select>
+    <div class="support-body"></div>`;
+  const sel = slot.querySelector(".support-agent");
+  // The on-field agent (and the other slot's pick) are excluded, so an
+  // agent's team-buff toggles can never coexist with their own mindscape
+  // toggles in the Agent Kit card — no double-application possible.
+  const taken = new Set([$("agent").value]);
+  for (const other of document.querySelectorAll(".support")) {
+    if (other === slot) continue;
+    const otherSel = other.querySelector(".support-agent");
+    if (otherSel && otherSel.value) taken.add(otherSel.value);
+  }
+  fillSelect(sel, [["", "None"],
+    ...Object.entries(DB.agents).filter(([k]) => !taken.has(k))
+      .map(([k, a]) => [k, `${a.name} [${a.attribute}]`])]);
+  if (prev && DB.agents[prev.agent] && !taken.has(prev.agent))
+    sel.value = prev.agent;
+  sel.addEventListener("change", () => {
+    renderSupportBody(slot, null);
+    refreshSiblingSupports(slot);   // exclusion lists follow the new pick
+    renderKit();          // refresh condition hints (e.g. Catwalk)
+    onAnyChange();
+  });
+  renderSupportBody(slot, sel.value === (prev && prev.agent) ? prev : null);
+}
+
+/* Re-render the other support slot(s), preserving their state, so their
+   agent dropdowns exclude this slot's new selection. */
+function refreshSiblingSupports(changedSlot) {
+  for (const other of document.querySelectorAll(".support")) {
+    if (other !== changedSlot) renderSupportSlot(other);
+  }
+}
+
+function renderSupportBody(slot, prev) {
+  const body = slot.querySelector(".support-body");
+  body.innerHTML = "";
+  const key = slot.querySelector(".support-agent").value;
+  if (!key) return;
+  const agent = DB.agents[key];
+  const buffs = agent.team_buffs || [];
+  if (!buffs.length) {
+    body.innerHTML = `<p class="note">${agent.name} has no modeled team
+      buffs — their presence still counts for team conditions.</p>`;
+  }
+
+  // Owner-stat inputs for scaled buffs (e.g. Zhao's initial Max HP)
+  const scalingInputs = [...new Set(
+    buffs.flatMap(b => b.effects.filter(e => e.scaling)
+      .map(e => e.scaling.input)))];
+  for (const name of scalingInputs) {
+    const saved = prev && prev.scaling ? (prev.scaling[name] || "") : "";
+    body.insertAdjacentHTML("beforeend", `
+      <div style="margin-top:8px">
+        <label>${agent.name}'s ${name.replace(/_/g, " ")} (panel value)</label>
+        <input type="number" data-scaling="${name}" min="0" step="any"
+               value="${saved}" placeholder="e.g. 27000">
+      </div>`);
+  }
+
+  for (const buff of buffs) {
+    const effects = buff.effects.map(e => effectLabel(e, buff.max_stacks)).join(", ");
+    const hint = conditionHint(buff.condition, key);
+    const savedStacks = prev && prev.buffs ? (prev.buffs[buff.name] || 0) : 0;
+    const name = buff.name.replace(/"/g, "&quot;");
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    if (buff.max_stacks === 1) {
+      div.innerHTML = `
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                      color:var(--text);font-size:13px">
+          <input type="checkbox" data-sbuff="${name}"
+                 ${savedStacks > 0 ? "checked" : ""}>
+          ${buff.name} — ${effects}${hint}
+        </label>
+        <p class="note" style="margin:2px 0 0">${buff.note || ""}</p>`;
+    } else {
+      div.innerHTML = `
+        <label>${buff.name} — ${effects} (stacks 0–${buff.max_stacks})${hint}</label>
+        <input type="number" min="0" max="${buff.max_stacks}" step="1"
+               value="${savedStacks}" data-sbuff="${name}">
+        <p class="note" style="margin:2px 0 0">${buff.note || ""}</p>`;
+    }
+    body.appendChild(div);
+  }
+
+  // Team-facing signature engine buffs (uses the support's default engine)
+  const engine = DB.engines[agent.default_engine];
+  if (engine && engine.squad_buffs.length) {
+    const savedRank = prev && prev.engineRank
+      ? prev.engineRank : engine.refinement_rank;
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    div.innerHTML = `
+      <label>${engine.name} (signature) — refinement</label>
+      <select class="support-engine-rank"></select>
+      <div class="engine-squad-buffs"></div>`;
+    body.appendChild(div);
+    const rankSel = div.querySelector(".support-engine-rank");
+    fillSelect(rankSel, Array.from({ length: engine.max_rank },
+      (_, i) => [String(i + 1), `R${i + 1}`]));
+    rankSel.value = String(
+      savedRank >= 1 && savedRank <= engine.max_rank
+        ? savedRank : engine.refinement_rank);
+    const renderEngineBuffs = () => {
+      const rank = parseInt(rankSel.value, 10) || 1;
+      const buffsDiv = div.querySelector(".engine-squad-buffs");
+      // Keep the user's current toggles across rank changes
+      const current = {};
+      for (const inp of buffsDiv.querySelectorAll("[data-ebuff]")) {
+        current[inp.dataset.ebuff] = inp.type === "checkbox"
+          ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
+      }
+      buffsDiv.innerHTML = "";
+      for (const b of engine.squad_buffs) {
+        const per = b.kind === "flat_atk"
+          ? `+${b.values_by_rank[rank - 1]}`
+          : `+${+(b.values_by_rank[rank - 1] * 100).toFixed(1)}%`;
+        const kind = KIT_KIND_LABELS[b.kind] || b.kind;
+        const saved = current[b.name] != null ? current[b.name]
+          : (prev && prev.engineBuffs ? (prev.engineBuffs[b.name] || 0) : 0);
+        const name = b.name.replace(/"/g, "&quot;");
+        const row = document.createElement("div");
+        if (b.max_stacks === 1) {
+          row.innerHTML = `
+            <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                          color:var(--text);font-size:13px;margin-top:6px"
+                   title="${(b.note || "").replace(/"/g, "&quot;")}">
+              <input type="checkbox" data-ebuff="${name}" ${saved > 0 ? "checked" : ""}>
+              ${b.name} — ${kind} ${per}
+            </label>`;
+        } else {
+          row.innerHTML = `
+            <label style="margin-top:6px">${b.name} — ${kind} ${per}/stack
+              (0–${b.max_stacks})</label>
+            <input type="number" min="0" max="${b.max_stacks}" step="1"
+                   value="${saved}" data-ebuff="${name}">`;
+        }
+        buffsDiv.appendChild(row);
+      }
+    };
+    rankSel.addEventListener("change", () => { renderEngineBuffs(); onAnyChange(); });
+    renderEngineBuffs();
+  }
+
+  // Squad-facing 4pc set worn by this support
+  const squadSets = Object.entries(DB.sets).filter(([, s]) => s.squad_4pc);
+  if (squadSets.length) {
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    div.innerHTML = `<label>Squad-facing 4pc set worn</label>
+      <select class="squad-set"></select><div class="squad-stacks"></div>`;
+    body.appendChild(div);
+    const setSel = div.querySelector(".squad-set");
+    fillSelect(setSel, [["", "None / not squad-facing"],
+      ...squadSets.map(([k, s]) => [k, s.name])]);
+    if (prev && prev.set) setSel.value = prev.set;
+    const renderStacks = () => {
+      const stacksDiv = div.querySelector(".squad-stacks");
+      stacksDiv.innerHTML = "";
+      const chosen = DB.sets[setSel.value];
+      if (!chosen) return;
+      const squad = chosen.squad_4pc;
+      const saved = prev && prev.set === setSel.value ? prev.setStacks : 0;
+      const kind = KIT_KIND_LABELS[squad.kind] || squad.kind;
+      const per = `+${+(squad.value * 100).toFixed(0)}% squad ${kind}`;
+      if (squad.max_stacks === 1) {
+        stacksDiv.innerHTML = `
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                        color:var(--text);font-size:13px;margin-top:6px"
+                 title="${(squad.note || "").replace(/"/g, "&quot;")}">
+            <input type="checkbox" data-squadstacks ${saved > 0 ? "checked" : ""}>
+            Active — ${per}
+          </label>`;
+      } else {
+        stacksDiv.innerHTML = `
+          <label style="margin-top:6px"
+                 title="${(squad.note || "").replace(/"/g, "&quot;")}">
+            Stacks (0–${squad.max_stacks}, ${per} each)</label>
+          <input type="number" min="0" max="${squad.max_stacks}" step="1"
+                 value="${saved}" data-squadstacks>`;
+      }
+    };
+    setSel.addEventListener("change", () => { renderStacks(); onAnyChange(); });
+    renderStacks();
+  }
+}
+
+function renderSupports(savedList) {
+  document.querySelectorAll(".support").forEach((slot, i) => {
+    renderSupportSlot(slot, savedList ? savedList[i] : undefined);
+  });
+}
+
+function onAgentChange() {
+  $("engine").value = DB.agents[$("agent").value].default_engine;
+  updateDerived(true);
+  // Re-render support slots: a slot holding the new on-field agent is
+  // cleared (they can't support themselves), others keep their state.
+  renderSupports();
+  renderKit();
+}
+
+// ---------------------------------------------------------------------------
+// Loadouts
+// ---------------------------------------------------------------------------
+
+function clearDiscs() {
+  for (const card of document.querySelectorAll(".disc")) {
+    card.querySelector(".equipped").checked = true;
+    card.classList.remove("off");
+    card.querySelector(".main").selectedIndex = 0;
+    card.querySelector(".set").value = "";
+    refreshSubstatOptions(card);
+    for (const sel of card.querySelectorAll(".substat")) sel.value = "";
+    for (const n of card.querySelectorAll(".upgrades")) n.value = 0;
+  }
+  refreshSetStacks();
+}
+
+/* Fill one card from a disc in JSON form (substats as total rolls). */
+function fillCard(card, disc) {
+  card.querySelector(".equipped").checked = true;
+  card.classList.remove("off");
+  card.querySelector(".main").value = disc.main_stat;
+  card.querySelector(".set").value = disc.set || "";
+  refreshSubstatOptions(card);
+  const rows = [...card.querySelectorAll(".sub")];
+  for (const row of rows) {
+    row.querySelector(".substat").value = "";
+    row.querySelector(".upgrades").value = 0;
+  }
+  Object.entries(disc.substats).forEach(([stat, rolls], i) => {
+    if (!rows[i]) return;
+    rows[i].querySelector(".substat").value = stat;
+    rows[i].querySelector(".upgrades").value = rolls - 1;   // rolls -> +N
+  });
+}
+
+function loadLoadout(name) {
+  const loadout = DB.loadouts[name];
+  if (!loadout) return;
+  clearDiscs();
+  const bySlot = {};
+  for (const d of loadout.discs) bySlot[d.slot] = d;
+  for (const card of document.querySelectorAll(".disc")) {
+    const disc = bySlot[card.dataset.slot];
+    if (!disc) {
+      card.querySelector(".equipped").checked = false;
+      card.classList.add("off");
+      continue;
+    }
+    fillCard(card, disc);
+  }
+  refreshSetStacks();
+}
+
+// ---------------------------------------------------------------------------
+// Disc inventory: save / search / equip / delete, and saving loadouts
+// ---------------------------------------------------------------------------
+
+async function postJSON(path, payload) {
+  const resp = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    const err = new Error(data.error || `HTTP ${resp.status}`);
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function flash(btn, text) {
+  const original = btn.textContent;
+  btn.textContent = text;
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1600);
+}
+
+async function saveDisc(card) {
+  $("error").style.display = "none";
+  const btn = card.querySelector(".save-disc");
+  try {
+    const data = await postJSON("/discs", collectDisc(card));
+    DB.user_discs = data.user_discs;
+    flash(btn, data.created ? `Saved ${data.id} ✓` : `= ${data.id}`);
+    if (!card.querySelector(".picker").hidden) renderPicker(card);
+  } catch (exc) {
+    showError(exc.message);
+  }
+}
+
+function discLabel(disc) {
+  const subs = Object.entries(disc.substats)
+    .map(([s, rolls]) => `${s} +${rolls - 1}`).join(", ");
+  const setName = disc.set
+    ? (DB.sets[disc.set] ? DB.sets[disc.set].name : disc.set) : "no set";
+  return `${disc.main_stat} · ${setName} · ${subs}`;
+}
+
+/* The per-card inventory browser: saved discs of that slot, narrowed by a
+   free-text filter matching the id, main stat, set name, or substats. */
+function renderPicker(card) {
+  const slot = parseInt(card.dataset.slot, 10);
+  const query = card.querySelector(".picker-filter").value.trim().toLowerCase();
+  const list = card.querySelector(".picker-list");
+  list.innerHTML = "";
+  const forSlot = Object.entries(DB.user_discs || {})
+    .filter(([, d]) => d.slot === slot);
+  const matches = forSlot.filter(([id, d]) =>
+    !query || `${id} ${discLabel(d)}`.toLowerCase().includes(query));
+
+  if (!matches.length) {
+    const div = document.createElement("div");
+    div.className = "picker-empty";
+    div.textContent = forSlot.length
+      ? "No saved discs match the filter."
+      : `No saved discs for slot ${slot} yet — fill the card and hit Save.`;
+    list.appendChild(div);
+    return;
+  }
+  for (const [id, disc] of matches) {
+    const item = document.createElement("div");
+    item.className = "picker-item";
+    item.title = "Equip this disc";
+    const label = document.createElement("span");
+    label.textContent = `${id} · ${discLabel(disc)}`;
+    const del = document.createElement("button");
+    del.className = "del";
+    del.title = "Delete from inventory";
+    del.textContent = "✕";
+    del.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Delete ${id} from the inventory?`)) return;
+      try {
+        const resp = await fetch(`/discs/${encodeURIComponent(id)}`,
+                                 { method: "DELETE" });
+        const data = await resp.json();
+        if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+        DB.user_discs = data.user_discs;
+        renderPicker(card);
+      } catch (exc) {
+        showError(String(exc));
+      }
+    });
+    item.appendChild(label);
+    item.appendChild(del);
+    item.addEventListener("click", () => {
+      fillCard(card, disc);
+      card.querySelector(".picker").hidden = true;
+      refreshSetStacks();
+      onAnyChange();
+    });
+    list.appendChild(item);
+  }
+}
+
+/* Save the equipped discs as a loadout: the server stores each disc in the
+   inventory (deduped) and writes the loadout as references to their ids. */
+async function saveLoadoutFlow(overwrite = false) {
+  $("error").style.display = "none";
+  const name = $("loadout-name").value.trim();
+  if (!name) { showError("Give the loadout a name first."); return; }
+  let discs;
+  try {
+    discs = equippedDiscs();
+  } catch (exc) {
+    showError(exc.message);
+    return;
+  }
+  if (!discs.length) { showError("Equip at least one disc first."); return; }
+  try {
+    const data = await postJSON("/loadouts", {
+      name, description: $("loadout-desc").value.trim(), discs, overwrite,
+    });
+    DB.loadouts = data.loadouts;
+    DB.user_discs = data.user_discs;
+    rebuildLoadoutSelect(name);
+    $("save-feedback").textContent = `Loadout '${name}' saved — ${discs.length} `
+      + `discs stored in the inventory and referenced by id.`;
+  } catch (exc) {
+    if (exc.data && exc.data.exists) {
+      if (confirm(`Loadout '${name}' already exists. Overwrite it?`))
+        return saveLoadoutFlow(true);
+      return;
+    }
+    showError(exc.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Collect -> POST /calculate -> render
+// ---------------------------------------------------------------------------
+
+const pct = id => {   // human % field -> fraction (empty = 0)
+  const raw = $(id).value.trim();
+  return raw === "" ? 0 : parseFloat(raw) / 100;
+};
+
+/* One card -> disc in JSON form (substats as total rolls); throws on
+   duplicate substat picks so the server message isn't needed for the
+   common slip. */
+function collectDisc(card) {
+  const slot = parseInt(card.dataset.slot, 10);
+  const substats = {};
+  const sels = card.querySelectorAll(".substat");
+  const nums = card.querySelectorAll(".upgrades");
+  for (let i = 0; i < sels.length; i++) {
+    const stat = sels[i].value;
+    if (!stat) continue;
+    if (stat in substats)
+      throw new Error(`Disc slot ${slot}: substat '${stat}' is picked twice`);
+    substats[stat] = (parseInt(nums[i].value, 10) || 0) + 1;  // +N -> rolls
+  }
+  return { slot, main_stat: card.querySelector(".main").value, substats,
+           set: card.querySelector(".set").value || null };
+}
+
+function equippedDiscs() {
+  return [...document.querySelectorAll(".disc")]
+    .filter(card => card.querySelector(".equipped").checked)
+    .map(collectDisc);
+}
+
+function collectConfig() {
+  const discs = equippedDiscs();
+
+  const setStacks = {};
+  for (const inp of $("set-stacks").querySelectorAll("input")) {
+    const v = setStackValue(inp);
+    if (v) setStacks[inp.dataset.set] = v;
+  }
+
+  const kit = kitState();
+  const mindscapes = {};
+  for (const [level, stacks] of Object.entries(kit.mind))
+    if (stacks) mindscapes[level] = stacks;
+
+  const supports = [];
+  for (const slot of document.querySelectorAll(".support")) {
+    const st = supportSlotState(slot);
+    if (!st) continue;
+    supports.push({
+      agent_key: st.agent,
+      buffs: st.buffs,
+      scaling_inputs: st.scaling,
+      squad_set: st.set || null,
+      squad_set_stacks: st.setStacks,
+      engine_rank: st.engineRank || null,
+      engine_buffs: st.engineBuffs,
+    });
+  }
+
+  const stunRaw = $("stun").value.trim();
+  return {
+    agent_key: $("agent").value,
+    engine_key: $("engine").value,
+    engine_rank: currentRank(),
+    boss_name: $("boss").value,
+    skill_multiplier: pct("skill"),
+    skill_tag: $("skill-tag").value || null,
+    core_passive_active: kit.core > 0,
+    additional_ability_stacks: kit.aa,
+    mindscapes,
+    scaling_inputs: kit.scaling,
+    supports,
+    discs,
+    set_stacks: setStacks,
+    engine_buff_stacks: engineBuffValue(),
+    external_dmg_bonus: pct("dmg-bonus"),
+    external_crit_rate: pct("crit-rate"),
+    external_crit_dmg: pct("crit-dmg"),
+    external_res_shred: pct("res-shred"),
+    external_dmg_taken: pct("dmg-taken"),
+    stun_multiplier_override: stunRaw === "" ? null : parseFloat(stunRaw) / 100,
+  };
+}
+
+async function runCalc() {
+  const errorBox = $("error");
+  errorBox.style.display = "none";
+  let config;
+  try {
+    config = collectConfig();
+  } catch (exc) {
+    showError(exc.message);
+    return;
+  }
+  try {
+    const resp = await fetch("/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+    renderResults(data);
+    autoCalc = true;
+  } catch (exc) {
+    showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
+  }
+}
+
+function showError(message) {
+  const box = $("error");
+  box.textContent = message;
+  box.style.display = "block";
+}
+
+const fmtStat = (name, v) =>
+  (name.endsWith("%") || ["CRIT Rate", "CRIT DMG", "PEN Ratio"].includes(name))
+    ? `${+(v * 100).toFixed(2)}%` : `${v}`;
+const fmtNum = v => v.toLocaleString("en-US",
+  { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function renderResults(r) {
+  const bonuses = Object.entries(r.set_bonuses || {})
+    .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
+    .join(", ");
+  const tagBonuses = Object.entries(r.tag_dmg_bonuses || {})
+    .map(([name, v]) => `${name} DMG +${(v * 100).toFixed(0)}%`)
+    .join(", ");
+  const tagLabel = () => DB.skill_tags[$("skill-tag").value] || "untyped";
+  $("out").className = "";
+  $("out").innerHTML = `
+    <div class="stat-line"><span>Final ATK</span><b>${fmtNum(r.atk_final)}</b></div>
+    <div class="stat-line"><span>CRIT Rate / DMG</span>
+      <b>${(r.crit_rate * 100).toFixed(1)}% / ${(r.crit_dmg * 100).toFixed(1)}%</b></div>
+    <div class="stat-line"><span>DMG% zone</span><b>×${r.dmg_bonus_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>DEF zone</span><b>×${r.def_mult.toFixed(4)}</b></div>
+    <div class="stat-line"><span>RES zone</span><b>×${r.res_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>DMG taken zone</span><b>×${r.dmg_taken_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>Stun zone (stunned)</span><b>×${r.stun_mult.toFixed(2)}</b></div>
+    ${bonuses ? `<div class="stat-line"><span>Set bonuses</span><b>${bonuses}</b></div>` : ""}
+    ${tagBonuses ? `<div class="stat-line"><span>Typed bonuses (${tagLabel()})</span><b>${tagBonuses}</b></div>` : ""}
+    <table>
+      <thead><tr><th>Scenario</th><th>Normal</th><th>Stunned</th></tr></thead>
+      <tbody>
+        <tr><td>Non-crit</td><td class="num">${fmtNum(r.non_crit)}</td>
+            <td class="num">${fmtNum(r.non_crit_stunned)}</td></tr>
+        <tr><td>Crit</td><td class="num">${fmtNum(r.crit)}</td>
+            <td class="num">${fmtNum(r.crit_stunned)}</td></tr>
+        <tr class="avg"><td>Average</td><td class="num">${fmtNum(r.average)}</td>
+            <td class="num">${fmtNum(r.average_stunned)}</td></tr>
+      </tbody>
+    </table>
+    ${averageNote(r)}
+    ${buffSummary(r)}`;
+}
+
+/* Explains the Average row with the build's own numbers: expected value
+   over crit outcomes, using the capped CRIT Rate (mirrors
+   formulas.crit_mult_average). */
+function averageNote(r) {
+  const rate = Math.min(Math.max(r.crit_rate, 0), 1);
+  const pct = v => `${+(v * 100).toFixed(1)}%`;
+  const capped = r.crit_rate > 1
+    ? ` CRIT Rate is over 100%, so it is capped: every hit crits and
+       Average equals Crit (the excess ${pct(r.crit_rate - 1)} is wasted).`
+    : "";
+  return `<p class="note">Average = expected damage per hit: crits land
+    ${pct(rate)} of the time, so
+    Average = Non-crit × (1 + CRIT Rate × CRIT DMG)
+    = Non-crit × (1 + ${pct(rate)} × ${pct(r.crit_dmg)})
+    = Non-crit × ${(1 + rate * r.crit_dmg).toFixed(3)}.${capped}</p>`;
+}
+
+// ---------------------------------------------------------------------------
+// State persistence (localStorage) — inputs survive reloads
+// ---------------------------------------------------------------------------
+
+function saveState() {
+  const state = { fields: {}, discs: [], setStacks: {}, kit: kitState(),
+                  supports: [...document.querySelectorAll(".support")]
+                    .map(supportSlotState) };
+  for (const el of document.querySelectorAll("#inputs select, #inputs input")) {
+    if (el.closest(".disc") || el.closest("#set-stacks")
+        || el.closest("#kit-controls") || el.closest(".support")) continue;
+    if (el.id) state.fields[el.id] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  for (const card of document.querySelectorAll(".disc")) {
+    state.discs.push({
+      equipped: card.querySelector(".equipped").checked,
+      main: card.querySelector(".main").value,
+      set: card.querySelector(".set").value,
+      subs: [...card.querySelectorAll(".sub")].map(row => ({
+        stat: row.querySelector(".substat").value,
+        n: row.querySelector(".upgrades").value,
+      })),
+    });
+  }
+  for (const inp of $("set-stacks").querySelectorAll("input"))
+    state.setStacks[inp.dataset.set] = setStackValue(inp);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function restoreState() {
+  let state;
+  try { state = JSON.parse(localStorage.getItem(STORAGE_KEY)); }
+  catch { return null; }
+  if (!state) return null;
+  for (const [id, value] of Object.entries(state.fields || {})) {
+    const el = $(id);
+    if (!el) continue;
+    if (el.type === "checkbox") el.checked = value; else el.value = value;
+  }
+  const cards = document.querySelectorAll(".disc");
+  (state.discs || []).forEach((d, i) => {
+    const card = cards[i];
+    if (!card) return;
+    card.querySelector(".equipped").checked = d.equipped;
+    card.classList.toggle("off", !d.equipped);
+    if (d.main) card.querySelector(".main").value = d.main;
+    card.querySelector(".set").value = d.set || "";
+    refreshSubstatOptions(card);
+    const rows = card.querySelectorAll(".sub");
+    (d.subs || []).forEach((s, j) => {
+      if (!rows[j]) return;
+      rows[j].querySelector(".substat").value = s.stat || "";
+      rows[j].querySelector(".upgrades").value = s.n || 0;
+    });
+  });
+  refreshSetStacks();
+  for (const inp of $("set-stacks").querySelectorAll("input")) {
+    if (!(inp.dataset.set in (state.setStacks || {}))) continue;
+    const saved = state.setStacks[inp.dataset.set];
+    if (inp.type === "checkbox") inp.checked = saved > 0;
+    else inp.value = saved;
+  }
+  return state;
+}
+
+/* Re-apply saved values to controls that only exist after updateDerived /
+   renderKit have rebuilt them (rank selector, engine buff, kit inputs). */
+function applyDynamicState(state) {
+  if (!state) return;
+  const fields = state.fields || {};
+  if (fields["engine-rank"]) {
+    $("engine-rank").value = fields["engine-rank"];
+    updateDerived();   // refresh rank-scaled labels; keeps the set rank
+  }
+  const buffEl = $("engine-buff-stacks");
+  const savedBuff = fields["engine-buff-stacks"];
+  if (buffEl && savedBuff != null) {
+    if (buffEl.type === "checkbox")
+      buffEl.checked = savedBuff === true || savedBuff > 0;
+    else buffEl.value = savedBuff;
+  }
+  applyKit(state.kit);
+  renderSupports(state.supports || []);
+  renderKit();          // condition hints reflect the restored team
+  applyKit(state.kit);  // re-apply: renderKit rebuilt the controls
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+let debounceTimer = null;
+function onAnyChange(ev) {
+  // Typing in an inventory filter is browsing, not editing the build.
+  if (ev && ev.target && ev.target.classList.contains("picker-filter")) return;
+  saveState();
+  if (autoCalc) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(runCalc, 300);
+  }
+}
+
+async function init() {
+  const resp = await fetch("/data");
+  DB = await resp.json();
+  buildStaticSelects();
+  buildDiscGrid();
+  const saved = restoreState();
+  updateDerived();
+  renderKit();
+  renderSupports();
+  applyDynamicState(saved);
+
+  $("agent").addEventListener("change", onAgentChange);
+  $("boss").addEventListener("change", () => updateDerived());
+  $("engine").addEventListener("change", () => { updateDerived(true); });
+  $("engine-rank").addEventListener("change", () => updateDerived());
+  $("calc").addEventListener("click", runCalc);
+  $("load-loadout").addEventListener("click", () => {
+    loadLoadout($("loadout").value); onAnyChange();
+  });
+  $("clear-discs").addEventListener("click", () => { clearDiscs(); onAnyChange(); });
+  $("save-loadout").addEventListener("click", () => saveLoadoutFlow());
+  document.body.addEventListener("input", onAnyChange);
+  document.body.addEventListener("change", onAnyChange);
+  document.body.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" && ev.ctrlKey) runCalc();
+  });
+}
+
+init().catch(exc => showError(`Failed to load data: ${exc}`));
+</script>
+</body>
+</html>

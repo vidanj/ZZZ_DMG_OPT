@@ -1,0 +1,581 @@
+"""Local web UI server for direct-hit calculations (Phase A).
+
+Design and scope: see DOCS/ui_plan.md.
+
+Zero-dependency front end: this stdlib HTTP server serves one
+self-contained page (``index.html``) whose form builds a
+:class:`~zzz_dmg_calc.api.CalcConfig` and calls the same
+:func:`~zzz_dmg_calc.api.calculate` the CLI uses. The server is a thin
+adapter — all rules/validation stay in the layers below; rejected input
+comes back as HTTP 400 carrying the layer's error message, which the
+page shows inline instead of crashing.
+
+Endpoints::
+
+    GET    /            the form page
+    GET    /data        databases the form needs (agents, engines, bosses,
+                        disc tables, sets, user disc inventory, loadouts)
+    POST   /calculate   CalcConfig fields as JSON -> CalcResults as JSON
+    POST   /discs       save one disc to the inventory (deduped) -> its id
+    DELETE /discs/{id}  remove an inventory disc (blocked if referenced)
+    POST   /loadouts    save equipped discs as a loadout of inventory
+                        references (name collision asks before overwrite)
+
+Run either way::
+
+    python run_ui.py                  # root launcher (opens the browser)
+    python -m zzz_dmg_calc.ui.server  # from the project root
+
+The server binds to 127.0.0.1 only — it is a local app, not a website.
+"""
+
+from __future__ import annotations
+
+import json
+import webbrowser
+from dataclasses import asdict, dataclass, replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Lock, Timer
+from urllib.parse import unquote
+
+try:
+    from ..api import CalcConfig, SupportConfig, calculate
+    from ..agent import Agent, load_agents
+    from ..constants import Constants, load_constants
+    from ..discs import (
+        Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
+        load_disc_sets, load_loadouts, load_user_discs, save_loadout,
+        save_user_disc, set_bonus_stats, set_tagged_dmg_bonuses,
+    )
+    from ..enemies import Boss, load_bosses
+    from ..engines import Engine, load_engines
+except ImportError:
+    # Executed directly as a script (``py server.py``): no parent package,
+    # so relative imports fail. Same fallback as main.py.
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from zzz_dmg_calc.api import CalcConfig, SupportConfig, calculate
+    from zzz_dmg_calc.agent import Agent, load_agents
+    from zzz_dmg_calc.constants import Constants, load_constants
+    from zzz_dmg_calc.discs import (
+        Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
+        load_disc_sets, load_loadouts, load_user_discs, save_loadout,
+        save_user_disc, set_bonus_stats, set_tagged_dmg_bonuses,
+    )
+    from zzz_dmg_calc.enemies import Boss, load_bosses
+    from zzz_dmg_calc.engines import Engine, load_engines
+
+
+#: The single page served at ``/`` (self-contained: inline CSS/JS).
+INDEX_FILE = Path(__file__).parent / "index.html"
+
+DEFAULT_PORT = 8765
+
+
+@dataclass(frozen=True)
+class AppData:
+    """All databases, loaded once at startup and shared by every request.
+
+    ``user_discs`` and ``loadouts`` are user data the UI can write; after a
+    write the handler swaps in a fresh AppData (see ``_refresh_user_data``).
+    """
+
+    consts: Constants
+    disc_data: DiscData
+    bosses: dict[str, Boss]
+    agents: dict[str, Agent]
+    engines: dict[str, Engine]
+    disc_sets: dict[str, DiscSet]
+    user_discs: dict[str, Disc]
+    loadouts: dict[str, Loadout]
+
+
+def load_app_data() -> AppData:
+    """Load every data file; raises the loader's error if one is invalid."""
+    disc_data = load_disc_data()
+    user_discs = load_user_discs(disc_data)
+    return AppData(
+        consts=load_constants(),
+        disc_data=disc_data,
+        bosses=load_bosses(),
+        agents=load_agents(),
+        engines=load_engines(),
+        disc_sets=load_disc_sets(),
+        user_discs=user_discs,
+        loadouts=load_loadouts(disc_data, user_discs=user_discs),
+    )
+
+
+def _disc_json(disc: Disc) -> dict:
+    """One disc in the JSON form the page uses (substats = total rolls)."""
+    return {
+        "slot": disc.slot,
+        "main_stat": disc.main_stat,
+        "substats": disc.substats,
+        "set": disc.disc_set,
+    }
+
+
+def user_discs_payload(data: AppData) -> dict:
+    """The inventory as id -> disc JSON."""
+    return {disc_id: _disc_json(d) for disc_id, d in data.user_discs.items()}
+
+
+def loadouts_payload(data: AppData) -> dict:
+    """Loadouts with their discs fully resolved (references included)."""
+    return {
+        name: {
+            "description": l.description,
+            "discs": [_disc_json(d) for d in l.discs],
+        }
+        for name, l in data.loadouts.items()
+    }
+
+
+def frontend_payload(data: AppData) -> dict:
+    """Serialize the databases into the JSON the form page consumes."""
+    def kit_buff(buff) -> dict | None:
+        if buff is None:
+            return None
+        return {
+            "name": buff.name,
+            "max_stacks": buff.max_stacks,
+            "effects": [
+                {
+                    "kind": e.kind,
+                    "value": e.value,
+                    "skill_tag": e.skill_tag,
+                    "scaling": (
+                        None if e.scaling is None else {
+                            "input": e.scaling.input,
+                            "base": e.scaling.base,
+                            "threshold": e.scaling.threshold,
+                            "per_step": e.scaling.per_step,
+                            "per_value": e.scaling.per_value,
+                            "cap": e.scaling.cap,
+                        }
+                    ),
+                }
+                for e in buff.effects
+            ],
+            "note": buff.note,
+            "condition": buff.condition,
+        }
+
+    return {
+        "agents": {
+            key: {
+                "name": a.name,
+                "attribute": a.attribute,
+                "specialty": a.specialty,
+                "faction": a.faction,
+                "level": a.level,
+                "default_engine": a.default_engine,
+                "core_passive": kit_buff(a.core_passive),
+                "additional_ability": kit_buff(a.additional_ability),
+                "team_buffs": [kit_buff(b) for b in a.team_buffs],
+                "mindscapes": {
+                    str(level): {
+                        "name": m.name,
+                        "note": m.note,
+                        "buff": kit_buff(m.buff),
+                    }
+                    for level, m in sorted(a.mindscapes.items())
+                },
+            }
+            for key, a in data.agents.items()
+        },
+        "engines": {
+            key: {
+                "name": e.name,
+                "base_atk": e.base_atk,
+                "advanced_stat": e.advanced_stat,
+                "refinement_rank": e.refinement_rank,
+                "max_rank": e.max_rank,
+                "passive_note": e.passive_note,
+                "passive_dmg": [
+                    {
+                        "element": pd.element,
+                        "values_by_rank": list(pd.values_by_rank),
+                        "note": pd.note,
+                    }
+                    for pd in e.passive_dmg
+                ],
+                "conditional_buff": (
+                    None if e.conditional_buff is None else {
+                        "name": e.conditional_buff.name,
+                        "element": e.conditional_buff.element,
+                        "per_stack_by_rank": list(
+                            e.conditional_buff.per_stack_by_rank
+                        ),
+                        "max_stacks": e.conditional_buff.max_stacks,
+                        "note": e.conditional_buff.note,
+                    }
+                ),
+                "squad_buffs": [
+                    {
+                        "name": b.name,
+                        "kind": b.kind,
+                        "values_by_rank": list(b.values_by_rank),
+                        "max_stacks": b.max_stacks,
+                        "note": b.note,
+                    }
+                    for b in e.squad_buffs
+                ],
+            }
+            for key, e in data.engines.items()
+        },
+        "bosses": [
+            {
+                "name": b.name,
+                "base_def": b.base_def,
+                "res": b.res,
+                "stun_dmg_multiplier": b.stun_dmg_multiplier,
+            }
+            for b in data.bosses.values()
+        ],
+        "disc": {
+            "main_stats": {
+                str(slot): table
+                for slot, table in data.disc_data.main_stats.items()
+            },
+            "substat_rolls": data.disc_data.substat_rolls,
+            "substats_per_disc": data.disc_data.substats_per_disc,
+            "max_rolls_per_substat": data.disc_data.max_rolls_per_substat,
+            "max_total_rolls": data.disc_data.max_total_rolls,
+        },
+        "sets": {
+            key: {
+                "name": s.name,
+                "bonus_2pc": s.bonus_2pc,
+                "bonus_4pc": (
+                    None if s.bonus_4pc is None else {
+                        "stat": s.bonus_4pc.stat,
+                        "per_stack": s.bonus_4pc.per_stack,
+                        "max_stacks": s.bonus_4pc.max_stacks,
+                        "note": s.bonus_4pc.note,
+                    }
+                ),
+                "squad_4pc": (
+                    None if s.squad_4pc is None else {
+                        "value": s.squad_4pc.value,
+                        "kind": s.squad_4pc.kind,
+                        "max_stacks": s.squad_4pc.max_stacks,
+                        "note": s.squad_4pc.note,
+                    }
+                ),
+                "notes": s.notes,
+            }
+            for key, s in data.disc_sets.items()
+        },
+        "skill_tags": data.consts.skill_tags,
+        "user_discs": user_discs_payload(data),
+        "loadouts": loadouts_payload(data),
+    }
+
+
+def _parse_disc(entry) -> Disc:
+    """A request-body disc entry -> :class:`Disc` (substats = total rolls)."""
+    if not isinstance(entry, dict):
+        raise ValueError("Each disc must be a JSON object")
+    substats_raw = entry.get("substats") or {}
+    if not isinstance(substats_raw, dict):
+        raise ValueError("Disc 'substats' must be an object of stat -> rolls")
+    return Disc(
+        slot=int(entry.get("slot", 0)),
+        main_stat=str(entry.get("main_stat", "")),
+        substats={str(s): int(r) for s, r in substats_raw.items()},
+        disc_set=entry.get("set") or None,
+    )
+
+
+def _number(body: dict, key: str, default: float = 0.0) -> float:
+    """A numeric field from the request body; missing/null -> ``default``."""
+    value = body.get(key)
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"'{key}' must be a number, got {value!r}")
+    return float(value)
+
+
+def run_calculation(data: AppData, body: dict) -> dict:
+    """Build a CalcConfig from the request body and run the calculation.
+
+    The body mirrors :class:`~zzz_dmg_calc.api.CalcConfig` (fractions, not
+    human percentages — the page converts). Substats arrive as TOTAL rolls,
+    same convention as ``loadouts.json``.
+
+    Raises:
+        ValueError: any invalid input — malformed body fields here, or the
+            lower layers' CalcError/DiscError/etc. (all ValueError
+            subclasses) with their own messages.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("Request body must be a JSON object")
+
+    discs = [_parse_disc(entry) for entry in body.get("discs", [])]
+
+    set_stacks_raw = body.get("set_stacks") or {}
+    if not isinstance(set_stacks_raw, dict):
+        raise ValueError("'set_stacks' must be an object of set key -> stacks")
+    set_stacks = {str(k): int(v) for k, v in set_stacks_raw.items() if int(v)}
+
+    dmg_bonus = _number(body, "external_dmg_bonus")
+    dmg_taken = _number(body, "external_dmg_taken")
+    stun_raw = body.get("stun_multiplier_override")
+
+    engine_rank_raw = body.get("engine_rank")
+    mindscapes_raw = body.get("mindscapes") or {}
+    if not isinstance(mindscapes_raw, dict):
+        raise ValueError("'mindscapes' must be an object of level -> stacks")
+
+    supports_raw = body.get("supports") or []
+    if not isinstance(supports_raw, list):
+        raise ValueError("'supports' must be a list")
+    supports = []
+    for entry in supports_raw:
+        if not isinstance(entry, dict):
+            raise ValueError("Each support must be a JSON object")
+        buffs_raw = entry.get("buffs") or {}
+        scaling_raw = entry.get("scaling_inputs") or {}
+        if not isinstance(buffs_raw, dict) or not isinstance(scaling_raw, dict):
+            raise ValueError("Support 'buffs'/'scaling_inputs' must be objects")
+        engine_buffs_raw = entry.get("engine_buffs") or {}
+        if not isinstance(engine_buffs_raw, dict):
+            raise ValueError("Support 'engine_buffs' must be an object")
+        rank_raw = entry.get("engine_rank")
+        supports.append(SupportConfig(
+            agent_key=str(entry.get("agent_key", "")),
+            buffs={str(n): int(s) for n, s in buffs_raw.items() if int(s)},
+            scaling_inputs={str(n): float(v) for n, v in scaling_raw.items()
+                            if isinstance(v, (int, float))},
+            squad_set=entry.get("squad_set") or None,
+            squad_set_stacks=int(entry.get("squad_set_stacks") or 0),
+            engine_key=entry.get("engine_key") or None,
+            engine_rank=None if rank_raw in (None, "") else int(rank_raw),
+            engine_buffs={str(n): int(s)
+                          for n, s in engine_buffs_raw.items() if int(s)},
+        ))
+
+    config = CalcConfig(
+        agent_key=str(body.get("agent_key", "")),
+        engine_key=body.get("engine_key") or None,
+        engine_rank=(
+            None if engine_rank_raw in (None, "") else int(engine_rank_raw)
+        ),
+        boss_name=str(body.get("boss_name", "")),
+        skill_multiplier=_number(body, "skill_multiplier"),
+        skill_tag=body.get("skill_tag") or None,
+        core_passive_active=bool(body.get("core_passive_active")),
+        mindscapes={
+            int(level): int(stacks)
+            for level, stacks in mindscapes_raw.items() if int(stacks)
+        },
+        additional_ability_stacks=int(body.get("additional_ability_stacks") or 0),
+        scaling_inputs={
+            str(n): float(v)
+            for n, v in (body.get("scaling_inputs") or {}).items()
+            if isinstance(v, (int, float))
+        },
+        supports=supports,
+        discs=discs,
+        set_stacks=set_stacks,
+        engine_buff_stacks=_number(body, "engine_buff_stacks"),
+        external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
+        external_crit_rate=_number(body, "external_crit_rate"),
+        external_crit_dmg=_number(body, "external_crit_dmg"),
+        external_res_shred=_number(body, "external_res_shred"),
+        external_dmg_taken=[dmg_taken] if dmg_taken else [],
+        stun_multiplier_override=(
+            None if stun_raw in (None, "") else _number(body, "stun_multiplier_override")
+        ),
+    )
+
+    results = calculate(
+        config, consts=data.consts, disc_data=data.disc_data,
+        bosses=data.bosses, agents=data.agents, engines=data.engines,
+        disc_sets=data.disc_sets,
+    )
+
+    payload = asdict(results)
+    # Echo the applied set bonuses so the page can display them (calculate()
+    # already validated the discs, so this cannot raise new errors).
+    payload["set_bonuses"] = set_bonus_stats(discs, data.disc_sets, set_stacks)
+    payload["tag_dmg_bonuses"] = {
+        data.disc_sets[key].name: value
+        for key, value in set_tagged_dmg_bonuses(
+            discs, data.disc_sets, config.skill_tag
+        ).items()
+    }
+    return payload
+
+
+class UIRequestHandler(BaseHTTPRequestHandler):
+    """Routes the endpoints; ``app_data`` is set once at startup.
+
+    Write endpoints (disc inventory, loadouts) mutate the JSON files
+    through the validated writers in ``discs.py``, then swap in a freshly
+    loaded AppData so every later request sees the new state.
+    """
+
+    server_version = "ZZZDmgUI/0.1"
+    app_data: AppData
+    write_lock = Lock()
+
+    @classmethod
+    def _refresh_user_data(cls) -> None:
+        """Reload user-writable data after a write (caller holds the lock)."""
+        disc_data = cls.app_data.disc_data
+        user_discs = load_user_discs(disc_data)
+        cls.app_data = replace(
+            cls.app_data,
+            user_discs=user_discs,
+            loadouts=load_loadouts(disc_data, user_discs=user_discs),
+        )
+
+    def _send_json(self, payload: dict, status: int = 200) -> None:
+        raw = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self) -> None:   # noqa: N802 (stdlib naming)
+        if self.path in ("/", "/index.html"):
+            raw = INDEX_FILE.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+        elif self.path == "/data":
+            self._send_json(frontend_payload(self.app_data))
+        else:
+            self._send_json({"error": f"Unknown path {self.path}"}, status=404)
+
+    def do_POST(self) -> None:   # noqa: N802 (stdlib naming)
+        routes = {
+            "/calculate": self._post_calculate,
+            "/discs": self._post_disc,
+            "/loadouts": self._post_loadout,
+        }
+        handler = routes.get(self.path)
+        if handler is None:
+            self._send_json({"error": f"Unknown path {self.path}"}, status=404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_json({"error": "Request body is not valid JSON"}, status=400)
+            return
+        if not isinstance(body, dict):
+            self._send_json({"error": "Request body must be a JSON object"},
+                            status=400)
+            return
+        try:
+            handler(body)
+        except (ValueError, TypeError, KeyError) as exc:
+            # Includes CalcError/DiscError/etc. — the layers' messages are
+            # user-facing by design, so pass them through verbatim.
+            self._send_json({"error": str(exc)}, status=400)
+
+    def do_DELETE(self) -> None:   # noqa: N802 (stdlib naming)
+        if not self.path.startswith("/discs/"):
+            self._send_json({"error": f"Unknown path {self.path}"}, status=404)
+            return
+        disc_id = unquote(self.path[len("/discs/"):])
+        try:
+            with self.write_lock:
+                delete_user_disc(disc_id)
+                self._refresh_user_data()
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, status=400)
+            return
+        self._send_json({"user_discs": user_discs_payload(self.app_data)})
+
+    def _post_calculate(self, body: dict) -> None:
+        self._send_json(run_calculation(self.app_data, body))
+
+    def _post_disc(self, body: dict) -> None:
+        """Save one disc to the inventory (validated, deduped)."""
+        disc = _parse_disc(body)
+        with self.write_lock:
+            disc_id, created = save_user_disc(disc, self.app_data.disc_data)
+            self._refresh_user_data()
+        self._send_json({
+            "id": disc_id,
+            "created": created,
+            "user_discs": user_discs_payload(self.app_data),
+        })
+
+    def _post_loadout(self, body: dict) -> None:
+        """Save the given discs as a loadout of inventory references.
+
+        Each disc is first saved to the inventory (deduped), then the
+        loadout is written referencing the resulting ids. A name collision
+        without ``overwrite`` returns 400 with ``"exists": true`` so the
+        page can ask the user to confirm.
+        """
+        name = str(body.get("name", "")).strip()
+        overwrite = bool(body.get("overwrite"))
+        discs = [_parse_disc(entry) for entry in body.get("discs", [])]
+        if not discs:
+            raise ValueError("A loadout needs at least one equipped disc")
+        with self.write_lock:
+            if name in self.app_data.loadouts and not overwrite:
+                self._send_json(
+                    {"error": f"Loadout '{name}' already exists", "exists": True},
+                    status=400,
+                )
+                return
+            disc_ids = [
+                save_user_disc(d, self.app_data.disc_data)[0] for d in discs
+            ]
+            save_loadout(
+                name, str(body.get("description", "")), disc_ids,
+                self.app_data.disc_data, overwrite=overwrite,
+            )
+            self._refresh_user_data()
+        self._send_json({
+            "user_discs": user_discs_payload(self.app_data),
+            "loadouts": loadouts_payload(self.app_data),
+        })
+
+    def log_message(self, format: str, *args) -> None:
+        # Quiet: only calculation posts, not every asset fetch.
+        if self.command == "POST":
+            print(f"  {self.command} {self.path} -> {args[1] if len(args) > 1 else ''}")
+
+
+def main(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
+    """Load data, start the server on 127.0.0.1, and open the browser."""
+    handler = UIRequestHandler
+    handler.app_data = load_app_data()
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    url = f"http://127.0.0.1:{port}/"
+    print(f"=== ZZZ DMG Optimizer UI ===\nServing on {url}  (Ctrl+C to stop)")
+    if open_browser:
+        Timer(0.3, webbrowser.open, [url]).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ZZZ DMG Optimizer local web UI")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--no-browser", action="store_true",
+                        help="don't open the browser automatically")
+    args = parser.parse_args()
+    main(port=args.port, open_browser=not args.no_browser)

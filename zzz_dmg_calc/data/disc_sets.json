@@ -4,11 +4,11 @@
     "sources": "DOCS/sources.md (Phase 2 section, 'Disc set bonuses')",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too."
+    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'."
   },
   "sets": {
-    "TECHNO": {
-      "name": "TECHNO (Woodpecker Electro)",
+    "WOODPECKER_ELECTRO": {
+      "name": "Woodpecker Electro",
       "bonus_2pc": { "CRIT Rate": 0.08 },
       "bonus_4pc": {
         "stat": "Combat ATK%",
@@ -17,10 +17,94 @@
         "note": "Basic Attack / Dodge Counter / EX Special crits each grant +9% ATK for 6s - one stack per skill type, up to 3 concurrent. Scales PANEL ATK (measured: +300/+599 on a 3330 panel)."
       }
     },
-    "BRANCH_SWORD": {
-      "name": "Branch & Sword (Branch & Blade Song)",
+    "BRANCH_BLADE_SONG": {
+      "name": "Branch & Blade Song",
       "bonus_2pc": { "CRIT DMG": 0.16 },
       "notes": "4-piece exists in-game (CRIT DMG +30% while Anomaly Mastery >= 115; CRIT Rate +12% on squad Freeze/Shatter) but is not modeled yet — only the 2-piece is used for now."
+    },
+    "HORMONE_PUNK": {
+      "name": "Hormone Punk",
+      "bonus_2pc": { "ATK%": 0.10 },
+      "bonus_4pc": {
+        "stat": "Combat ATK%",
+        "per_stack": 0.25,
+        "max_stacks": 1,
+        "note": "Entering combat or switching in, the user's ATK increases by 25% for 10s. Can trigger once every 20s. Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer (both confirmed in-game) - not directly measured."
+      }
+    },
+    "SHOCKSTAR_DISCO": {
+      "name": "Shockstar Disco",
+      "bonus_2pc": { "Impact%": 0.06 },
+      "notes": "Stunner set, verified 2026-07-03 (Game8). Neither piece affects the damage formula: 2pc Impact +6% and 4pc Daze +20% (Basic/Dash/Dodge Counter) speed up stuns only - relevance convention: documented, nothing modeled."
+    },
+    "KING_OF_THE_SUMMIT": {
+      "name": "King of the Summit",
+      "bonus_2pc": { "Daze%": 0.06 },
+      "squad_4pc": {
+        "kind": "crit_dmg",
+        "value": 0.15,
+        "max_stacks": 2,
+        "note": "Yunkui Summit set. Stun wearer's EX Special / Chain Attack: ALL squad members' CRIT DMG +15% for 15s (1 stack); +15% more while the wearer's CRIT Rate >= 50% (2 stacks). Same-name passives don't stack. Verified 2026-07-03 (Game8)."
+      },
+      "notes": "2pc Daze +6% affects buildup only (not modeled). The 4pc is squad-facing - ideal on Dialyn."
+    },
+    "YUNKUI_TALES": {
+      "name": "Yunkui Tales",
+      "bonus_2pc": { "HP%": 0.10 },
+      "bonus_4pc": {
+        "stat": "CRIT Rate",
+        "per_stack": 0.04,
+        "max_stacks": 3,
+        "note": "Wearer's EX Special / Chain Attack / Ultimate grants +4% CRIT Rate for 15s, stacking to 3. Verified 2026-07-03 (Game8)."
+      },
+      "notes": "2pc HP +10% has no damage effect for ATK-scalers. The 4pc's extra 'Sheer DMG +10% at 3 stacks' is for Rupture agents - Sheer Force isn't modeled yet (main plan Phase 5+), so only the CRIT Rate part applies."
+    },
+    "SWING_JAZZ": {
+      "name": "Swing Jazz",
+      "bonus_2pc": { "Energy Regen%": 0.20 },
+      "squad_4pc": {
+        "value": 0.15,
+        "max_stacks": 1,
+        "note": "Launching a Chain Attack or Ultimate increases ALL squad members' DMG by 15% for 12s. Toggle when the wearer (usually a support) has triggered it. Verified 2026-07-03 (Game8)."
+      },
+      "notes": "2pc Energy Regen has no damage effect. The 4pc is squad-facing: it buffs the on-field agent even when worn by an off-field support."
+    },
+    "PROTO_PUNK": {
+      "name": "Proto Punk",
+      "bonus_2pc": { "Shield%": 0.15 },
+      "squad_4pc": {
+        "value": 0.15,
+        "max_stacks": 1,
+        "note": "When any squad member triggers a Defensive or Evasive Assist: all squad members deal +15% DMG for 10s (same-name effects don't stack). Verified 2026-07-03 (zzz.gg)."
+      },
+      "notes": "2pc Shield effect has no damage effect. Squad-facing 4pc."
+    },
+    "ASTRAL_VOICE": {
+      "name": "Astral Voice",
+      "bonus_2pc": { "ATK%": 0.10 },
+      "squad_4pc": {
+        "value": 0.08,
+        "max_stacks": 3,
+        "note": "Quick Assist entries grant Astral stacks (max 3, 15s): the character entering via Quick Assist deals +8% DMG per stack. Set stacks for the ON-FIELD agent's entry. Verified 2026-07-03 (zzz.gg)."
+      },
+      "notes": "Squad-facing 4pc; the 2pc ATK% applies to the WEARER only (irrelevant when worn by an off-field support)."
+    },
+    "PUFFER_ELECTRO": {
+      "name": "Puffer Electro",
+      "bonus_2pc": { "PEN Ratio": 0.08 },
+      "bonus_4pc": {
+        "stat": "Combat ATK%",
+        "per_stack": 0.15,
+        "max_stacks": 1,
+        "note": "Launching an Ultimate increases the user's ATK by 15% for 12s. Combat ATK% (panel-multiplying) CONFIRMED in-game 2026-07-02 (Nekomata validation #2: crit scaled exactly x1.15)."
+      },
+      "bonus_4pc_dmg": [
+        {
+          "skill_tag": "ultimate",
+          "value": 0.20,
+          "note": "Ultimate DMG +20% - applies automatically when the calculated hit's damage type is Ultimate."
+        }
+      ]
     }
   }
 }
