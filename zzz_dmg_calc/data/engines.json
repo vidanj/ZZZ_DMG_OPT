@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'conditional_buff' is a stacking DMG% buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox)."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default) or 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex; the element gate is checked in direct/anomaly modes only). 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, ...)."
   },
   "engines": {
     "dummy_engine": {
@@ -115,10 +115,50 @@
       "passive_note": "R1 passive (Anomaly Buildup +40%; stacking AP up to +120 on Ether damage) is NOT auto-applied; enter active AP stacks as external AP when measuring."
     },
     "joyau_dore": {
-      "name": "Joyau Dore (R1)",
+      "name": "Joyau Dore",
       "base_atk": 713,
       "advanced_stat": { "Energy Regen%": 0.60 },
-      "passive_note": "R1 passive (Windswept/Vortex enhancement; squad AP buff at stacks) is NOT auto-applied."
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [70, 80, 90, 100, 110],
+        "conditional_buff": {
+          "name": "Gilded Gale (Vortex/Windswept DMG)",
+          "element": "wind",
+          "bracket": "anomaly_buff",
+          "modes": ["anomaly", "vortex"],
+          "per_stack_by_rank": [0.07, 0.08, 0.09, 0.10, 0.11],
+          "max_stacks": 2,
+          "note": "When the equipper's EX Special deals Wind DMG: Vortex and Windswept DMG +7%/stack (R1) for 40s, up to 2 stacks - effectively always max in rotation. Joins the Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL)."
+        },
+        "squad_buffs": [
+          {
+            "name": "Joyau Dore: squad Anomaly Proficiency (2 stacks)",
+            "kind": "anomaly_proficiency",
+            "values": [60, 69, 78, 87, 96],
+            "note": "At 2 stacks of the equipper's Vortex/Windswept buff: ALL squad members' AP +60 (R1) for 40s. Anomaly modes only."
+          }
+        ]
+      },
+      "passive_note": "Velina's signature (completed 2026-07-03: zenless-optimizer datamine, wengine params [70, 0.07, 40, 2, 2, 60] at R1). The equipper's AP +70..110 is ALWAYS-ON and auto-applied at the selected rank in anomaly modes; the Vortex/Windswept DMG stacks are the modeled conditional buff; the squad AP at 2 stacks is a squad buff (relevant when a second wind/anomaly unit wears it - as Velina's own engine its squad AP also reaches herself: enter it as external AP, do not double-apply). Advanced stat Energy Regen +60% feeds her core passive scaling (enter panel ER as 'initial_energy_regen')."
+    },
+    "metanukimorphosis": {
+      "name": "Metanukimorphosis",
+      "base_atk": 713,
+      "advanced_stat": { "Energy Regen%": 0.60 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Exquisite Ingenuity: squad Anomaly Proficiency",
+            "kind": "anomaly_proficiency",
+            "values": [60, 69, 78, 87, 96],
+            "note": "When the equipper's Aftershock hits an enemy: ALL squad members' AP +60 (R1) for 40s (one instance per squad). Anomaly modes only. Yuzuha's Hard Candy Shot basics are Aftershocks - effectively always up in her rotation."
+          }
+        ]
+      },
+      "passive_note": "Yuzuha's signature (added 2026-07-03: Game8 + zenless-optimizer datamine, params [30, 40, 60, 40] at R1). The self Anomaly Mastery +30..48 (40s, on her Physical EX Special/Ultimate) is NOT auto-applied - AM only matters through HER AM-scaled Additional Ability: include it in the 'anomaly_mastery' input you enter for that team buff. Advanced stat Energy Regen +60% at Lv. 60."
     }
   }
 }

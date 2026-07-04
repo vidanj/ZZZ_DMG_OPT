@@ -1323,6 +1323,72 @@
       },
       "set": "BRANCH_BLADE_SONG",
       "element": "fire"
+    },
+    "d122": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "DEF%": 1,
+        "ATK%": 3,
+        "DEF": 1
+      },
+      "set": "FANGED_METAL"
+    },
+    "d123": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "PEN": 1,
+        "ATK%": 3,
+        "CRIT Rate": 1
+      },
+      "set": "CHAOS_JAZZ"
+    },
+    "d124": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP": 2,
+        "Anomaly Proficiency": 4,
+        "ATK%": 2,
+        "CRIT Rate": 1
+      },
+      "set": "FANGED_METAL"
+    },
+    "d125": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "CRIT Rate": 2,
+        "ATK%": 3,
+        "ATK": 1,
+        "DEF%": 2
+      },
+      "set": "FANGED_METAL"
+    },
+    "d128": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "PEN": 2,
+        "DEF%": 2,
+        "DEF": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "CHAOS_JAZZ"
+    },
+    "d129": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "DEF%": 2,
+        "ATK%": 2,
+        "CRIT Rate": 2
+      },
+      "set": "FANGED_METAL"
     }
   }
 }

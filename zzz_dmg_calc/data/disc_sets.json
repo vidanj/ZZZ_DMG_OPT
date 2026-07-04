@@ -89,6 +89,54 @@
       },
       "notes": "Squad-facing 4pc; the 2pc ATK% applies to the WEARER only (irrelevant when worn by an off-field support)."
     },
+    "FANGED_METAL": {
+      "name": "Fanged Metal",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "DMG%",
+        "per_stack": 0.35,
+        "max_stacks": 1,
+        "note": "Whenever a squad member inflicts Assault: the equipper deals +35% DMG to the target for 12s. Generic DMG% (zenless-optimizer brackets it with the ordinary DMG% bonuses) - effectively always up in an Assault rotation (Piper)."
+      },
+      "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Physical agents (assume-it-matches, like Wuthering Salon). Disorder-mode caveat: the calculator only applies build DMG% when the dealt element matches the attacker's attribute, so the 4pc is dropped from Disorder bursts dealt as another element - enter it manually there if active."
+    },
+    "FREEDOM_BLUES": {
+      "name": "Freedom Blues",
+      "bonus_2pc": { "Anomaly Proficiency": 30 },
+      "notes": "Anomaly set (added 2026-07-04, zenless-optimizer datamine). Only the 2pc affects the damage formula. 4pc: EX Special hits reduce the target's Anomaly Buildup RES to the equipper's attribute by 20% for 8s (same-attribute effects don't stack) - buildup SPEED only, never proc damage: documented, not modeled (Shockstar convention)."
+    },
+    "MOONLIGHT_LULLABY": {
+      "name": "Moonlight Lullaby",
+      "bonus_2pc": { "Energy Regen%": 0.20 },
+      "squad_4pc": {
+        "value": 0.18,
+        "max_stacks": 1,
+        "note": "When the equipper is a SUPPORT character and uses an EX Special / Ultimate: ALL squad members' DMG +18% for 25s (repeated triggers refresh; same-name passives don't stack). Ideal on Yuzuha."
+      },
+      "notes": "Support set (added 2026-07-04, zenless-optimizer datamine). 2pc Energy Regen has no direct damage effect - but on Velina it feeds her core passive: include it in the 'initial_energy_regen' panel value you enter. Squad-facing 4pc, Swing Jazz convention (support wearer only - the schema doesn't enforce the specialty condition; the user checks it)."
+    },
+    "CHAOS_JAZZ": {
+      "name": "Chaos Jazz",
+      "bonus_2pc": { "Anomaly Proficiency": 30 },
+      "bonus_4pc": {
+        "stat": "Attribute DMG%",
+        "per_stack": 0.15,
+        "max_stacks": 1,
+        "note": "Fire DMG and Electric DMG +15%, always active - answer yes on Fire/Electric agents (Evelyn, Yanagi), no on anyone else (the schema's stats aren't element-gated; assume-it-matches)."
+      },
+      "notes": "Fire/Electric anomaly set (added 2026-07-04, zenless-optimizer datamine). The 4pc's second part - off-field EX Special and Assist Attack DMG +20% (persisting 5s after switch-in, once per 7.5s) - is a separate skill-gated conditional the single-4pc-slot schema can't hold: enter 20 as external DMG% on qualifying hits."
+    },
+    "WUTHERING_SALON": {
+      "name": "Wuthering Salon",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "Anomaly Proficiency",
+        "per_stack": 25,
+        "max_stacks": 2,
+        "note": "Using an EX Special Attack grants +25 Anomaly Proficiency for 40s, stacking to 2 (repeated triggers refresh) - effectively always max in an anomaly rotation."
+      },
+      "notes": "Velina's primary set (added 2026-07-03, zenless-optimizer datamine). 2pc is WIND DMG +10% - the schema's 2pc stats aren't element-gated, so only equip/select this set on Wind agents (assume-it-matches, like legacy Attribute DMG% discs). The 4pc's second part - 'when the equipper triggers Windswept, their DMG +18% for 40s' - is a separate on/off buff the schema's single 4pc slot can't hold: enter 18 as external DMG% when active (buffs Windswept/Vortex procs and her direct hits alike)."
+    },
     "PUFFER_ELECTRO": {
       "name": "Puffer Electro",
       "bonus_2pc": { "PEN Ratio": 0.08 },

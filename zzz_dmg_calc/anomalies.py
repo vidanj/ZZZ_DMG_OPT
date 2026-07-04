@@ -1,19 +1,25 @@
-"""Attribute Anomaly database loader (anomaly + Disorder rules).
+"""Attribute Anomaly database loader (anomaly + Disorder + Vortex rules).
 
 Loads and validates ``data/anomalies.json``: per-element anomaly base
-multipliers/proc structure, and Disorder conversion rules. Several values
-are provisional pending in-game calibration — see DOCS/sources.md Phase 5.
+multipliers/proc structure, Disorder conversion rules, and Vortex conversion
+rules (the Wind variant of Disorder). Values were cross-checked against the
+zenless-optimizer datamine (2026-07-03); in-game calibration status is
+tracked in DOCS/sources.md Phase 5.
 
 Model notes (see DOCS/anomaly_plan.md):
 
 - An anomaly entry describes damage per hit/tick/proc (``mult × ATK``) and
   its proc structure (``hits`` over ``duration`` at ``interval``).
-- ``supported=False`` entries (Windswept until measured) are listed but any
-  attempt to calculate with them raises, so unverified numbers can never
-  silently enter a result.
-- Disorder deals damage as the REPLACED anomaly's element, converted from
-  its remaining duration: mode ``procs`` (remaining ticks + extras) or
-  ``flat_decay`` (burst decaying linearly to ``min_fraction``).
+- ``supported=False`` entries are listed but any attempt to calculate with
+  them raises, so unverified numbers can never silently enter a result.
+- Disorder deals damage as the REPLACED anomaly's element in one burst,
+  with the closed form ``base + time_mult × max(0, window − elapsed)``
+  (elapsed = seconds since the replaced anomaly was applied).
+- Vortex triggers instead of Disorder while Windswept is active: one burst
+  dealt as the INFUSED (non-wind) element, same closed form with per-element
+  ``mult``/``time_mult`` and a 30s window. Additive "Disorder DMG
+  Multiplier" buffs (Velina's Windbite, Yuzuha M6) add to both bursts'
+  base multiplier — the API layer passes them in.
 """
 
 from __future__ import annotations
@@ -26,9 +32,6 @@ from .enemies import ELEMENTS
 
 #: Default location of the anomaly data file, relative to this package.
 DATA_FILE = Path(__file__).parent / "data" / "anomalies.json"
-
-#: Valid Disorder conversion modes.
-DISORDER_MODES = ("procs", "flat_decay")
 
 
 class AnomalyError(ValueError):
@@ -71,18 +74,33 @@ class Anomaly:
 
 @dataclass(frozen=True)
 class DisorderRule:
-    """How a replaced anomaly converts into Disorder damage.
+    """How a replaced anomaly converts into Disorder burst damage.
 
-    ``procs``: remaining time is converted into remaining ticks (plus
-    ``extra_procs``) of the replaced anomaly's per-proc damage.
-    ``flat_decay``: the replaced anomaly's one-shot burst is dealt again,
-    scaled down linearly with elapsed time to ``min_fraction``.
+    Closed form (zenless-optimizer datamine, 2026-07-03):
+    ``total_mult = base + time_mult × max(0, window − elapsed_seconds)``
+    where ``elapsed_seconds`` is the time since the REPLACED anomaly was
+    applied. The wind entry is Polarity Disorder (time_mult 0).
     """
 
     element: str
-    mode: str
-    extra_procs: int = 0
-    min_fraction: float = 1.0
+    base: float
+    time_mult: float
+    window: float
+
+
+@dataclass(frozen=True)
+class VortexRule:
+    """How the infused element converts into Vortex burst damage.
+
+    Same closed form as :class:`DisorderRule` (``mult`` plays the role of
+    ``base``) with a 30s window; damage is dealt as the INFUSED element.
+    Wind itself is never an infusion, so it has no rule.
+    """
+
+    element: str
+    mult: float
+    time_mult: float
+    window: float
 
 
 @dataclass(frozen=True)
@@ -91,6 +109,18 @@ class AnomalyData:
 
     anomalies: dict[str, Anomaly]
     disorder: dict[str, DisorderRule]
+    vortex: dict[str, VortexRule]
+
+
+def _rule_number(rule: dict, key: str, where: str,
+                 minimum: float = 0.0) -> float:
+    """One validated non-negative number of a disorder/vortex rule."""
+    value = rule.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < minimum:
+        raise AnomalyError(
+            f"{where}: '{key}' must be a number >= {minimum}"
+        )
+    return float(value)
 
 
 def load_anomalies(path: Path = DATA_FILE) -> AnomalyData:
@@ -175,28 +205,36 @@ def load_anomalies(path: Path = DATA_FILE) -> AnomalyData:
             raise AnomalyError(f"Unknown element in 'disorder': '{element}'")
         if not isinstance(rule, dict):
             raise AnomalyError(f"Disorder rule '{element}' must be an object")
-        mode = rule.get("mode")
-        if mode not in DISORDER_MODES:
-            raise AnomalyError(
-                f"Disorder rule '{element}': 'mode' must be one of "
-                f"{list(DISORDER_MODES)}"
-            )
-        extra = rule.get("extra_procs", 0)
-        if isinstance(extra, bool) or not isinstance(extra, int) or extra < 0:
-            raise AnomalyError(
-                f"Disorder rule '{element}': 'extra_procs' must be an "
-                f"integer >= 0"
-            )
-        min_fraction = rule.get("min_fraction", 1.0)
-        if isinstance(min_fraction, bool) or not isinstance(min_fraction, (int, float)) or not 0 < min_fraction <= 1:
-            raise AnomalyError(
-                f"Disorder rule '{element}': 'min_fraction' must be in (0, 1]"
-            )
+        where = f"Disorder rule '{element}'"
         disorder[element] = DisorderRule(
             element=element,
-            mode=mode,
-            extra_procs=extra,
-            min_fraction=float(min_fraction),
+            base=_rule_number(rule, "base", where),
+            time_mult=_rule_number(rule, "time_mult", where),
+            window=_rule_number(rule, "window", where),
         )
 
-    return AnomalyData(anomalies=anomalies, disorder=disorder)
+    vortex_raw = raw.get("vortex")
+    if not isinstance(vortex_raw, dict):
+        raise AnomalyError("'vortex' must be an object of element -> rule")
+    vortex: dict[str, VortexRule] = {}
+    for element, rule in vortex_raw.items():
+        if element.startswith("_"):
+            continue   # commentary keys like "_note"
+        if element not in ELEMENTS:
+            raise AnomalyError(f"Unknown element in 'vortex': '{element}'")
+        if element == "wind":
+            raise AnomalyError(
+                "'vortex' rules describe the INFUSED element — wind itself "
+                "cannot be an infusion"
+            )
+        if not isinstance(rule, dict):
+            raise AnomalyError(f"Vortex rule '{element}' must be an object")
+        where = f"Vortex rule '{element}'"
+        vortex[element] = VortexRule(
+            element=element,
+            mult=_rule_number(rule, "mult", where),
+            time_mult=_rule_number(rule, "time_mult", where),
+            window=_rule_number(rule, "window", where),
+        )
+
+    return AnomalyData(anomalies=anomalies, disorder=disorder, vortex=vortex)

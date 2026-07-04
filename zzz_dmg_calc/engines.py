@@ -40,12 +40,21 @@ class EngineBuff:
     ``max_stacks == 1`` means a plain on/off effect (the UI shows a
     checkbox). The refinement rank is a runtime input too — the engine's
     data rank is just the default.
+
+    ``bracket`` routes the value: ``"dmg_bonus"`` (default) joins the
+    ordinary DMG% bracket; ``"anomaly_buff"`` joins the separate
+    Anomaly/Disorder Buff Multiplier bracket (e.g. Joyau Doré's
+    "Vortex and Windswept DMG"). ``modes`` optionally gates the buff to
+    calculation modes (same semantics as agent kit effects: the element
+    gate is checked in direct/anomaly modes only).
     """
 
     name: str
     element: str | None
     per_stack_by_rank: tuple[float, ...]
     max_stacks: int
+    bracket: str = "dmg_bonus"
+    modes: tuple[str, ...] | None = None
     note: str = ""
 
     def per_stack(self, rank: int) -> float:
@@ -135,6 +144,9 @@ class Engine:
             (``CalcConfig.engine_rank``).
         max_rank: Highest modeled rank (1 when no refinement data).
         passive_dmg: Always-on rank-scaled DMG% parts of the passive.
+        passive_ap_by_rank: Always-on rank-scaled flat Anomaly Proficiency
+            from the passive (e.g. Joyau Doré's AP +70..110) — applied
+            automatically to the equipper's AP total, empty when none.
         conditional_buff: Rank-scaled stacking/on-off buff, or ``None`` if
             no conditional part is modeled (see ``passive_note``).
         squad_buffs: Team-facing rank-scaled conditionals (support
@@ -149,9 +161,25 @@ class Engine:
     refinement_rank: int = 1
     max_rank: int = 1
     passive_dmg: tuple[EnginePassiveDmg, ...] = ()
+    passive_ap_by_rank: tuple[float, ...] = ()
     conditional_buff: EngineBuff | None = None
     squad_buffs: tuple[EngineSquadBuff, ...] = ()
     passive_note: str = ""
+
+    def passive_ap(self, rank: int) -> float:
+        """Always-on flat AP of the passive at ``rank`` (0 when unmodeled).
+
+        Raises:
+            EngineError: rank outside the modeled table.
+        """
+        if not self.passive_ap_by_rank:
+            return 0.0
+        if not 1 <= rank <= len(self.passive_ap_by_rank):
+            raise EngineError(
+                f"Engine '{self.name}' passive AP has no value for rank "
+                f"{rank}; modeled ranks: 1..{len(self.passive_ap_by_rank)}"
+            )
+        return self.passive_ap_by_rank[rank - 1]
 
 
 def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
@@ -200,6 +228,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
         refinement_rank = 1
         max_rank = 1
         passive_dmg: list[EnginePassiveDmg] = []
+        passive_ap: tuple[float, ...] = ()
         conditional_buff = None
         refinement = entry.get("refinement")
         if refinement is not None:
@@ -237,6 +266,12 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     note=str(item.get("note", "")),
                 ))
 
+            passive_ap_raw = refinement.get("passive_ap_by_rank")
+            if passive_ap_raw is not None:
+                passive_ap = rank_values(passive_ap_raw, "passive_ap_by_rank")
+            else:
+                passive_ap = ()
+
             buff_raw = refinement.get("conditional_buff")
             if buff_raw is not None:
                 if not isinstance(buff_raw, dict):
@@ -257,11 +292,29 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     raise EngineError(
                         f"Engine '{key}': buff is missing a valid 'name'"
                     )
+                bracket = buff_raw.get("bracket", "dmg_bonus")
+                if bracket not in ("dmg_bonus", "anomaly_buff"):
+                    raise EngineError(
+                        f"Engine '{key}': buff 'bracket' must be 'dmg_bonus' "
+                        f"or 'anomaly_buff', got {bracket!r}"
+                    )
+                modes = buff_raw.get("modes")
+                if modes is not None:
+                    if (not isinstance(modes, list) or not modes
+                            or any(m not in ("direct", "anomaly", "disorder",
+                                             "vortex") for m in modes)):
+                        raise EngineError(
+                            f"Engine '{key}': buff 'modes' must be a "
+                            f"non-empty list of calculation modes"
+                        )
+                    modes = tuple(modes)
                 conditional_buff = EngineBuff(
                     name=buff_name,
                     element=buff_raw.get("element"),
                     per_stack_by_rank=per_rank,
                     max_stacks=max_stacks,
+                    bracket=bracket,
+                    modes=modes,
                     note=str(buff_raw.get("note", "")),
                 )
 
@@ -304,6 +357,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
             refinement_rank=refinement_rank,
             max_rank=max_rank,
             passive_dmg=tuple(passive_dmg),
+            passive_ap_by_rank=passive_ap,
             conditional_buff=conditional_buff,
             squad_buffs=tuple(squad_buffs),
             passive_note=str(entry.get("passive_note", "")),

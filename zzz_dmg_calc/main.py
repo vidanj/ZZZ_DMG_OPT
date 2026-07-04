@@ -258,7 +258,9 @@ def run() -> None:
 
     # 5. Calculation mode
     print("\nCalculation mode:")
-    mode = _choose("Mode", ["Direct hit", "Anomaly proc", "Disorder"])
+    mode = _choose("Mode", ["Direct hit", "Anomaly proc", "Disorder", "Vortex"])
+    mode_key = {"Direct hit": "direct", "Anomaly proc": "anomaly",
+                "Disorder": "disorder", "Vortex": "vortex"}[mode]
 
     anomaly_data = load_anomalies()
     agent_attr = agents[agent_key].attribute
@@ -266,8 +268,10 @@ def run() -> None:
     skill = 1.0
     skill_tag = None
     disorder_replaced = None
-    disorder_remaining = 0.0
     disorder_elapsed = 0.0
+    vortex_infused = None
+    anomaly_mv_mult = 1.0
+    disorder_mult_add = 0.0
     if mode == "Direct hit":
         print("\nNote: enter the move's TOTAL motion value. Results are the")
         print("whole move; in-game popups are per hit and will show smaller")
@@ -286,22 +290,38 @@ def run() -> None:
               + ("" if anomaly.supported else " — NOT YET SUPPORTED"))
         if anomaly.debuff_note:
             print(f"  Note: {anomaly.debuff_note}")
-    else:   # Disorder
+        anomaly_mv_mult = _ask_percent(
+            "Anomaly MV multiplier (100 = normal proc; Velina Ablooms: "
+            "145/255 cyclones, 680 Ultimate; her M6 overlap up to 140)",
+            1.0,
+        )
+    elif mode == "Disorder":
         options = [
             f"{a.name} [{e}]" for e, a in anomaly_data.anomalies.items()
             if a.supported and e != agent_attr
         ]
         picked = _choose("Anomaly being REPLACED", options)
         disorder_replaced = picked.split("[")[1].rstrip("]")
-        rule = anomaly_data.disorder[disorder_replaced]
-        if rule.mode == "procs":
-            disorder_remaining = _ask_float(
-                "Seconds remaining on the replaced anomaly", 5.0
-            )
-        else:
-            disorder_elapsed = _ask_float(
-                "Seconds elapsed since the replaced anomaly was applied", 5.0
-            )
+        disorder_elapsed = _ask_float(
+            "Seconds elapsed since the replaced anomaly was applied", 5.0
+        )
+        disorder_mult_add = _ask_percent(
+            "Additive Disorder base-mult increase not modeled elsewhere"
+        )
+    else:   # Vortex (second anomaly over an active Windswept)
+        options = [
+            f"{anomaly_data.anomalies[e].name} [{e}]"
+            for e in sorted(anomaly_data.vortex)
+        ]
+        picked = _choose("Anomaly INFUSED into the Windswept", options)
+        vortex_infused = picked.split("[")[1].rstrip("]")
+        disorder_elapsed = _ask_float(
+            "Seconds elapsed since the infused anomaly was applied", 0.0
+        )
+        disorder_mult_add = _ask_percent(
+            "Additive Vortex base-mult increase (Velina's consumed "
+            "Windbite: 150 at max core)"
+        )
 
     # 6. Buffs. Attacker-side buffs snapshot during BUILDUP for anomalies
     # (mechanic discovery #2), so anomaly modes describe the buildup in
@@ -315,145 +335,151 @@ def run() -> None:
     scaling_inputs: dict[str, float] = {}
     supports: list[SupportConfig] = []
     buildup_segments: list[BuildupSegment] = []
-    if mode == "Direct hit":
-        # Agent kit conditionals (modeled core passive / mindscapes).
-        # Convention: only stat-buff / enemy-debuff effects are modeled;
-        # motion-value mindscapes stay manual (see agents.json notes).
-        agent_obj = agents[agent_key]
+    anomaly_buff_ext = 0.0
 
-        # Owner-stat inputs for the agent's scaled kit effects (e.g. Zhao
-        # as attacker: her core-passive CRIT scales with her Max HP).
-        kit_buffs = [b for b in (agent_obj.core_passive,
-                                 agent_obj.additional_ability) if b]
-        kit_buffs += [m.buff for m in agent_obj.mindscapes.values() if m.buff]
-        for kit_b in kit_buffs:
-            for eff in kit_b.effects:
-                if eff.scaling is not None and eff.scaling.input not in scaling_inputs:
-                    scaling_inputs[eff.scaling.input] = _ask_float(
-                        f"{agent_obj.name}'s "
-                        f"{eff.scaling.input.replace('_', ' ')}", 0
-                    )
+    # Agent kit conditionals (modeled core passive / mindscapes) apply in
+    # EVERY mode — effects carry their own mode/element gates (agents.json).
+    # Anomaly modes hold kit/team buff state constant over the buildup
+    # (adopted concession); buildup segments cover what varies.
+    agent_obj = agents[agent_key]
 
-        core = agent_obj.core_passive
-        if core is not None:
-            effects = ", ".join(f"{e.kind} +{e.value:.0%}" for e in core.effects)
-            print(f"\nCore passive {core.name} ({effects}): {core.note}")
-            core_passive_active = (
-                input("Is it active? [y/N]: ").strip().lower() == "y"
-            )
-        ability = agent_obj.additional_ability
-        if ability is not None:
-            print(f"\nAdditional Ability {ability.name}: {ability.note}")
-            if ability.max_stacks == 1:
-                if input("Active? [y/N]: ").strip().lower() == "y":
-                    additional_ability_stacks = 1
-            else:
-                additional_ability_stacks = int(_ask_float(
-                    f"Active stacks (0-{ability.max_stacks})", 0
-                ))
+    # Owner-stat inputs for the agent's scaled kit effects (e.g. Zhao as
+    # attacker: her core-passive CRIT scales with her Max HP; Velina's
+    # core scales with her panel Energy Regen).
+    kit_buffs = [b for b in (agent_obj.core_passive,
+                             agent_obj.additional_ability) if b]
+    kit_buffs += [m.buff for m in agent_obj.mindscapes.values() if m.buff]
+    for kit_b in kit_buffs:
+        for eff in kit_b.effects:
+            if eff.scaling is not None and eff.scaling.input not in scaling_inputs:
+                scaling_inputs[eff.scaling.input] = _ask_float(
+                    f"{agent_obj.name}'s "
+                    f"{eff.scaling.input.replace('_', ' ')}", 0
+                )
 
-        for level in sorted(agent_obj.mindscapes):
-            mindscape = agent_obj.mindscapes[level]
-            if mindscape.buff is None:
-                continue
-            kit_buff = mindscape.buff
-            effects = ", ".join(
-                f"{e.kind} +{e.value:.0%}/stack" for e in kit_buff.effects
-            )
-            print(f"\nM{level} {mindscape.name} ({effects}): {mindscape.note}")
-            if kit_buff.max_stacks == 1:
-                if input("Unlocked and active? [y/N]: ").strip().lower() == "y":
-                    mindscape_stacks[level] = 1
-            else:
-                stacks = int(_ask_float(
-                    f"Active stacks (0-{kit_buff.max_stacks})", 0
-                ))
-                if stacks:
-                    mindscape_stacks[level] = stacks
-
-        # Off-field supports: team buffs, signature-engine squad buffs, and
-        # squad-facing 4pc sets (all conditionals, asked per support).
-        squad_sets = {k: s for k, s in disc_sets.items() if s.squad_4pc}
-        chosen = {agent_key}
-        for slot_no in (1, 2):
-            candidates = {f"{a.name} [{a.attribute}]": k
-                          for k, a in agents.items() if k not in chosen}
-            print(f"\nSupport {slot_no}:")
-            picked = _choose("Support", ["None", *candidates])
-            if picked == "None":
-                break
-            support_key = candidates[picked]
-            chosen.add(support_key)
-            member = agents[support_key]
-
-            buffs: dict[str, int] = {}
-            scaling: dict[str, float] = {}
-            for team_buff in member.team_buffs:
-                for eff in team_buff.effects:
-                    if eff.scaling is not None and eff.scaling.input not in scaling:
-                        scaling[eff.scaling.input] = _ask_float(
-                            f"{member.name}'s "
-                            f"{eff.scaling.input.replace('_', ' ')}", 0
-                        )
-                print(f"{team_buff.name}: {team_buff.note}")
-                if team_buff.max_stacks == 1:
-                    if input("Active? [y/N]: ").strip().lower() == "y":
-                        buffs[team_buff.name] = 1
-                else:
-                    stacks = int(_ask_float(
-                        f"Stacks (0-{team_buff.max_stacks})", 0
-                    ))
-                    if stacks:
-                        buffs[team_buff.name] = stacks
-
-            engine_buffs: dict[str, int] = {}
-            support_rank = None
-            support_engine = engines.get(member.default_engine)
-            if support_engine is not None and support_engine.squad_buffs:
-                support_rank = int(_ask_float(
-                    f"{support_engine.name} refinement "
-                    f"(1-{support_engine.max_rank})",
-                    support_engine.refinement_rank,
-                ))
-                for squad_buff in support_engine.squad_buffs:
-                    print(f"{squad_buff.name}: {squad_buff.note}")
-                    if squad_buff.max_stacks == 1:
-                        if input("Active? [y/N]: ").strip().lower() == "y":
-                            engine_buffs[squad_buff.name] = 1
-                    else:
-                        stacks = int(_ask_float(
-                            f"Stacks (0-{squad_buff.max_stacks})", 0
-                        ))
-                        if stacks:
-                            engine_buffs[squad_buff.name] = stacks
-
-            squad_set = None
-            squad_set_stacks = 0
-            if squad_sets:
-                labels = {s.name: k for k, s in squad_sets.items()}
-                picked_set = _choose("Squad-facing 4pc set worn",
-                                     ["None", *labels])
-                if picked_set != "None":
-                    squad_set = labels[picked_set]
-                    bonus = squad_sets[squad_set].squad_4pc
-                    if bonus.max_stacks == 1:
-                        squad_set_stacks = (
-                            1 if input("Active? [y/N]: ").strip().lower() == "y"
-                            else 0
-                        )
-                    else:
-                        squad_set_stacks = int(_ask_float(
-                            f"Stacks (0-{bonus.max_stacks})", 0
-                        ))
-
-            supports.append(SupportConfig(
-                agent_key=support_key, buffs=buffs, scaling_inputs=scaling,
-                squad_set=squad_set, squad_set_stacks=squad_set_stacks,
-                engine_rank=support_rank, engine_buffs=engine_buffs,
+    core = agent_obj.core_passive
+    if core is not None:
+        effects = ", ".join(f"{e.kind} +{e.value:.0%}" for e in core.effects)
+        print(f"\nCore passive {core.name} ({effects}): {core.note}")
+        core_passive_active = (
+            input("Is it active? [y/N]: ").strip().lower() == "y"
+        )
+    ability = agent_obj.additional_ability
+    if ability is not None:
+        print(f"\nAdditional Ability {ability.name}: {ability.note}")
+        if ability.max_stacks == 1:
+            if input("Active? [y/N]: ").strip().lower() == "y":
+                additional_ability_stacks = 1
+        else:
+            additional_ability_stacks = int(_ask_float(
+                f"Active stacks (0-{ability.max_stacks})", 0
             ))
 
+    for level in sorted(agent_obj.mindscapes):
+        mindscape = agent_obj.mindscapes[level]
+        if mindscape.buff is None:
+            continue
+        kit_buff = mindscape.buff
+        effects = ", ".join(
+            f"{e.kind} +{e.value:.0%}/stack" for e in kit_buff.effects
+        )
+        print(f"\nM{level} {mindscape.name} ({effects}): {mindscape.note}")
+        if kit_buff.max_stacks == 1:
+            if input("Unlocked and active? [y/N]: ").strip().lower() == "y":
+                mindscape_stacks[level] = 1
+        else:
+            stacks = int(_ask_float(
+                f"Active stacks (0-{kit_buff.max_stacks})", 0
+            ))
+            if stacks:
+                mindscape_stacks[level] = stacks
+
+    # Off-field supports: team buffs, signature-engine squad buffs, and
+    # squad-facing 4pc sets (all conditionals, asked per support). Applied
+    # in every mode; mode-gated effects (Yuzuha's Anomaly/Disorder buffs)
+    # only land where they belong.
+    squad_sets = {k: s for k, s in disc_sets.items() if s.squad_4pc}
+    chosen = {agent_key}
+    for slot_no in (1, 2):
+        candidates = {f"{a.name} [{a.attribute}]": k
+                      for k, a in agents.items() if k not in chosen}
+        print(f"\nSupport {slot_no}:")
+        picked = _choose("Support", ["None", *candidates])
+        if picked == "None":
+            break
+        support_key = candidates[picked]
+        chosen.add(support_key)
+        member = agents[support_key]
+
+        buffs: dict[str, int] = {}
+        scaling: dict[str, float] = {}
+        for team_buff in member.team_buffs:
+            for eff in team_buff.effects:
+                if eff.scaling is not None and eff.scaling.input not in scaling:
+                    scaling[eff.scaling.input] = _ask_float(
+                        f"{member.name}'s "
+                        f"{eff.scaling.input.replace('_', ' ')}", 0
+                    )
+            print(f"{team_buff.name}: {team_buff.note}")
+            if team_buff.max_stacks == 1:
+                if input("Active? [y/N]: ").strip().lower() == "y":
+                    buffs[team_buff.name] = 1
+            else:
+                stacks = int(_ask_float(
+                    f"Stacks (0-{team_buff.max_stacks})", 0
+                ))
+                if stacks:
+                    buffs[team_buff.name] = stacks
+
+        engine_buffs: dict[str, int] = {}
+        support_rank = None
+        support_engine = engines.get(member.default_engine)
+        if support_engine is not None and support_engine.squad_buffs:
+            support_rank = int(_ask_float(
+                f"{support_engine.name} refinement "
+                f"(1-{support_engine.max_rank})",
+                support_engine.refinement_rank,
+            ))
+            for squad_buff in support_engine.squad_buffs:
+                print(f"{squad_buff.name}: {squad_buff.note}")
+                if squad_buff.max_stacks == 1:
+                    if input("Active? [y/N]: ").strip().lower() == "y":
+                        engine_buffs[squad_buff.name] = 1
+                else:
+                    stacks = int(_ask_float(
+                        f"Stacks (0-{squad_buff.max_stacks})", 0
+                    ))
+                    if stacks:
+                        engine_buffs[squad_buff.name] = stacks
+
+        squad_set = None
+        squad_set_stacks = 0
+        if squad_sets:
+            labels = {s.name: k for k, s in squad_sets.items()}
+            picked_set = _choose("Squad-facing 4pc set worn",
+                                 ["None", *labels])
+            if picked_set != "None":
+                squad_set = labels[picked_set]
+                bonus = squad_sets[squad_set].squad_4pc
+                if bonus.max_stacks == 1:
+                    squad_set_stacks = (
+                        1 if input("Active? [y/N]: ").strip().lower() == "y"
+                        else 0
+                    )
+                else:
+                    squad_set_stacks = int(_ask_float(
+                        f"Stacks (0-{bonus.max_stacks})", 0
+                    ))
+
+        supports.append(SupportConfig(
+            agent_key=support_key, buffs=buffs, scaling_inputs=scaling,
+            squad_set=squad_set, squad_set_stacks=squad_set_stacks,
+            engine_rank=support_rank, engine_buffs=engine_buffs,
+        ))
+
+    if mode == "Direct hit":
         print("\nExternal buffs (press Enter to skip):")
-        if buff is not None:
+        if buff is not None and buff.bracket == "dmg_bonus":
             if buff.max_stacks == 1:
                 active = input(
                     f"Is {buff.name} active? [y/N]: "
@@ -469,6 +495,19 @@ def run() -> None:
             "Extra CRIT DMG from conditional buffs (e.g. core passive)"
         )
     else:
+        print("\nExternal buffs (press Enter to skip):")
+        if buff is not None and buff.bracket == "anomaly_buff":
+            # Separate-bracket engine buffs (Joyau Doré) are held constant
+            # over the buildup: one stacks value, not per segment.
+            engine_buff_stacks = _ask_float(
+                f"Active {buff.name} stacks (0-{buff.max_stacks}, "
+                f"constant during buildup)", 0
+            )
+        anomaly_buff_ext = _ask_percent(
+            "Extra Anomaly/Disorder/Vortex DMG buffs not modeled elsewhere "
+            "(separate bracket, e.g. Wuthering Salon's Windswept +18)"
+        )
+
         print("\nBuildup segments - the proc snapshots attacker buffs as a")
         print("buildup-weighted average. Describe roughly what % of the")
         print("buildup happened under which buffs; whatever you don't")
@@ -483,7 +522,7 @@ def run() -> None:
                 break
             share = min(share, remaining)
             seg_stacks = 0.0
-            if buff is not None:
+            if buff is not None and buff.bracket == "dmg_bonus":
                 seg_stacks = _ask_float(
                     f"  {buff.name} stacks during this segment "
                     f"(0-{buff.max_stacks})", 0
@@ -530,8 +569,11 @@ def run() -> None:
         stun_multiplier_override=stun_mult,
         buildup_segments=buildup_segments,
         disorder_replaced=disorder_replaced,
-        disorder_remaining_seconds=disorder_remaining,
         disorder_elapsed_seconds=disorder_elapsed,
+        vortex_infused=vortex_infused,
+        anomaly_mv_mult=anomaly_mv_mult,
+        external_anomaly_buff=[anomaly_buff_ext] if anomaly_buff_ext else [],
+        external_disorder_mult_add=disorder_mult_add,
     )
 
     # 7. Output table
@@ -550,7 +592,8 @@ def run() -> None:
         if results.buff_breakdown:
             print("Active buffs:")
             for item in results.buff_breakdown:
-                shown = (f"+{item['value']:g}" if item["kind"] == "flat_atk"
+                shown = (f"+{item['value']:g}"
+                         if item["kind"] in ("flat_atk", "anomaly_proficiency")
                          else f"+{item['value']:.1%}")
                 print(f"  {item['source']}: {item['kind']} {shown}")
         header = f"{'Scenario':<12}{'Normal':>14}{'Stunned':>14}"
@@ -572,10 +615,19 @@ def run() -> None:
         print(f"\n=== {r.anomaly_name} [{r.element}] vs {boss_name} ===")
         print(f"Final ATK: {r.atk_final:,.1f}   AP: {r.anomaly_proficiency:g} "
               f"(x{r.ap_mult:.3f})   Level mult: x{r.anomaly_level_mult:g}")
+        print(f"Burst/proc mult: x{r.anomaly_mult:.3f}")
         print(f"Zones: DMG% x{r.dmg_bonus_mult:.3f} | "
+              f"Anomaly buff x{r.anomaly_buff_mult:.3f} | "
               f"DEF x{r.def_mult:.4f} | RES x{r.res_mult:.2f} | "
               f"Taken x{r.dmg_taken_mult:.2f} | Stun x{r.stun_mult:.2f}")
         print("(anomalies cannot crit)")
+        if r.buff_breakdown:
+            print("Active buffs:")
+            for item in r.buff_breakdown:
+                shown = (f"+{item['value']:g}"
+                         if item["kind"] in ("flat_atk", "anomaly_proficiency")
+                         else f"+{item['value']:.1%}")
+                print(f"  {item['source']}: {item['kind']} {shown}")
         header = f"{'Scenario':<22}{'Normal':>14}{'Stunned':>14}"
         print("\n" + header)
         print("-" * len(header))

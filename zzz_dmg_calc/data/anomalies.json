@@ -1,10 +1,10 @@
 {
   "_meta": {
-    "description": "Attribute Anomaly data: per-element base multipliers/proc structure and Disorder conversion rules. Values from community sources; several are PROVISIONAL pending in-game calibration (see DOCS/sources.md Phase 5 and DOCS/anomaly_plan.md).",
-    "sources": "DOCS/sources.md (Phase 5 section)",
-    "verified": "2026-07-02",
+    "description": "Attribute Anomaly data: per-element base multipliers/proc structure, Disorder conversion rules (closed form) and Vortex conversion rules (Wind + second anomaly). Values cross-checked against the zenless-optimizer datamine (frzyc/genshin-optimizer libs/zzz, fetched 2026-07-03); in-game calibration status per entry in DOCS/sources.md Phase 5.",
+    "sources": "DOCS/sources.md (Phase 5 section); frzyc/genshin-optimizer libs/zzz/formula/src/data/char/util.ts (anomalyMultipliers / disorderTimeMultipliers / vortexMultipliers)",
+    "verified": "2026-07-03",
     "game_patch": "3.0",
-    "conventions": "mult is a fraction of ATK per hit/tick/proc (7.13 = 713%). 'hits' is the max number of procs over 'duration' seconds at 'interval' spacing (hits=1, interval=null for one-shot anomalies). supported=false entries are declared but rejected by calculations until values are measured. Disorder modes: 'procs' converts remaining time into ticks (+extra_procs); 'flat_decay' deals burst_mult decaying linearly to min_fraction over the anomaly's duration."
+    "conventions": "mult is a fraction of ATK per hit/tick/proc (7.13 = 713%). 'hits' is the max number of procs over 'duration' seconds at 'interval' spacing (hits=1, interval=null for one-shot anomalies). supported=false entries are declared but rejected by calculations until values are measured. 'disorder' rules are the closed form measured by the community and datamined by the zenless-optimizer: total_mult = base + time_mult x max(0, window - elapsed_seconds) (+ any additive Disorder-mult buffs, e.g. Yuzuha M6). 'vortex' rules use the same closed form per INFUSED (non-wind) element with a 30s window; Vortex replaces Disorder while Windswept is active and deals the infused element's damage."
   },
   "anomalies": {
     "physical": {
@@ -54,20 +54,29 @@
     },
     "wind": {
       "name": "Windswept",
-      "supported": false,
-      "mult": null,
-      "hits": null,
+      "supported": true,
+      "mult": 12.5,
+      "hits": 1,
       "interval": null,
-      "duration": null,
-      "debuff_note": "3.0 anomaly; damage values pending sourcing/in-game measurement with Velina. Vortex (Wind Disorder variant) resolves as the infused attribute's Disorder once measured."
+      "duration": 10,
+      "debuff_note": "One-shot burst + interrupt (zenless-optimizer datamine: 1250% ATK - PROVISIONAL until popup-checked with Velina; duration provisional too). Windswept STATE: direct Wind DMG taken +10% while active; the first non-Wind element to hit triggers that element's CONTAMINATION, extending the +10% to its direct DMG as well (once per Windswept). Enter these in direct-hit mode as 'DMG taken' entries (bracket PROVISIONAL). Velina M6: re-applying Windswept over itself boosts the new burst +2.5% per remaining second (max +40%) - enter as the Anomaly MV multiplier (up to 140)."
     }
   },
   "disorder": {
-    "_note": "PROVISIONAL conversion rules - calibrate in-game before trusting. Damage is dealt as the REPLACED anomaly's element using the triggering agent's stats.",
-    "fire": { "mode": "procs", "extra_procs": 0 },
-    "electric": { "mode": "procs", "extra_procs": 6 },
-    "ether": { "mode": "procs", "extra_procs": 0 },
-    "physical": { "mode": "flat_decay", "min_fraction": 0.9 },
-    "ice": { "mode": "flat_decay", "min_fraction": 0.9 }
+    "_note": "Closed form from the zenless-optimizer datamine (2026-07-03), replacing the earlier procs/flat_decay model: total_mult = base + time_mult x max(0, window - elapsed_seconds since the REPLACED anomaly was applied). Damage is dealt as the REPLACED anomaly's element using the triggering agent's stats. PROVISIONAL until calibrated in-game (anomaly_plan.md 5e). The wind rule is Polarity Disorder (no time term).",
+    "fire": { "base": 4.5, "time_mult": 1.0, "window": 10 },
+    "electric": { "base": 4.5, "time_mult": 1.25, "window": 10 },
+    "ether": { "base": 4.5, "time_mult": 1.25, "window": 10 },
+    "physical": { "base": 4.5, "time_mult": 0.075, "window": 10 },
+    "ice": { "base": 4.5, "time_mult": 0.075, "window": 10 },
+    "wind": { "base": 1.0, "time_mult": 0.0, "window": 10 }
+  },
+  "vortex": {
+    "_note": "Vortex: a second (non-Wind) anomaly applied over Windswept - or Windswept applied over an active anomaly - triggers Vortex INSTEAD of Disorder (no daze). Damage is dealt as the INFUSED element using the triggering agent's stats: total_mult = mult + time_mult x max(0, window - elapsed_seconds since the infused anomaly was applied) (+ additive Disorder/Vortex-mult buffs, e.g. Velina's consumed Windbite +150%, Yuzuha M6). Values from the zenless-optimizer datamine (2026-07-03) - PROVISIONAL until calibrated in-game with Velina. The target then enters the infused element's Contamination state.",
+    "fire": { "mult": 9.0, "time_mult": 1.0, "window": 30 },
+    "electric": { "mult": 6.5, "time_mult": 1.25, "window": 30 },
+    "ether": { "mult": 6.5, "time_mult": 1.25, "window": 30 },
+    "ice": { "mult": 13.0, "time_mult": 0.075, "window": 30 },
+    "physical": { "mult": 8.0, "time_mult": 0.075, "window": 30 }
   }
 }

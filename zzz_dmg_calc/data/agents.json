@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
+    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
   },
   "agents": {
     "dummy": {
@@ -265,6 +265,7 @@
       "name": "Piper Wheel",
       "attribute": "physical",
       "specialty": "anomaly",
+      "faction": "sons_of_calydon",
       "level": 60,
       "base_hp": 6976,
       "base_atk": 683,
@@ -273,7 +274,155 @@
       "anomaly_mastery": 116,
       "anomaly_proficiency": 118,
       "core_skill_bonuses": { "base_atk": 75 },
-      "default_engine": "sharpened_stinger"
+      "additional_ability": {
+        "name": "Synced Acceleration",
+        "max_stacks": 1,
+        "condition": { "teammate_shares_attribute_or_faction": true },
+        "effects": [ { "kind": "dmg_bonus", "value": 0.18 } ],
+        "note": "Requires a teammate sharing her Attribute (physical, e.g. Yuzuha) or Faction (Sons of Calydon). While Piper has 20+ stacks of Power: ALL squad members' DMG +18%. Verified 2026-07-03 (Game8 + zenless-optimizer datamine: abilityParams [20, 0.18])."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Leisure Moment",
+          "note": "Spinning attacks have a 50% chance to grant extra Power; Power cap raised 20 -> 30 - buildup/uptime only, no damage-formula effect, not modeled."
+        },
+        "2": {
+          "name": "Motivation",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "skill_tag": "special",
+              "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } },
+            { "kind": "dmg_bonus", "skill_tag": "ex_special",
+              "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } },
+            { "kind": "dmg_bonus", "skill_tag": "ultimate",
+              "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } },
+            { "kind": "dmg_bonus", "modes": ["anomaly"],
+              "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } }
+          ],
+          "note": "Downward smash (One Trillion Tons / Special / EX Special / Ultimate) rider: Physical DMG +10% plus +1% per Power stack AT HIT TIME (spin hits grant Power mid-move; cap +40% at 30 Power with M1). Enter Power as 'power_at_smash' (0 is valid: base +10% applies). Direct hits: applies when the calculated hit's damage type is Special / EX Special / Ultimate. ASSAULT PROCS: the rider enters the buildup snapshot (mechanic discovery #3, CONFIRMED in-game 2026-07-04: +10.0% exact at 0 Power, bare build) - modeled at full value within the BUFFED buildup share, assuming her smashes dominate the gauge (Piper's standard loop); the results range's unbuffed floor covers smash-share/uptime dilution; use CLI buildup segments for exact shares."
+        },
+        "3": {
+          "name": "Truck Expert",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Refined Techniques",
+          "note": "When a squad member inflicts an Attribute Anomaly, Piper recovers 20 Energy (once per 30s) - resource only, not modeled."
+        },
+        "5": {
+          "name": "Personal Hobbies",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Mild Excitement",
+          "note": "EX Special: Engine Spin duration +2s and Power duration +4s - uptime only, not modeled."
+        }
+      },
+      "default_engine": "sharpened_stinger",
+      "_note": "Kit completed 2026-07-03 (Game8 + zenless-optimizer datamine). Core passive (Power: Physical Anomaly Buildup Rate +4%/stack at rank F, 20 stacks) affects buildup SPEED only, never proc damage - documented here, no modeled core_passive. Her Assault proc was game-validated 2026-07-02 (calibration #1: 30,416 exact)."
+    },
+    "yuzuha": {
+      "name": "Yuzuha (Ukinami Yuzuha)",
+      "attribute": "physical",
+      "specialty": "support",
+      "faction": "spook_shack",
+      "level": 60,
+      "base_hp": 8829,
+      "base_atk": 683,
+      "base_def": 612,
+      "impact": 86,
+      "anomaly_mastery": 88,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": {},
+      "core_passive": {
+        "name": "Whimsical Wonder: Tanuki Wish (self)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "flat_atk",
+            "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.4, "cap": 1200 } },
+          { "kind": "dmg_bonus", "value": 0.15 }
+        ],
+        "note": "Self part of Tanuki Wish when SHE is the attacker: flat ATK = 40% of her initial ATK (cap 1,200 at max core; full at 3,000 panel ATK) + DMG +15% for 40s after her EX Special / Ultimate hits. Same effect as her 'Tanuki Wish' team buff: never apply both at once. Enter HER panel ATK as 'initial_atk'."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Lucky Constitution",
+          "note": "Energy on entry (resource, not modeled); Sweet Scare enemies -10% All-Attribute RES and Additional Ability buff x1.3 - both team-facing, modeled as the 'M1: ...' team buffs (apply them there even when she attacks herself)."
+        },
+        "2": {
+          "name": "Full of Colorful Company",
+          "note": "Squad DMG +15% and Anomaly Buildup Rate +15% for 40s on her EX Special / Ultimate hit - team-facing, modeled as the 'M2: squad DMG' team buff (buildup part affects buildup speed only, not modeled). Forced Chain Attack part is QoL."
+        },
+        "3": {
+          "name": "Fairytale of the Haunted City",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "Falling Magic",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "assist_followup" } ],
+          "note": "Her Assist Follow-Ups deal +30% DMG (applies when the calculated hit is an Assist Follow-Up); the Anomaly Buildup Rate +20% part affects buildup only, and the Quick Assist trigger is QoL - not modeled."
+        },
+        "5": {
+          "name": "Dreams of a Fading Winter",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Put Down Roots",
+          "note": "Charged Assist Follow-Up fires up to 3 extra shells of 300% ATK Physical DMG each - OFF-FIELD DAMAGE, deferred to that feature (own calculate() run with Yuzuha as attacker). The squad Disorder-multiplier part (+105%/stack, max 3) is modeled as the 'M6: squad Disorder base-mult' team buff."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Tanuki Wish: squad ATK + DMG",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.4, "cap": 1200 } },
+            { "kind": "dmg_bonus", "value": 0.15 }
+          ],
+          "note": "Core passive, max rank: after her EX Special / Ultimate hits, ALL squad members gain flat ATK = 40% of YUZUHA's initial ATK (cap 1,200; full at 3,000 panel ATK) and DMG +15% for 40s. Enter HER panel ATK as 'initial_atk'. Flat ATK added after the panel bracket (Zhao analogy, validation #4) - not yet popup-checked. Verified 2026-07-03 (Game8/Icy Veins + datamine coreParams)."
+        },
+        {
+          "name": "Additional Ability: squad Anomaly & Disorder DMG (AM-scaled)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "anomaly_buff", "modes": ["anomaly", "disorder"],
+              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.002, "cap": 0.20 } }
+          ],
+          "note": "The More the Merrier - needs an Anomaly squadmate or another Spook Shack member, and Tanuki Wish up. Per point of HER Anomaly Mastery over 100: Attribute Anomaly DMG and Disorder DMG +0.2%, cap 20% (full at 200 AM). Enter HER total AM as 'anomaly_mastery' (incl. Metanukimorphosis +30 when its condition is up). Joins the separate Anomaly/Disorder Buff Multiplier bracket (zenless-optimizer bracket - PROVISIONAL); does NOT buff Vortex (datamine gates it to anomaly/disorder damage). The Anomaly Buildup Rate half affects buildup speed only - not modeled."
+        },
+        {
+          "name": "M1: Sweet Scare RES shred",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.10 } ],
+          "note": "Requires Yuzuha at Mindscape 1. Enemies in the Sweet Scare state (her EX Special debuff): All-Attribute RES -10%. Verified 2026-07-03 (Game8/Icy Veins + datamine)."
+        },
+        {
+          "name": "M1: Additional Ability boost (x1.3)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "anomaly_buff", "modes": ["anomaly", "disorder"],
+              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.0006, "cap": 0.06 } }
+          ],
+          "note": "Requires Yuzuha at Mindscape 1. Her Additional Ability buff is raised to 130% of its value - modeled as the additive extra (+0.06%/AM point, cap +6%): check TOGETHER with the Additional Ability buff, with the same 'anomaly_mastery' input."
+        },
+        {
+          "name": "M2: squad DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.15 } ],
+          "note": "Requires Yuzuha at Mindscape 2 (Full of Colorful Company). After her EX Special / Ultimate hits: all squad members' DMG +15% for 40s (the Anomaly Buildup Rate +15% affects buildup only - not modeled)."
+        },
+        {
+          "name": "M6: squad Disorder base-mult",
+          "max_stacks": 3,
+          "effects": [ { "kind": "disorder_mult_add", "value": 1.05, "modes": ["disorder", "vortex"] } ],
+          "note": "Requires Yuzuha at Mindscape 6 (Put Down Roots). When her M6 shells hit Sweet Scare enemies: squad Disorder DMG Multiplier +105% per stack for 40s, up to 3 stacks - ADDS to the Disorder/Vortex burst base multiplier (datamine: addl_disorder_, applies to Vortex too). PROVISIONAL until calibrated."
+        }
+      ],
+      "default_engine": "metanukimorphosis",
+      "_note": "Support entry (added 2026-07-03: Game8 + Icy Veins + zenless-optimizer datamine; stats datamine-derived: HP 710+2436+59x96.33=8829, ATK 109+195+59x6.4272=683, DEF 612, AM 88, AP 93 - not yet panel-checked in-game). Core stat boosts (max: +75 base ATK, +36 AM) NOT folded into the stored stats: she is a support; her buffs take her PANEL values as scaling inputs instead, which already include them. Sugar Points are resource-only. Her M1/M2/M6 team-facing parts are 'M<level>: ...' team_buffs per the Zhao convention; core Tanuki Wish exists as core_passive (attacker role) AND team buff (support role) - never apply both at once."
     },
     "evelyn": {
       "name": "Evelyn Chevalier",
@@ -321,6 +470,7 @@
       "name": "Velina Airgid",
       "attribute": "wind",
       "specialty": "anomaly",
+      "faction": "roscaelifer",
       "level": 60,
       "base_hp": 7788,
       "base_atk": 797,
@@ -329,7 +479,65 @@
       "anomaly_mastery": 112,
       "anomaly_proficiency": 111,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_proficiency": 54 },
-      "default_engine": "joyau_dore"
+      "core_passive": {
+        "name": "Breeze in Bloom: Energy Regen scaling",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "dmg_bonus",
+            "scaling": { "input": "initial_energy_regen", "threshold": 1.2, "per_step": 0.01, "per_value": 0.0021, "cap": 0.35 } }
+        ],
+        "note": "Per 0.01 initial Energy Regen above 1.2: DMG +0.21%, cap +35% (and AM +0.5, cap +84 - buildup only, not modeled). Enter her panel Energy Regen as 'initial_energy_regen' (e.g. 1.92 with Joyau Dore's +60%). Effectively always active. The Windbite part (consuming 2 points: that Vortex's base multiplier +150% at max core) is a per-burst input - enter it as the additive Vortex-mult increase in Vortex mode. Cyclone-explosion ABLOOMS: an extra instance of Wind Anomaly DMG at a fixed MV - Condensed 145% / Sweeping 255% at max core (datamine coreParams) - run wind Anomaly mode with that Anomaly MV multiplier."
+      },
+      "additional_ability": {
+        "name": "Tea Party Etiquette",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["anomaly"] },
+        "effects": [
+          { "kind": "anomaly_buff", "value": 0.10, "modes": ["anomaly"], "element": "wind" },
+          { "kind": "anomaly_buff", "value": 0.10, "modes": ["vortex"] }
+        ],
+        "note": "Needs an Anomaly squadmate or one sharing her attribute (wind). Windswept and Vortex DMG +10% (separate Buff Multiplier bracket, zenless-optimizer - PROVISIONAL). Also: her Ultimate's heavy attack on a Wind-anomalous enemy triggers an ABLOOM fixed at 680% of Wind Anomaly DMG (wind Anomaly mode, MV multiplier 680); Sweeping Cyclone's extra Anomaly-Buildup-RES shred / Daze / buildup parts affect buildup only - not modeled."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Orderly Elegance",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.20, "modes": ["vortex"] },
+            { "kind": "res_shred", "value": 0.20, "modes": ["anomaly"], "element": "wind" }
+          ],
+          "note": "When she triggers Vortex: ignores 20% of the target's All-Attribute RES; squad Windswept DMG ignores 20% Wind RES (the wind Anomaly-mode entry). Sweeping Cyclone +20% Daze affects buildup only - not modeled."
+        },
+        "2": {
+          "name": "Saturation Project",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.15, "modes": ["anomaly"], "element": "wind" },
+            { "kind": "anomaly_buff", "value": 0.15, "modes": ["vortex"] }
+          ],
+          "note": "The Additional Ability's Windswept/Vortex DMG increase is raised by a further +15% (check together with Tea Party Etiquette). Windswept now also grants Windbite (5s cooldown) and tinted cyclones accumulate the tinted attribute's buildup - resource/buildup, not modeled."
+        },
+        "3": {
+          "name": "Conquest by Etiquette",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "Tea Party Tribunal",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.15 } ],
+          "note": "Using an EX Special Attack: her ATK +15% for 40s (repeated triggers refresh) - effectively always up in rotation. Panel ATK% bracket assumed (validation #4 analogy) - not yet popup-checked."
+        },
+        "5": {
+          "name": "Death Witch",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Chief Angel",
+          "note": "Windbite refund on consumption (6s cooldown) and +20% Wind Anomaly Buildup - resource/buildup, not modeled. Re-applying Windswept over an active one: the new burst's DMG +2.5% per remaining second, cap +40% - enter as the Anomaly MV multiplier in wind Anomaly mode (up to 140)."
+        }
+      },
+      "default_engine": "joyau_dore",
+      "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = one extra instance of full Wind Anomaly DMG at a fixed MV (cyclones 145%/255%, Ultimate 680%): calculate as wind Anomaly mode with that Anomaly MV multiplier. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
     }
   }
 }

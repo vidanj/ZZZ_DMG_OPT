@@ -8,11 +8,14 @@ module the same way. No I/O happens here beyond loading the JSON data files
 Entry points::
 
     calculate(config)         -> CalcResults      # direct hits (v1)
-    calculate_anomaly(config) -> AnomalyResults   # anomaly proc / Disorder
+    calculate_anomaly(config) -> AnomalyResults   # anomaly / Disorder / Vortex
 
-``calculate_anomaly`` computes the agent's own attribute anomaly, or — when
-``config.disorder_replaced`` is set — the Disorder triggered by replacing
-that element's anomaly (damage dealt as the REPLACED element).
+``calculate_anomaly`` computes the agent's own attribute anomaly (optionally
+MV-scaled: Velina's Ablooms), or — when ``config.disorder_replaced`` is set —
+the Disorder triggered by replacing that element's anomaly (damage dealt as
+the REPLACED element), or — when ``config.vortex_infused`` is set — the
+Vortex triggered when that element's anomaly meets an active Windswept
+(damage dealt as the INFUSED element).
 """
 
 from __future__ import annotations
@@ -177,10 +180,37 @@ class CalcConfig:
             only.
         disorder_replaced: For Disorder calculations: the element of the
             anomaly being REPLACED (``None`` = plain anomaly proc).
-        disorder_remaining_seconds: Time left on the replaced anomaly when
-            Disorder triggers (used by proc-based conversions).
-        disorder_elapsed_seconds: Time since the replaced anomaly was
-            applied (used by decaying one-shot conversions).
+        disorder_elapsed_seconds: Time since the converted anomaly was
+            applied — the replaced anomaly for Disorder, the infused one
+            for Vortex (feeds the burst closed form's time term).
+        vortex_infused: For Vortex calculations: the element of the
+            non-wind anomaly INFUSED into an active Windswept (damage is
+            dealt as this element). Mutually exclusive with
+            ``disorder_replaced``.
+        anomaly_mv_mult: Multiplier on the anomaly's base MV, plain
+            anomaly mode only (1.0 = normal). Velina's ABLOOMS are an
+            extra wind-anomaly instance at a fixed MV: cyclones 1.45 /
+            2.55, Ultimate 6.80; her M6 Windswept overlap is up to 1.40.
+        external_anomaly_buff: Entries of the separate Anomaly/Disorder
+            "Buff Multiplier" bracket (fractions) — "Attribute Anomaly /
+            Disorder / Windswept / Vortex DMG +X%" effects not already
+            modeled (e.g. Wuthering Salon's +18% on Windswept trigger).
+            Anomaly modes only; bracket placement PROVISIONAL.
+        external_disorder_mult_add: Additive increase of the
+            Disorder/Vortex burst base multiplier (fraction) — e.g.
+            Velina's consumed Windbite (+1.50 at max core). Modeled kit
+            sources (Yuzuha M6) add on top automatically.
+        unbuffed_share: Fraction of the buildup treated as UNBUFFED —
+            contributed at the attacker's plain panel (kit/team buffs,
+            engine conditional stacks, set 4pc stacks, external buffs and
+            the anomaly-buff bracket all excluded; unconditional parts —
+            disc stats, 2pc bonuses, always-on engine passives — stay).
+            Models teammate buildup dilution / buff downtime as a
+            pessimistic bound without per-teammate inputs (the UI shows
+            the 0.0 vs 0.3 range). Applied on top of
+            ``buildup_segments`` (their shares scale by ``1 − share``).
+            Enemy-side zones are proc-time and stay full (discovery #2).
+            Anomaly modes only.
     """
 
     agent_key: str
@@ -207,8 +237,12 @@ class CalcConfig:
     external_anomaly_proficiency: float = 0.0
     buildup_segments: list[BuildupSegment] = field(default_factory=list)
     disorder_replaced: str | None = None
-    disorder_remaining_seconds: float = 0.0
     disorder_elapsed_seconds: float = 0.0
+    vortex_infused: str | None = None
+    anomaly_mv_mult: float = 1.0
+    external_anomaly_buff: list[float] = field(default_factory=list)
+    external_disorder_mult_add: float = 0.0
+    unbuffed_share: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -250,13 +284,13 @@ class AnomalyResults:
     For Disorder, the burst is a single number: ``per_proc == full``.
     """
 
-    kind: str                 # "anomaly" or "disorder"
-    anomaly_name: str         # e.g. "Assault", or "Disorder (Burn)"
+    kind: str                 # "anomaly", "disorder" or "vortex"
+    anomaly_name: str         # e.g. "Assault", "Disorder (Burn)", "Vortex (Burn)"
     element: str              # element the damage is dealt as
     hits: int                 # procs over full duration (1 for bursts)
     per_proc: float
     per_proc_stunned: float
-    full: float               # per_proc x hits (or the Disorder burst)
+    full: float               # per_proc x hits (or the Disorder/Vortex burst)
     full_stunned: float
     # Breakdown
     atk_final: float
@@ -265,10 +299,14 @@ class AnomalyResults:
     anomaly_level_mult: float
     anomaly_mult: float       # the composed per-proc/burst multiplier used
     dmg_bonus_mult: float
+    anomaly_buff_mult: float  # separate Anomaly/Disorder Buff Multiplier bracket
     def_mult: float
     res_mult: float
     dmg_taken_mult: float
     stun_mult: float
+    # Every active conditional buff as {source, kind, value} — the front
+    # ends render this as an itemized "Active buffs" summary.
+    buff_breakdown: tuple = ()
 
 
 class CalcError(ValueError):
@@ -292,16 +330,23 @@ def _resolve_engine_rank(engine: Engine, override: int | None) -> int:
 
 
 def _engine_buff_bonus(
-    engine: Engine, stacks: float, dealt_element: str, rank: int
+    engine: Engine, stacks: float, dealt_element: str, rank: int,
+    mode: str = "direct", bracket: str = "dmg_bonus",
 ) -> float:
-    """DMG% contribution of the engine's conditional buff at ``stacks``.
+    """Contribution of the engine's conditional buff at ``stacks``.
 
     ``stacks`` may be fractional: anomaly procs snapshot buffs as a
     buildup-weighted average (in-game finding, 2026-07-02), so e.g. 2.35
     expresses "buildup happened at a mix of 2 and 3 stacks". The per-stack
     value comes from the refinement ``rank``.
 
-    Returns 0 when the buff's element doesn't match the dealt element.
+    Returns 0 when the buff doesn't apply: its ``bracket`` differs from the
+    requested one, its ``modes`` gate excludes ``mode``, or its element
+    doesn't match the dealt element. A buff that EXPLICITLY lists a
+    disorder/vortex mode skips the element check there (those bursts deal
+    another element on the equipper's behalf — Joyau Doré); a plain
+    element-gated buff (Sharpened Stinger) stays element-checked in every
+    mode.
 
     Raises:
         CalcError: stacks requested for an engine without a modeled buff,
@@ -320,7 +365,15 @@ def _engine_buff_bonus(
             f"{buff.name} stacks must be a number 0..{buff.max_stacks}, "
             f"got {stacks!r}"
         )
-    if buff.element is not None and buff.element != dealt_element:
+    if buff.bracket != bracket:
+        return 0.0
+    if buff.modes is not None and mode not in buff.modes:
+        return 0.0
+    element_gate_waived = (
+        buff.modes is not None and mode in ("disorder", "vortex")
+    )
+    if (buff.element is not None and not element_gate_waived
+            and buff.element != dealt_element):
         return 0.0
     return buff.per_stack(rank) * stacks
 
@@ -335,18 +388,30 @@ def _engine_passive_bonuses(
     ]
 
 
+#: Kit effect kinds collected as bracket-entry LISTS (the rest are sums).
+_LIST_KINDS = ("dmg_bonus", "dmg_taken", "daze_bonus", "anomaly_buff")
+
+
 def _kit_contributions(
     agent: Agent, config: CalcConfig,
     agents: dict[str, Agent], disc_sets: dict[str, DiscSet],
     engines: dict[str, Engine],
+    mode: str = "direct", dealt_element: str | None = None,
 ) -> dict:
     """Aggregate every active conditional: the on-field agent's kit (core
     passive, mindscapes, additional ability) plus the supports' team
     buffs and squad set effects.
 
+    ``mode`` (direct/anomaly/disorder/vortex) and ``dealt_element`` drive
+    the effect gates: an effect with ``modes`` applies only when ``mode``
+    is listed; an effect with ``element`` applies only when the dealt
+    element matches — checked in the direct/anomaly modes only, since
+    Disorder/Vortex deal another element's damage by design.
+
     Returns a dict with keys ``crit_rate``, ``crit_dmg``, ``res_shred``,
-    ``flat_atk`` (floats) and ``dmg_bonus``, ``dmg_taken``, ``daze_bonus``
-    (lists of bracket entries).
+    ``flat_atk``, ``atk_pct``, ``anomaly_proficiency``,
+    ``disorder_mult_add`` (floats) and ``dmg_bonus``, ``dmg_taken``,
+    ``daze_bonus``, ``anomaly_buff`` (lists of bracket entries).
 
     Raises:
         CalcError: unmodeled/unknown buffs or mindscapes, stacks out of
@@ -355,7 +420,9 @@ def _kit_contributions(
     """
     totals = {"crit_rate": 0.0, "crit_dmg": 0.0, "res_shred": 0.0,
               "flat_atk": 0.0, "atk_pct": 0.0,
+              "anomaly_proficiency": 0.0, "disorder_mult_add": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
+              "anomaly_buff": [],
               "items": []}
 
     def record(source: str, kind: str, value: float) -> None:
@@ -370,12 +437,31 @@ def _kit_contributions(
             # (e.g. Catwalk buffs EX Specials only).
             if effect.skill_tag is not None and effect.skill_tag != config.skill_tag:
                 continue
+            # Mode gate (anomaly_buff / disorder_mult_add carriers etc.).
+            if effect.modes is not None and mode not in effect.modes:
+                continue
+            # Element gate. An effect that EXPLICITLY lists a
+            # disorder/vortex mode skips it there (those bursts deal
+            # another element on the owner's behalf); plain element-gated
+            # effects stay element-checked in every mode.
+            element_gate_waived = (
+                effect.modes is not None and mode in ("disorder", "vortex")
+            )
+            if (effect.element is not None and not element_gate_waived
+                    and effect.element != dealt_element):
+                continue
             if effect.scaling is not None:
                 inputs = scaling_inputs or {}
                 x = inputs.get(effect.scaling.input)
-                if not isinstance(x, (int, float)) or isinstance(x, bool) or x <= 0:
+                # Zero is a valid input when the effect has a flat base
+                # (Piper M2 at 0 Power = +10%); otherwise it means the
+                # input was forgotten and the buff would silently vanish.
+                zero_ok = effect.scaling.base > 0
+                if (not isinstance(x, (int, float)) or isinstance(x, bool)
+                        or x < 0 or (x == 0 and not zero_ok)):
                     raise CalcError(
-                        f"{owner}{buff.name}: needs a positive "
+                        f"{owner}{buff.name}: needs a "
+                        f"{'non-negative' if zero_ok else 'positive'} "
                         f"'{effect.scaling.input}' value (the buff scales "
                         f"with the owner's stat)"
                     )
@@ -383,7 +469,7 @@ def _kit_contributions(
             else:
                 value = effect.value
             amount = value * stacks
-            if effect.kind in ("dmg_bonus", "dmg_taken", "daze_bonus"):
+            if effect.kind in _LIST_KINDS:
                 totals[effect.kind].append(amount)
             else:
                 totals[effect.kind] += amount
@@ -471,8 +557,7 @@ def _kit_contributions(
                          f"{entry.name} squad 4pc")
             if support.squad_set_stacks:
                 amount = entry.squad_4pc.value * support.squad_set_stacks
-                if entry.squad_4pc.kind in ("dmg_bonus", "dmg_taken",
-                                            "daze_bonus"):
+                if entry.squad_4pc.kind in _LIST_KINDS:
                     totals[entry.squad_4pc.kind].append(amount)
                 else:
                     totals[entry.squad_4pc.kind] += amount
@@ -503,7 +588,7 @@ def _kit_contributions(
                 if not stacks:
                     continue
                 amount = buff.value(rank) * stacks
-                if buff.kind in ("dmg_bonus", "dmg_taken", "daze_bonus"):
+                if buff.kind in _LIST_KINDS:
                     totals[buff.kind].append(amount)
                 elif buff.kind in totals and buff.kind != "items":
                     totals[buff.kind] += amount
@@ -579,7 +664,10 @@ def calculate(
     )
 
     rank = _resolve_engine_rank(engine, config.engine_rank)
-    kit = _kit_contributions(agent, config, agents, disc_sets, engines)
+    kit = _kit_contributions(
+        agent, config, agents, disc_sets, engines,
+        mode="direct", dealt_element=agent.attribute,
+    )
     buff_items = kit["items"]
 
     # Team ATK% buffs join the SAME additive panel bracket as Combat ATK%
@@ -608,7 +696,8 @@ def calculate(
         buff_items.append({"source": f"{engine.name} passive (R{rank})",
                            "kind": "dmg_bonus", "value": passive_value})
     engine_buff = _engine_buff_bonus(
-        engine, config.engine_buff_stacks, agent.attribute, rank
+        engine, config.engine_buff_stacks, agent.attribute, rank,
+        mode="direct",
     )
     if engine_buff:
         bonus_entries.append(engine_buff)
@@ -688,29 +777,39 @@ def calculate_anomaly(
     disc_sets: dict[str, DiscSet] | None = None,
     anomaly_data: AnomalyData | None = None,
 ) -> AnomalyResults:
-    """Compute anomaly-proc or Disorder damage for one configuration.
+    """Compute anomaly-proc, Disorder or Vortex damage for one configuration.
 
-    Plain anomaly (``config.disorder_replaced is None``): the agent's own
-    attribute anomaly — per-proc and full-duration damage.
+    Plain anomaly (neither ``disorder_replaced`` nor ``vortex_infused``):
+    the agent's own attribute anomaly — per-proc and full-duration damage,
+    scaled by ``anomaly_mv_mult`` (Velina's Ablooms / M6 overlap).
 
     Disorder (``config.disorder_replaced`` set): the burst dealt when the
     agent's anomaly replaces the given element's active anomaly. Damage is
-    dealt as the REPLACED element (RES uses that element; the build's
-    Attribute DMG% bonus only applies when the dealt element matches the
-    agent's own attribute). ``config.skill_multiplier`` is ignored in both
-    modes.
+    dealt as the REPLACED element. Closed form: ``base + additive buffs +
+    time_mult × max(0, window − elapsed)``.
+
+    Vortex (``config.vortex_infused`` set): the burst dealt when a second
+    (non-wind) anomaly meets an active Windswept — replaces Disorder, no
+    daze. Damage is dealt as the INFUSED element, same closed form with the
+    infused element's Vortex rule.
+
+    In every mode the build's Attribute DMG% only applies when the dealt
+    element matches the agent's own attribute, and
+    ``config.skill_multiplier`` is ignored.
+
+    Kit conditionals (core passive / mindscapes / additional ability) and
+    the supports' team buffs ARE applied here (Phase 5e), under the adopted
+    concession that buff state is held constant over the whole buildup —
+    describe varying engine-buff/external states with
+    ``buildup_segments``. Effects gated by ``modes``/``element`` apply per
+    the calculation mode (e.g. Velina's Vortex-only RES ignore).
 
     ⚠️ Several underlying values are provisional pending in-game
     calibration — see DOCS/sources.md Phase 5.
 
-    ``config.engine_rank`` scales the engine's modeled passive parts here
-    too; agent kit conditionals (``core_passive_active`` / ``mindscapes``)
-    are DIRECT-HIT ONLY for now and ignored in anomaly modes (their
-    buildup-snapshot semantics are future work).
-
     Raises:
-        CalcError: unknown agent/engine/boss, unsupported anomaly (e.g.
-            Windswept until measured), or invalid disorder inputs.
+        CalcError: unknown agent/engine/boss, unsupported anomaly, both
+            disorder and vortex requested, or invalid mode inputs.
     """
     consts = consts if consts is not None else load_constants()
     disc_data = disc_data if disc_data is not None else load_disc_data()
@@ -747,18 +846,33 @@ def calculate_anomaly(
     rank = _resolve_engine_rank(engine, config.engine_rank)
 
     # --- Which anomaly's damage, and per-proc/burst multiplier ------------
-    if config.disorder_replaced is None:
-        anomaly = anomaly_data.anomalies[agent.attribute]
-        try:
-            anomaly.require_supported()
-        except Exception as exc:
-            raise CalcError(str(exc)) from None
-        kind = "anomaly"
-        name = anomaly.name
-        dealt_element = agent.attribute
-        per_proc_mult = anomaly.mult
-        hits = anomaly.hits
-    else:
+    if config.disorder_replaced is not None and config.vortex_infused is not None:
+        raise CalcError(
+            "'disorder_replaced' and 'vortex_infused' are mutually "
+            "exclusive - Vortex replaces Disorder while Windswept is active"
+        )
+    # Additive burst-multiplier buffs (kit sources join below, once the
+    # calculation mode is known and the kit is aggregated).
+    extra_burst = config.external_disorder_mult_add
+    if extra_burst < 0:
+        raise CalcError("external_disorder_mult_add must be >= 0")
+
+    if config.vortex_infused is not None:
+        infused_key = config.vortex_infused.lower()
+        rule = anomaly_data.vortex.get(infused_key)
+        if rule is None:
+            raise CalcError(
+                f"No Vortex rule for infused element "
+                f"'{config.vortex_infused}'; options: "
+                f"{sorted(anomaly_data.vortex)} (wind itself is never the "
+                f"infusion)"
+            )
+        infused = anomaly_data.anomalies[infused_key]
+        kind = "vortex"
+        name = f"Vortex ({infused.name})"
+        dealt_element = infused_key
+        hits = 1
+    elif config.disorder_replaced is not None:
         replaced_key = config.disorder_replaced.lower()
         if replaced_key not in anomaly_data.anomalies:
             raise CalcError(
@@ -780,24 +894,52 @@ def calculate_anomaly(
         kind = "disorder"
         name = f"Disorder ({replaced.name})"
         dealt_element = replaced_key
-        if rule.mode == "procs":
-            per_proc_mult = formulas.disorder_procs_mult(
-                replaced.mult,
-                config.disorder_remaining_seconds,
-                replaced.interval,
-                rule.extra_procs,
-            )
-        else:   # flat_decay
-            per_proc_mult = formulas.disorder_decay_mult(
-                replaced.mult,
-                config.disorder_elapsed_seconds,
-                replaced.duration,
-                rule.min_fraction,
-            )
         hits = 1
+    else:
+        anomaly = anomaly_data.anomalies[agent.attribute]
+        try:
+            anomaly.require_supported()
+        except Exception as exc:
+            raise CalcError(str(exc)) from None
+        if config.anomaly_mv_mult <= 0:
+            raise CalcError(
+                "anomaly_mv_mult must be > 0 (1.0 = normal; Velina Ablooms "
+                "1.45 / 2.55 / 6.80, her M6 overlap up to 1.40)"
+            )
+        kind = "anomaly"
+        name = anomaly.name
+        if config.anomaly_mv_mult != 1.0:
+            name += f" (MV x{config.anomaly_mv_mult:g})"
+        dealt_element = agent.attribute
+        per_proc_mult = anomaly.mult * config.anomaly_mv_mult
+        hits = anomaly.hits
+
+    # --- Kit conditionals + supports (constant over the buildup) ----------
+    kit = _kit_contributions(
+        agent, config, agents, disc_sets, engines,
+        mode=kind, dealt_element=dealt_element,
+    )
+    if kind == "vortex":
+        per_proc_mult = formulas.burst_conversion_mult(
+            rule.mult, rule.time_mult, rule.window,
+            config.disorder_elapsed_seconds,
+            extra_mult=extra_burst + kit["disorder_mult_add"],
+        )
+    elif kind == "disorder":
+        per_proc_mult = formulas.burst_conversion_mult(
+            rule.base, rule.time_mult, rule.window,
+            config.disorder_elapsed_seconds,
+            extra_mult=extra_burst + kit["disorder_mult_add"],
+        )
 
     # --- Attacker-side snapshot: buildup-weighted over segments ------------
     # (mechanic discovery #2: procs average attacker state over buildup)
+    if isinstance(config.unbuffed_share, bool) or not isinstance(
+            config.unbuffed_share, (int, float)) or not 0 <= config.unbuffed_share < 1:
+        raise CalcError(
+            f"unbuffed_share must be a fraction in [0, 1), "
+            f"got {config.unbuffed_share!r}"
+        )
     segments = list(config.buildup_segments)
     total_share = 0.0
     for seg in segments:
@@ -822,12 +964,36 @@ def calculate_anomaly(
 
     level_mult = consts.anomaly_level_multiplier(agent.level)
 
+    # Separate Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL):
+    # kit sources (Yuzuha's ability, Velina's kit), the engine's
+    # anomaly-bracket conditional (Joyau Doré — uses the TOP-LEVEL stack
+    # count, treated as constant over the buffed buildup), and manual
+    # entries. Snapshots with the attacker state, so it joins the
+    # per-segment product (the unbuffed slice runs without it).
+    abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
+    engine_abuff = _engine_buff_bonus(
+        engine, config.engine_buff_stacks, dealt_element, rank,
+        mode=kind, bracket="anomaly_buff",
+    )
+    if engine_abuff:
+        abuff_entries.append(engine_abuff)
+        kit["items"].append({
+            "source": f"{engine.conditional_buff.name} (R{rank})",
+            "kind": "anomaly_buff", "value": engine_abuff,
+        })
+    abuff = formulas.anomaly_buff_mult(abuff_entries)
+
+    # ``unbuffed_share`` of the buildup runs at the plain panel (teammate
+    # dilution / buff downtime); the described segments share the rest.
+    buffed_scale = 1.0 - config.unbuffed_share
+
     weighted_product = 0.0
     weighted_atk = 0.0
     weighted_ap = 0.0
     weighted_bonus = 0.0
     for seg in segments:
         if seg.atk_override is not None:
+            # Teammate segment: their panel ATK / AP replace the build's.
             seg_atk = seg.atk_override
             seg_ap_base = 0.0
         else:
@@ -835,32 +1001,68 @@ def calculate_anomaly(
                 agent, engine, config.discs, disc_data, consts,
                 disc_sets=disc_sets, set_stacks=seg.set_stacks,
             )
-            seg_atk = seg_build.atk
-            seg_ap_base = seg_build.anomaly_proficiency
+            # Kit/team ATK buffs join the panel bracket / flat bucket the
+            # same way as in the direct-hit path (validation #4).
+            seg_atk = (
+                seg_build.atk_pre_combat
+                * (1.0 + seg_build.combat_atk_pct + kit["atk_pct"])
+                + kit["flat_atk"]
+            )
+            seg_ap_base = (
+                seg_build.anomaly_proficiency
+                + engine.passive_ap(rank)          # e.g. Joyau Doré +70..110
+                + kit["anomaly_proficiency"]       # squad AP buffs
+            )
         seg_ap_total = (
             seg.anomaly_proficiency_override
             if seg.anomaly_proficiency_override is not None
             else seg_ap_base + seg.external_anomaly_proficiency
         )
-        bonus_entries = list(seg.external_dmg_bonuses)
+        bonus_entries = list(seg.external_dmg_bonuses) + kit["dmg_bonus"]
         if dealt_element == agent.attribute:
             bonus_entries = build.dmg_bonuses + bonus_entries
         bonus_entries.extend(
             _engine_passive_bonuses(engine, dealt_element, rank)
         )
         engine_buff = _engine_buff_bonus(
-            engine, seg.engine_buff_stacks, dealt_element, rank
+            engine, seg.engine_buff_stacks, dealt_element, rank, mode=kind
         )
         if engine_buff:
             bonus_entries.append(engine_buff)
         seg_bonus = formulas.dmg_bonus_mult(bonus_entries)
 
-        weighted_product += seg.share * (
-            seg_atk * formulas.ap_mult(seg_ap_total) * seg_bonus
+        w = seg.share * buffed_scale
+        weighted_product += w * (
+            seg_atk * formulas.ap_mult(seg_ap_total) * seg_bonus * abuff
         )
-        weighted_atk += seg.share * seg_atk
-        weighted_ap += seg.share * seg_ap_total
-        weighted_bonus += seg.share * seg_bonus
+        weighted_atk += w * seg_atk
+        weighted_ap += w * seg_ap_total
+        weighted_bonus += w * seg_bonus
+
+    if config.unbuffed_share > 0:
+        # The diluted slice: plain panel — no kit/team buffs, no engine
+        # conditional, no set 4pc stacks, no externals, buff bracket ×1.
+        # Unconditional parts (disc stats, 2pc bonuses, always-on engine
+        # passives incl. Joyau Doré's AP) remain.
+        bare_build = aggregate_build(
+            agent, engine, config.discs, disc_data, consts,
+            disc_sets=disc_sets, set_stacks={},
+        )
+        bare_atk = bare_build.atk
+        bare_ap = bare_build.anomaly_proficiency + engine.passive_ap(rank)
+        bare_entries = (
+            list(bare_build.dmg_bonuses)
+            if dealt_element == agent.attribute else []
+        )
+        bare_entries.extend(_engine_passive_bonuses(engine, dealt_element, rank))
+        bare_bonus = formulas.dmg_bonus_mult(bare_entries)
+        w = config.unbuffed_share
+        weighted_product += w * (
+            bare_atk * formulas.ap_mult(bare_ap) * bare_bonus
+        )
+        weighted_atk += w * bare_atk
+        weighted_ap += w * bare_ap
+        weighted_bonus += w * bare_bonus
 
     ap = formulas.ap_mult(weighted_ap)
     bonus = weighted_bonus
@@ -868,9 +1070,12 @@ def calculate_anomaly(
     eff_def = formulas.effective_def(boss.base_def, build.pen_ratio, build.pen_flat)
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
     res = formulas.res_mult(
-        boss.res_for(dealt_element), res_ignore=config.external_res_shred
+        boss.res_for(dealt_element),
+        res_ignore=config.external_res_shred + kit["res_shred"],
     )
-    taken = formulas.dmg_taken_mult(config.external_dmg_taken)
+    taken = formulas.dmg_taken_mult(
+        list(config.external_dmg_taken) + kit["dmg_taken"]
+    )
 
     stun_base = (
         config.stun_multiplier_override
@@ -883,13 +1088,17 @@ def calculate_anomaly(
             f"got {stun_base}"
         )
     stun_off = formulas.stun_mult(False, stun_base)
-    stun_on = formulas.stun_mult(True, stun_base, config.external_daze_bonuses)
+    stun_on = formulas.stun_mult(
+        True, stun_base,
+        list(config.external_daze_bonuses) + kit["daze_bonus"],
+    )
 
     def dmg(mult: float, stun: float) -> float:
-        # weighted_product already contains ATK x AP x DMG% per segment —
-        # the exact snapshot math; the breakdown fields report weighted
-        # averages of each factor for display only.
-        return mult * weighted_product * level_mult * defense * res * taken * stun
+        # weighted_product already contains ATK x AP x DMG% x buff-bracket
+        # per segment — the exact snapshot math; the breakdown fields
+        # report weighted averages / full-state values for display only.
+        return (mult * weighted_product * level_mult
+                * defense * res * taken * stun)
 
     return AnomalyResults(
         kind=kind,
@@ -906,8 +1115,10 @@ def calculate_anomaly(
         anomaly_level_mult=level_mult,
         anomaly_mult=per_proc_mult,
         dmg_bonus_mult=bonus,
+        anomaly_buff_mult=abuff,
         def_mult=defense,
         res_mult=res,
         dmg_taken_mult=taken,
         stun_mult=stun_on,
+        buff_breakdown=tuple(kit["items"]),
     )

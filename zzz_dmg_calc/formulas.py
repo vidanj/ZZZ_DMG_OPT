@@ -208,55 +208,52 @@ def anomaly_base_dmg(anomaly_mult: float, atk: float) -> float:
     return anomaly_mult * atk
 
 
-def disorder_procs_mult(
-    proc_mult: float,
-    remaining_seconds: float,
-    interval: float,
-    extra_procs: int = 0,
-) -> float:
-    """Disorder multiplier for proc-based anomalies (Burn/Shock/Corruption).
-
-    Remaining duration converts into remaining ticks (floored), plus any
-    bonus procs the element grants (Shock: +6):
-
-    ``mult_total = proc_mult × (floor(remaining / interval) + extra_procs)``
-
-    ⚠️ Provisional model — calibrate in-game before trusting.
-
-    Args:
-        proc_mult: The replaced anomaly's per-proc multiplier (fraction).
-        remaining_seconds: Time left on the replaced anomaly (clamped >= 0).
-        interval: Seconds between the replaced anomaly's procs.
-        extra_procs: Bonus procs granted by the element's Disorder rule.
-    """
-    remaining = max(remaining_seconds, 0.0)
-    return proc_mult * (int(remaining / interval) + extra_procs)
-
-
-def disorder_decay_mult(
-    hit_mult: float,
+def burst_conversion_mult(
+    base: float,
+    time_mult: float,
+    window: float,
     elapsed_seconds: float,
-    duration: float,
-    min_fraction: float,
+    extra_mult: float = 0.0,
 ) -> float:
-    """Disorder multiplier for one-shot anomalies (Assault/Shatter).
+    """Disorder/Vortex burst multiplier (closed form, one function for both).
 
-    The burst is dealt again, decaying linearly with elapsed time down to
-    ``min_fraction`` of the original at full duration:
+    ``mult_total = base + extra_mult + time_mult × max(0, window − elapsed)``
 
-    ``mult_total = hit_mult × (1 − (1 − min_fraction) × elapsed/duration)``
+    Disorder uses the replaced element's rule (base 4.5, window 10);
+    Vortex uses the infused element's rule (per-element mult, window 30).
+    ``extra_mult`` carries additive "Disorder DMG Multiplier" buffs
+    (Velina's consumed Windbite +1.50, Yuzuha M6 +1.05/stack).
 
-    ⚠️ Provisional model — calibrate in-game before trusting.
+    Form from the zenless-optimizer datamine (2026-07-03) — ⚠️ calibrate
+    in-game before trusting (anomaly_plan.md §5e).
 
     Args:
-        hit_mult: The replaced anomaly's one-shot multiplier (fraction).
-        elapsed_seconds: Time since the replaced anomaly was applied
-            (clamped to [0, duration]).
-        duration: The replaced anomaly's full duration.
-        min_fraction: Floor fraction at full elapsed duration (0.9).
+        base: Element's base burst multiplier (fraction of ATK).
+        time_mult: Multiplier per remaining second inside the window.
+        window: Seconds after the converted anomaly's application during
+            which the time term still contributes.
+        elapsed_seconds: Time since the converted anomaly was applied
+            (clamped >= 0).
+        extra_mult: Additive burst-multiplier buffs (fraction).
     """
-    elapsed = min(max(elapsed_seconds, 0.0), duration)
-    return hit_mult * (1.0 - (1.0 - min_fraction) * elapsed / duration)
+    elapsed = max(elapsed_seconds, 0.0)
+    return base + extra_mult + time_mult * max(0.0, window - elapsed)
+
+
+def anomaly_buff_mult(bonuses: Iterable[float]) -> float:
+    """Anomaly/Disorder/Vortex "Buff Multiplier" bracket: ``1 + Σ(bonuses)``.
+
+    A separate multiplicative zone from :func:`dmg_bonus_mult` for
+    "Attribute Anomaly DMG +X%" / "Disorder DMG +X%" / "Windswept and
+    Vortex DMG +X%" effects (Yuzuha's Additional Ability, Velina's kit,
+    Joyau Doré) — the zenless-optimizer models these in their own bracket
+    (``buff_mult_``), distinct from the ordinary DMG% bonuses.
+    ⚠️ Bracket placement PROVISIONAL until popup-checked in-game.
+
+    Args:
+        bonuses: Each contribution as a fraction (0.10 for a 10% bonus).
+    """
+    return 1.0 + sum(bonuses)
 
 
 # ---------------------------------------------------------------------------

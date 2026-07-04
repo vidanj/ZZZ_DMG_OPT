@@ -97,6 +97,29 @@
           "disc_id": "d9"
         }
       ]
+    },
+    "Piper Build 1": {
+      "description": "Piper Yuzuha Velina",
+      "discs": [
+        {
+          "disc_id": "d122"
+        },
+        {
+          "disc_id": "d123"
+        },
+        {
+          "disc_id": "d124"
+        },
+        {
+          "disc_id": "d125"
+        },
+        {
+          "disc_id": "d129"
+        },
+        {
+          "disc_id": "d128"
+        }
+      ]
     }
   }
 }

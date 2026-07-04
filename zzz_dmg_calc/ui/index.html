@@ -69,22 +69,74 @@
   }
   button.mini:hover { border-color: var(--accent-dim); }
 
-  /* Inventory picker (per disc card) */
-  .picker { margin: 6px 0 8px; border: 1px solid #3a3a3a; border-radius: 6px;
-            padding: 6px; background: #1b1b1b; }
-  .picker input { margin-bottom: 6px; }
-  .picker-list { max-height: 180px; overflow-y: auto; }
-  .picker-item {
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 6px; padding: 4px 6px; border-radius: 5px; cursor: pointer;
-    font-size: 12px;
+  /* Inventory modal (browse / filter / equip / add — ui_plan §11) */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
   }
-  .picker-item:hover { background: #2e2e2e; }
-  .picker-item .del { color: var(--muted); background: none; border: none;
-                      padding: 0 4px; font-size: 13px; }
-  .picker-item .del:hover { color: var(--error); }
-  .picker-empty { color: var(--muted); font-size: 12px; padding: 4px 6px;
-                  font-style: italic; }
+  .modal-backdrop[hidden] { display: none; }   /* the class rule would
+                                                  otherwise beat [hidden] */
+  .modal {
+    background: var(--card); border: 1px solid var(--card-edge);
+    border-radius: 12px; width: min(1020px, 100%); max-height: 92vh;
+    display: flex; flex-direction: column; padding: 16px;
+  }
+  .modal > header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .modal > header .actions { display: flex; gap: 8px; }
+  .inv-filter-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;
+  }
+  .inv-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .inv-tabs button, .chips button {
+    padding: 3px 12px; font-size: 12px; border-radius: 999px;
+    border: 1px solid #444; background: #2a2a2a;
+  }
+  .inv-tabs button.active {
+    background: var(--accent); color: #111; font-weight: 700;
+    border-color: var(--accent);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chips button.active {
+    background: #7fd0ff; color: #111; border-color: #7fd0ff; font-weight: 600;
+  }
+  .inv-grid {
+    overflow-y: auto; display: grid; gap: 10px; margin: 12px 0; flex: 1;
+    grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+    align-content: start; min-height: 120px;
+  }
+  .inv-card {
+    background: var(--input-bg); border: 1px solid #333; border-radius: 8px;
+    padding: 10px; cursor: pointer; font-size: 12px; align-self: start;
+  }
+  .inv-card:hover { border-color: var(--accent-dim); }
+  .inv-card.selected { border-color: var(--accent); outline: 1px solid var(--accent); }
+  .inv-card .inv-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 600; margin-bottom: 4px;
+  }
+  .inv-card .badge { font-size: 11px; color: var(--muted); }
+  .inv-card .badge.eq { color: var(--accent); font-weight: 700; }
+  .inv-card .del { color: var(--muted); background: none; border: none;
+                   padding: 0 4px; font-size: 13px; }
+  .inv-card .del:hover { color: var(--error); }
+  .inv-empty { color: var(--muted); font-style: italic; padding: 8px; }
+  .modal > footer {
+    display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+    border-top: 1px solid #333; padding-top: 10px;
+  }
+  #inv-error { color: var(--error); font-size: 12px; margin-right: auto;
+               white-space: pre-wrap; }
+  #inv-addform {
+    border: 1px solid #3a3a3a; border-radius: 8px; background: #1b1b1b;
+    padding: 10px; margin-top: 10px;
+  }
+  #inv-addform .addsubs { display: grid; grid-template-columns: 1fr 1fr;
+                          gap: 6px 10px; margin-top: 8px; }
+  #inv-addform .addsub { display: grid; grid-template-columns: 1fr 64px;
+                         gap: 6px; }
   .toolbar { display: flex; gap: 8px; align-items: end; margin-bottom: 12px; flex-wrap: wrap; }
   .toolbar > div { flex: 1; min-width: 160px; }
   button {
@@ -133,7 +185,7 @@
 </style>
 </head>
 <body>
-<h1>ZZZ <span>DMG Optimizer</span> — Direct Hit</h1>
+<h1>ZZZ <span>DMG Optimizer</span></h1>
 
 <div class="layout">
 <div id="inputs">
@@ -148,6 +200,17 @@
         <div><label>Rank</label><select id="engine-rank"></select></div>
       </div>
     </div>
+    <div class="row c3" style="margin-top:10px">
+      <div><label>Calculation mode</label>
+        <select id="mode">
+          <option value="direct" selected>Direct hit</option>
+          <option value="anomaly">Anomaly proc</option>
+          <option value="disorder">Disorder burst</option>
+          <option value="vortex">Vortex burst (Windswept + 2nd anomaly)</option>
+          <option value="rupture" disabled>Rupture / Sheer Force — coming soon</option>
+        </select></div>
+    </div>
+    <div class="hint" id="mode-hint"></div>
     <div class="hint" id="matchup"></div>
     <div class="hint" id="engine-auto" style="color:var(--accent)"></div>
     <div class="note" id="engine-note"></div>
@@ -173,14 +236,15 @@
       <div><label>Loadout</label><select id="loadout"></select></div>
       <button id="load-loadout">Load</button>
       <button id="clear-discs">Clear all</button>
+      <button id="browse-inventory">Browse inventory…</button>
     </div>
     <div class="discs" id="discs"></div>
     <p class="hint">Substats: pick the stat, then its in-game <b>+N</b> upgrade
     count (0 = base substat). Exactly 4 distinct substats per equipped disc,
     max +5 on one substat, max 5 upgrades total per disc.
     <b>Save</b> stores a card's disc in your inventory
-    (<code>user_discs.json</code>); <b>Equip…</b> searches the inventory for
-    that slot.</p>
+    (<code>user_discs.json</code>); <b>Equip…</b> opens the inventory
+    browser filtered to that slot.</p>
     <div class="toolbar" style="margin-top:12px">
       <div><label>Save equipped discs as a new loadout — name</label>
         <input type="text" id="loadout-name" placeholder="e.g. NEKO CRIT"></div>
@@ -195,18 +259,34 @@
   <div class="card">
     <h2>Skill &amp; Buffs <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(percentages, e.g. 250 = 250%)</span></h2>
     <div class="row c3">
-      <div><label>Skill multiplier % (total motion value)</label>
+      <div id="skill-wrap"><label>Skill multiplier % (total motion value)</label>
         <input type="number" id="skill" value="100" min="1" step="any"></div>
-      <div><label>Damage type (gates typed bonuses, e.g. Ultimate DMG%)</label>
+      <div id="skill-tag-wrap"><label>Damage type (gates typed bonuses, e.g. Ultimate DMG%)</label>
         <select id="skill-tag"></select></div>
       <div id="engine-buff-wrap" style="display:none"></div>
+    </div>
+    <div class="row c3" id="anomaly-inputs-1" style="display:none">
+      <div id="anom-mv-wrap"><label>Anomaly damage scale % — leave 100 for a normal proc; only for "extra instance of Anomaly DMG at X%" kits (Velina Ablooms 145/255/680, her M6 overlap ≤140)</label>
+        <input type="number" id="anom-mv" value="100" min="1" step="any"></div>
+      <div id="conv-element-wrap"><label id="conv-element-label">Element</label>
+        <select id="conv-element"></select></div>
+      <div id="anom-elapsed-wrap"><label id="anom-elapsed-label">Seconds elapsed</label>
+        <input type="number" id="anom-elapsed" value="0" min="0" step="any"></div>
+    </div>
+    <div class="row c3" id="anomaly-inputs-2" style="display:none">
+      <div id="disorder-add-wrap"><label>Additive base-mult % (Velina consumed Windbite: 150)</label>
+        <input type="number" id="disorder-add" placeholder="0" step="any"></div>
+      <div><label>Extra Anomaly/Disorder/Vortex DMG buff % (separate bracket)</label>
+        <input type="number" id="anomaly-buff" placeholder="0" step="any"></div>
+      <div><label>Extra flat Anomaly Proficiency</label>
+        <input type="number" id="extra-ap" placeholder="0" step="any"></div>
     </div>
     <div class="row c3">
       <div><label>Extra DMG% bonuses (total)</label>
         <input type="number" id="dmg-bonus" placeholder="0" step="any"></div>
-      <div><label>Extra CRIT Rate %</label>
+      <div id="crit-rate-wrap"><label>Extra CRIT Rate %</label>
         <input type="number" id="crit-rate" placeholder="0" step="any"></div>
-      <div><label>Extra CRIT DMG %</label>
+      <div id="crit-dmg-wrap"><label>Extra CRIT DMG %</label>
         <input type="number" id="crit-dmg" placeholder="0" step="any"></div>
     </div>
     <div class="row c3">
@@ -217,6 +297,13 @@
       <div><label>Stun multiplier % (daze bar)</label>
         <input type="number" id="stun" placeholder="" step="any"></div>
     </div>
+    <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                  color:var(--text);font-size:13px;margin-top:2px"
+           title="Windswept state: the target takes +10% direct DMG of the relevant attribute; the first non-Wind element to hit triggers that element's Contamination, extending the +10% to it (once per Windswept). Per the zenless-optimizer datamine this zone is shared with anomaly damage, so it buffs procs too — bracket PROVISIONAL until popup-checked.">
+      <input type="checkbox" id="windswept-taken">
+      Target under Windswept / Contamination — +10% DMG taken
+      (wind-team state, e.g. Velina up; applies to procs too — PROVISIONAL)
+    </label>
   </div>
 
   <button class="primary" id="calc">Calculate</button>
@@ -267,6 +354,50 @@
     <div id="opt-out"></div>
   </div>
 </div>
+</div>
+
+<div class="modal-backdrop" id="inv-backdrop" hidden>
+  <div class="modal">
+    <header>
+      <h2 style="margin:0">Disc Inventory
+        <span id="inv-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
+      <div class="actions">
+        <button class="mini" id="inv-add">+ Add disc</button>
+        <button class="mini" id="inv-close" title="Close (Esc)">✕</button>
+      </div>
+    </header>
+    <div class="inv-tabs" id="inv-slot-tabs"></div>
+    <div class="inv-filter-row">
+      <div><label>Set</label><select id="inv-set"></select></div>
+      <div><label>Main stat</label><select id="inv-main"></select></div>
+      <div id="inv-element-wrap" hidden><label>Element</label>
+        <select id="inv-element"></select></div>
+      <div><label>Search</label>
+        <input type="text" id="inv-text" placeholder="id / anything"></div>
+    </div>
+    <div class="chips" id="inv-chips"></div>
+    <div id="inv-addform" hidden>
+      <div class="inv-filter-row">
+        <div><label>Slot</label><select id="add-slot"></select></div>
+        <div><label>Main stat</label><select id="add-main"></select></div>
+        <div id="add-element-wrap" hidden><label>Element</label>
+          <select id="add-element"></select></div>
+        <div><label>Set</label><select id="add-set"></select></div>
+      </div>
+      <div class="addsubs" id="add-subs"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <button class="mini" id="add-save">Save to inventory</button>
+        <button class="mini" id="add-cancel">Cancel</button>
+      </div>
+    </div>
+    <div class="inv-grid" id="inv-grid"></div>
+    <footer>
+      <span id="inv-error"></span>
+      <button class="primary" id="inv-equip" style="width:auto;padding:8px 24px"
+              disabled>Equip selected</button>
+      <button id="inv-cancel">Cancel</button>
+    </footer>
+  </div>
 </div>
 
 <script>
@@ -335,12 +466,7 @@ function buildDiscGrid() {
       </header>
       <div class="actions">
         <button class="mini save-disc" title="Save this disc to the inventory">Save</button>
-        <button class="mini equip-disc" title="Equip a saved disc">Equip…</button>
-      </div>
-      <div class="picker" hidden>
-        <input type="text" class="picker-filter"
-               placeholder="filter: main stat / set / substat">
-        <div class="picker-list"></div>
+        <button class="mini equip-disc" title="Browse the inventory for this slot">Equip…</button>
       </div>
       <label>Main stat${fixed ? " (fixed)" : ""}</label>
       <select class="main" ${fixed ? "disabled" : ""}></select>
@@ -387,16 +513,8 @@ function buildDiscGrid() {
     });
     setSel.addEventListener("change", refreshSetStacks);
     card.querySelector(".save-disc").addEventListener("click", () => saveDisc(card));
-    card.querySelector(".equip-disc").addEventListener("click", () => {
-      const picker = card.querySelector(".picker");
-      picker.hidden = !picker.hidden;
-      if (!picker.hidden) {
-        renderPicker(card);
-        picker.querySelector(".picker-filter").focus();
-      }
-    });
-    card.querySelector(".picker-filter").addEventListener("input",
-      () => renderPicker(card));
+    card.querySelector(".equip-disc").addEventListener("click",
+      () => openInventory(slot));
   }
 }
 
@@ -549,10 +667,12 @@ function renderEngineBuff(engine, rank) {
         ${buff.name} — ${per}
       </label>`;
   } else {
+    // step="any": anomaly procs snapshot buffs as a buildup-weighted
+    // average, so fractional stacks are legal there (e.g. 2.35).
     wrap.innerHTML = `
       <label>${buff.name} stacks (0–${buff.max_stacks}, ${per} each)</label>
       <input type="number" id="engine-buff-stacks" value="${previous || 0}"
-             min="0" max="${buff.max_stacks}" step="1">`;
+             min="0" max="${buff.max_stacks}" step="any">`;
   }
 }
 
@@ -564,6 +684,75 @@ function engineBuffValue() {
 }
 
 // ---------------------------------------------------------------------------
+// Calculation mode: direct / anomaly / disorder / vortex (+ rupture
+// placeholder). Toggles the mode-specific inputs and fills the element
+// picker for the Disorder (replaced) / Vortex (infused) conversions.
+// ---------------------------------------------------------------------------
+
+function calcMode() { return $("mode").value || "direct"; }
+
+function updateModeUI() {
+  const mode = calcMode();
+  const agent = DB.agents[$("agent").value];
+  const anomaly = DB.anomalies[agent.attribute];
+
+  const show = (id, on) => { $(id).style.display = on ? "" : "none"; };
+  show("skill-wrap", mode === "direct");
+  show("skill-tag-wrap", mode === "direct");
+  show("crit-rate-wrap", mode === "direct");
+  show("crit-dmg-wrap", mode === "direct");
+  show("anomaly-inputs-1", mode !== "direct");
+  show("anomaly-inputs-2", mode !== "direct");
+  show("anom-mv-wrap", mode === "anomaly");
+  show("conv-element-wrap", mode === "disorder" || mode === "vortex");
+  show("anom-elapsed-wrap", mode === "disorder" || mode === "vortex");
+  show("disorder-add-wrap", mode === "disorder" || mode === "vortex");
+
+  // Element picker: what the burst converts (kept across rebuilds)
+  const sel = $("conv-element");
+  const kept = sel.value;
+  if (mode === "disorder") {
+    $("conv-element-label").textContent = "Anomaly being REPLACED";
+    $("anom-elapsed-label").textContent =
+      "Seconds since the replaced anomaly was applied";
+    fillSelect(sel, Object.entries(DB.anomalies)
+      .filter(([el, a]) => a.supported && el !== agent.attribute)
+      .map(([el, a]) => [el, `${a.name} [${el}]`]));
+  } else if (mode === "vortex") {
+    $("conv-element-label").textContent = "Anomaly INFUSED into the Windswept";
+    $("anom-elapsed-label").textContent =
+      "Seconds since the infused anomaly was applied";
+    fillSelect(sel, Object.keys(DB.vortex)
+      .map(el => [el, `${DB.anomalies[el].name} [${el}]`]));
+  }
+  if (kept && [...sel.options].some(o => o.value === kept)) sel.value = kept;
+
+  // Mode hint under the selector
+  let hint = "";
+  if (mode === "anomaly") {
+    hint = `${anomaly.name} [${agent.attribute}] — `
+      + (anomaly.supported
+        ? `${+(anomaly.mult * 100).toFixed(0)}% × ATK`
+          + (anomaly.hits > 1 ? ` per tick, ×${anomaly.hits} over ${anomaly.duration}s`
+                              : " one-shot")
+        : "NOT YET SUPPORTED (no verified values)");
+    if (anomaly.debuff_note) hint += ` · ${anomaly.debuff_note}`;
+  } else if (mode === "disorder") {
+    const r = DB.disorder[sel.value];
+    if (r) hint = `Burst = (${+(r.base * 100).toFixed(0)}% + additive buffs + `
+      + `${+(r.time_mult * 100).toFixed(1)}%/s remaining in a ${r.window}s window) × ATK — `
+      + `dealt as the REPLACED element. PROVISIONAL (datamine) until calibrated.`;
+  } else if (mode === "vortex") {
+    const r = DB.vortex[sel.value];
+    if (r) hint = `Burst = (${+(r.mult * 100).toFixed(0)}% + additive buffs + `
+      + `${+(r.time_mult * 100).toFixed(1)}%/s remaining in a ${r.window}s window) × ATK — `
+      + `dealt as the INFUSED element; replaces Disorder while Windswept is active. `
+      + `PROVISIONAL (datamine) until calibrated.`;
+  }
+  $("mode-hint").textContent = hint;
+}
+
+// ---------------------------------------------------------------------------
 // Agent Kit: modeled core passive / mindscape conditionals (checkbox when
 // on/off, stacks input otherwise); unmodeled mindscapes listed for reference
 // ---------------------------------------------------------------------------
@@ -572,10 +761,16 @@ const KIT_KIND_LABELS = {
   crit_rate: "CRIT Rate", crit_dmg: "CRIT DMG", dmg_bonus: "DMG",
   res_shred: "enemy RES ignore", dmg_taken: "DMG taken",
   flat_atk: "flat ATK", atk_pct: "panel ATK%", daze_bonus: "stunned DMG mult",
+  anomaly_buff: "Anomaly/Disorder DMG (buff bracket)",
+  disorder_mult_add: "Disorder/Vortex base mult",
+  anomaly_proficiency: "Anomaly Proficiency",
 };
 
+//: Kit kinds whose values are plain numbers, not fractions.
+const FLAT_KINDS = new Set(["flat_atk", "anomaly_proficiency"]);
+
 const fmtBuff = (kind, v) =>
-  kind === "flat_atk" ? `+${+v.toFixed(1)}` : `+${+(v * 100).toFixed(1)}%`;
+  FLAT_KINDS.has(kind) ? `+${+v.toFixed(1)}` : `+${+(v * 100).toFixed(1)}%`;
 
 /* Itemized "Active buffs" block under the damage table: every active
    conditional (kit, team, engines, squad sets) grouped by what it buffs,
@@ -605,10 +800,16 @@ function buffSummary(r) {
 function effectLabel(effect, maxStacks) {
   const kind = KIT_KIND_LABELS[effect.kind] || effect.kind;
   const perStack = maxStacks > 1 ? "/stack" : "";
-  if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})`;
-  if (effect.kind === "flat_atk") return `${kind} +${effect.value}${perStack}`;
+  // Mode/element gates (e.g. Velina's Vortex-only RES ignore)
+  const gates = [
+    ...(effect.modes || []),
+    ...(effect.element ? [effect.element] : []),
+  ];
+  const gate = gates.length ? ` [${gates.join("/")}]` : "";
+  if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})${gate}`;
+  if (FLAT_KINDS.has(effect.kind)) return `${kind} +${effect.value}${perStack}${gate}`;
   const tag = effect.skill_tag ? ` on ${DB.skill_tags[effect.skill_tag] || effect.skill_tag}` : "";
-  return `${kind} +${+(effect.value * 100).toFixed(1)}%${perStack}${tag}`;
+  return `${kind} +${+(effect.value * 100).toFixed(1)}%${perStack}${tag}${gate}`;
 }
 
 /* Data-driven team-condition check for the hint next to conditional buffs.
@@ -986,6 +1187,7 @@ function onAgentChange() {
   // cleared (they can't support themselves), others keep their state.
   renderSupports();
   renderKit();
+  updateModeUI();   // anomaly hint + conversion element lists follow the agent
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,7 +1281,6 @@ async function saveDisc(card) {
     const data = await postJSON("/discs", collectDisc(card));
     DB.user_discs = data.user_discs;
     flash(btn, data.created ? `Saved ${data.id} ✓` : `= ${data.id}`);
-    if (!card.querySelector(".picker").hidden) renderPicker(card);
   } catch (exc) {
     showError(exc.message);
   }
@@ -1095,33 +1296,162 @@ function discLabel(disc) {
   return `${main} · ${setName} · ${subs}`;
 }
 
-/* The per-card inventory browser: saved discs of that slot, narrowed by a
-   free-text filter matching the id, main stat, set name, or substats. */
-function renderPicker(card) {
-  const slot = parseInt(card.dataset.slot, 10);
-  const query = card.querySelector(".picker-filter").value.trim().toLowerCase();
-  const list = card.querySelector(".picker-list");
-  list.innerHTML = "";
-  const forSlot = Object.entries(DB.user_discs || {})
-    .filter(([, d]) => d.slot === slot);
-  const matches = forSlot.filter(([id, d]) =>
-    !query || `${id} ${discLabel(d)}`.toLowerCase().includes(query));
+// ---------------------------------------------------------------------------
+// Inventory modal: browse / filter / equip / add (ui_plan §11)
+// ---------------------------------------------------------------------------
+
+const invState = { slot: null, chips: new Set(), selected: null };
+
+function invShowError(message) { $("inv-error").textContent = message || ""; }
+
+function openInventory(slot = null) {
+  invState.slot = slot;
+  invState.chips.clear();
+  invState.selected = null;
+  $("inv-set").value = "";
+  $("inv-main").value = "";
+  $("inv-element").value = "";
+  $("inv-text").value = "";
+  $("inv-addform").hidden = true;
+  invShowError("");
+  renderInvFilters();
+  renderInvGrid();
+  $("inv-backdrop").hidden = false;
+  $("inv-text").focus();
+}
+
+function closeInventory() { $("inv-backdrop").hidden = true; }
+
+/* Rebuild the filter controls (slot tabs preset by the opening card; the
+   main-stat options follow the slot filter). */
+function renderInvFilters() {
+  const tabs = $("inv-slot-tabs");
+  tabs.innerHTML = "";
+  for (const [value, label] of [[null, "All slots"],
+                                ...SLOTS.map(s => [s, `Slot ${s}`])]) {
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.classList.toggle("active", invState.slot === value);
+    btn.addEventListener("click", () => {
+      invState.slot = value;
+      renderInvFilters();
+      renderInvGrid();
+    });
+    tabs.appendChild(btn);
+  }
+
+  fillSelect($("inv-set"), [["", "Any set"], ["__none", "No set"],
+    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+  const mains = invState.slot
+    ? Object.keys(DB.disc.main_stats[String(invState.slot)])
+    : [...new Set(Object.values(DB.disc.main_stats)
+        .flatMap(t => Object.keys(t)))];
+  const keptMain = $("inv-main").value;
+  fillSelect($("inv-main"), [["", "Any main stat"],
+    ...mains.map(m => [m, m])]);
+  if (mains.includes(keptMain)) $("inv-main").value = keptMain;
+  fillSelect($("inv-element"), [["", "Any element"],
+    ["__none", "(not set — legacy)"],
+    ...elementsList().map(e => [e, e])]);
+  $("inv-element-wrap").hidden = $("inv-main").value !== "Attribute DMG%";
+
+  const chips = $("inv-chips");
+  chips.innerHTML = "";
+  for (const stat of Object.keys(DB.disc.substat_rolls)) {
+    const btn = document.createElement("button");
+    btn.textContent = stat;
+    btn.title = "Only discs carrying this substat (chips combine as AND)";
+    btn.classList.toggle("active", invState.chips.has(stat));
+    btn.addEventListener("click", () => {
+      if (invState.chips.has(stat)) invState.chips.delete(stat);
+      else invState.chips.add(stat);
+      btn.classList.toggle("active");
+      renderInvGrid();
+    });
+    chips.appendChild(btn);
+  }
+}
+
+function invMatches(id, disc) {
+  if (invState.slot && disc.slot !== invState.slot) return false;
+  const setFilter = $("inv-set").value;
+  if (setFilter === "__none" && disc.set) return false;
+  if (setFilter && setFilter !== "__none" && disc.set !== setFilter) return false;
+  const mainFilter = $("inv-main").value;
+  if (mainFilter && disc.main_stat !== mainFilter) return false;
+  if (mainFilter === "Attribute DMG%") {
+    const el = $("inv-element").value;
+    if (el === "__none" && disc.element) return false;
+    if (el && el !== "__none" && disc.element !== el) return false;
+  }
+  for (const stat of invState.chips)
+    if (!(stat in disc.substats)) return false;
+  const query = $("inv-text").value.trim().toLowerCase();
+  if (query && !`${id} ${discLabel(disc)}`.toLowerCase().includes(query))
+    return false;
+  return true;
+}
+
+/* Discs currently equipped in the build, keyed by slot, for the badge. */
+function equippedBySlot() {
+  const map = {};
+  for (const card of document.querySelectorAll(".disc")) {
+    if (!card.querySelector(".equipped").checked) continue;
+    try { map[card.dataset.slot] = collectDisc(card); } catch { /* partial */ }
+  }
+  return map;
+}
+
+function sameDisc(a, b) {
+  const subs = s => Object.entries(s).sort().map(([k, v]) => `${k}:${v}`).join();
+  return a && b && a.slot === b.slot && a.main_stat === b.main_stat
+    && (a.set || null) === (b.set || null)
+    && (a.element || null) === (b.element || null)
+    && subs(a.substats) === subs(b.substats);
+}
+
+function renderInvGrid() {
+  const grid = $("inv-grid");
+  grid.innerHTML = "";
+  const all = Object.entries(DB.user_discs || {});
+  const matches = all.filter(([id, d]) => invMatches(id, d));
+  $("inv-count").textContent = `— ${all.length} disc(s), ${matches.length} shown`;
+  if (invState.selected && !matches.some(([id]) => id === invState.selected))
+    invState.selected = null;
+  $("inv-equip").disabled = !invState.selected;
 
   if (!matches.length) {
     const div = document.createElement("div");
-    div.className = "picker-empty";
-    div.textContent = forSlot.length
-      ? "No saved discs match the filter."
-      : `No saved discs for slot ${slot} yet — fill the card and hit Save.`;
-    list.appendChild(div);
+    div.className = "inv-empty";
+    div.textContent = all.length
+      ? "No saved discs match the filters."
+      : "No saved discs yet — use + Add disc, or Save from a build card.";
+    grid.appendChild(div);
     return;
   }
+
+  const equipped = equippedBySlot();
   for (const [id, disc] of matches) {
-    const item = document.createElement("div");
-    item.className = "picker-item";
-    item.title = "Equip this disc";
-    const label = document.createElement("span");
-    label.textContent = `${id} · ${discLabel(disc)}`;
+    const card = document.createElement("div");
+    card.className = "inv-card";
+    card.dataset.id = id;
+    if (id === invState.selected) card.classList.add("selected");
+    const isEquipped = sameDisc(equipped[disc.slot], disc);
+
+    const head = document.createElement("div");
+    head.className = "inv-head";
+    const title = document.createElement("span");
+    title.textContent = `${id} · Slot ${disc.slot}`;
+    const right = document.createElement("span");
+    right.style.display = "flex";
+    right.style.gap = "6px";
+    right.style.alignItems = "center";
+    if (isEquipped) {
+      const badge = document.createElement("span");
+      badge.className = "badge eq";
+      badge.textContent = "equipped";
+      right.appendChild(badge);
+    }
     const del = document.createElement("button");
     del.className = "del";
     del.title = "Delete from inventory";
@@ -1129,26 +1459,137 @@ function renderPicker(card) {
     del.addEventListener("click", async ev => {
       ev.stopPropagation();
       if (!confirm(`Delete ${id} from the inventory?`)) return;
+      invShowError("");
       try {
         const resp = await fetch(`/discs/${encodeURIComponent(id)}`,
                                  { method: "DELETE" });
         const data = await resp.json();
-        if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+        if (!resp.ok) { invShowError(data.error || `HTTP ${resp.status}`); return; }
         DB.user_discs = data.user_discs;
-        renderPicker(card);
+        if (invState.selected === id) invState.selected = null;
+        renderInvGrid();
       } catch (exc) {
-        showError(String(exc));
+        invShowError(String(exc));
       }
     });
-    item.appendChild(label);
-    item.appendChild(del);
-    item.addEventListener("click", () => {
-      fillCard(card, disc);
-      card.querySelector(".picker").hidden = true;
-      refreshSetStacks();
-      onAnyChange();
+    right.appendChild(del);
+    head.appendChild(title);
+    head.appendChild(right);
+    card.appendChild(head);
+
+    const main = document.createElement("div");
+    main.textContent = disc.main_stat === "Attribute DMG%"
+      ? `${disc.main_stat} [${disc.element || "any"}]` : disc.main_stat;
+    main.style.fontWeight = "600";
+    card.appendChild(main);
+    const setLine = document.createElement("div");
+    setLine.className = "badge";
+    setLine.textContent = disc.set
+      ? (DB.sets[disc.set] ? DB.sets[disc.set].name : disc.set) : "no set";
+    card.appendChild(setLine);
+    for (const [stat, rolls] of Object.entries(disc.substats)) {
+      const line = document.createElement("div");
+      line.textContent = `${stat} +${rolls - 1}`;
+      card.appendChild(line);
+    }
+
+    card.addEventListener("click", () => {
+      invState.selected = id;
+      for (const other of grid.querySelectorAll(".inv-card"))
+        other.classList.toggle("selected", other === card);
+      $("inv-equip").disabled = false;
     });
-    list.appendChild(item);
+    card.addEventListener("dblclick", () => {
+      invState.selected = id;
+      equipSelected();
+    });
+    grid.appendChild(card);
+  }
+}
+
+function equipSelected() {
+  const disc = (DB.user_discs || {})[invState.selected];
+  if (!disc) return;
+  const target = document.querySelector(`.disc[data-slot="${disc.slot}"]`);
+  fillCard(target, disc);
+  refreshSetStacks();
+  closeInventory();
+  onAnyChange();
+}
+
+/* --- + Add disc: an inline form saving through POST /discs -------------- */
+
+function renderAddForm() {
+  fillSelect($("add-slot"), SLOTS.map(s => [s, `Slot ${s}`]));
+  if (invState.slot) $("add-slot").value = String(invState.slot);
+  fillSelect($("add-set"), [["", "No set / not modeled"],
+    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+  fillSelect($("add-element"), elementsList().map(e => [e, e]));
+  renderAddMains();
+}
+
+function renderAddMains() {
+  const slot = $("add-slot").value;
+  const mains = Object.keys(DB.disc.main_stats[slot]);
+  fillSelect($("add-main"), mains.map(m =>
+    [m, `${m} (${fmtStat(m, DB.disc.main_stats[slot][m])})`]));
+  renderAddSubs();
+}
+
+function renderAddSubs() {
+  const main = $("add-main").value;
+  $("add-element-wrap").hidden = main !== "Attribute DMG%";
+  if (main === "Attribute DMG%")
+    $("add-element").value = DB.agents[$("agent").value].attribute;
+  const subs = $("add-subs");
+  subs.innerHTML = "";
+  for (let i = 0; i < DB.disc.substats_per_disc; i++) {
+    const row = document.createElement("div");
+    row.className = "addsub";
+    const sel = document.createElement("select");
+    sel.className = "add-substat";
+    fillSelect(sel, [["", "—"],
+      ...Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
+        .map(s => [s, s])]);
+    const n = document.createElement("input");
+    n.type = "number"; n.className = "add-upgrades";
+    n.min = 0; n.max = DB.disc.max_rolls_per_substat - 1;
+    n.value = 0; n.step = 1; n.title = "in-game +N upgrades";
+    row.appendChild(sel); row.appendChild(n);
+    subs.appendChild(row);
+  }
+}
+
+async function saveNewDisc() {
+  invShowError("");
+  const main = $("add-main").value;
+  const substats = {};
+  const sels = document.querySelectorAll(".add-substat");
+  const nums = document.querySelectorAll(".add-upgrades");
+  for (let i = 0; i < sels.length; i++) {
+    const stat = sels[i].value;
+    if (!stat) continue;
+    if (stat in substats) {
+      invShowError(`Substat '${stat}' is picked twice`);
+      return;
+    }
+    substats[stat] = (parseInt(nums[i].value, 10) || 0) + 1;
+  }
+  const payload = {
+    slot: parseInt($("add-slot").value, 10),
+    main_stat: main,
+    substats,
+    set: $("add-set").value || null,
+    element: main === "Attribute DMG%" ? $("add-element").value : null,
+  };
+  try {
+    const data = await postJSON("/discs", payload);
+    DB.user_discs = data.user_discs;
+    invState.selected = data.id;
+    $("inv-addform").hidden = true;
+    renderInvGrid();
+  } catch (exc) {
+    invShowError(exc.message);
   }
 }
 
@@ -1252,13 +1693,23 @@ function collectConfig() {
   }
 
   const stunRaw = $("stun").value.trim();
+  const mode = calcMode();
   return {
+    mode,
     agent_key: $("agent").value,
     engine_key: $("engine").value,
     engine_rank: currentRank(),
     boss_name: $("boss").value,
-    skill_multiplier: pct("skill"),
-    skill_tag: $("skill-tag").value || null,
+    skill_multiplier: mode === "direct" ? pct("skill") : 1,
+    skill_tag: mode === "direct" ? ($("skill-tag").value || null) : null,
+    // Anomaly-mode inputs (the server only reads what the mode uses)
+    anomaly_mv_mult: pct("anom-mv") || 1,
+    disorder_replaced: mode === "disorder" ? $("conv-element").value : null,
+    vortex_infused: mode === "vortex" ? $("conv-element").value : null,
+    disorder_elapsed_seconds: parseFloat($("anom-elapsed").value) || 0,
+    external_disorder_mult_add: pct("disorder-add"),
+    external_anomaly_buff: pct("anomaly-buff"),
+    external_anomaly_proficiency: parseFloat($("extra-ap").value) || 0,
     core_passive_active: kit.core > 0,
     additional_ability_stacks: kit.aa,
     mindscapes,
@@ -1271,7 +1722,10 @@ function collectConfig() {
     external_crit_rate: pct("crit-rate"),
     external_crit_dmg: pct("crit-dmg"),
     external_res_shred: pct("res-shred"),
-    external_dmg_taken: pct("dmg-taken"),
+    // Windswept/Contamination: +10% DMG taken while the state holds
+    // (enemy-side, proc-time — applies in every mode; PROVISIONAL bracket)
+    external_dmg_taken: pct("dmg-taken")
+      + ($("windswept-taken").checked ? 0.10 : 0),
     stun_multiplier_override: stunRaw === "" ? null : parseFloat(stunRaw) / 100,
   };
 }
@@ -1297,7 +1751,8 @@ async function runCalc() {
     renderResults(data);
     lastResults = data;
     autoCalc = true;
-    $("optimize-wrap").style.display = "";
+    // The optimizer works on direct-hit damage only (server enforces too).
+    $("optimize-wrap").style.display = data.mode === "direct" ? "" : "none";
   } catch (exc) {
     showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
@@ -1316,6 +1771,7 @@ const fmtNum = v => v.toLocaleString("en-US",
   { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function renderResults(r) {
+  if (r.mode && r.mode !== "direct") { renderAnomalyResults(r); return; }
   const bonuses = Object.entries(r.set_bonuses || {})
     .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
     .join(", ");
@@ -1347,6 +1803,56 @@ function renderResults(r) {
       </tbody>
     </table>
     ${averageNote(r)}
+    ${buffSummary(r)}`;
+}
+
+/* Anomaly / Disorder / Vortex results: no crit table — per-proc (and
+   full-duration for multi-tick anomalies) in normal and stunned states,
+   plus the anomaly-specific zones (AP, level mult, burst mult, the
+   separate Buff Multiplier bracket). */
+function renderAnomalyResults(r) {
+  const bonuses = Object.entries(r.set_bonuses || {})
+    .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
+    .join(", ");
+  // Range: [floor (30% of buildup unbuffed) – optimal (perfect uptime)]
+  const f = r.floor;
+  const cell = key => f
+    ? `${fmtNum(f[key])} – ${fmtNum(r[key])}`
+    : fmtNum(r[key]);
+  const rows = r.hits > 1
+    ? `<tr><td>Per tick/proc</td><td class="num">${cell("per_proc")}</td>
+         <td class="num">${cell("per_proc_stunned")}</td></tr>
+       <tr class="avg"><td>Full duration (×${r.hits})</td>
+         <td class="num">${cell("full")}</td>
+         <td class="num">${cell("full_stunned")}</td></tr>`
+    : `<tr class="avg"><td>Burst</td><td class="num">${cell("per_proc")}</td>
+         <td class="num">${cell("per_proc_stunned")}</td></tr>`;
+  $("out").className = "";
+  $("out").innerHTML = `
+    <div class="stat-line"><span>${r.anomaly_name} — dealt as</span>
+      <b>${r.element}</b></div>
+    <div class="stat-line"><span>Final ATK</span><b>${fmtNum(r.atk_final)}</b></div>
+    <div class="stat-line"><span>Anomaly Proficiency</span>
+      <b>${+r.anomaly_proficiency.toFixed(1)} (×${r.ap_mult.toFixed(3)})</b></div>
+    <div class="stat-line"><span>Anomaly level mult</span><b>×${r.anomaly_level_mult}</b></div>
+    <div class="stat-line"><span>Burst/proc multiplier</span><b>×${r.anomaly_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>DMG% zone</span><b>×${r.dmg_bonus_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>Anomaly buff zone</span><b>×${r.anomaly_buff_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>DEF zone</span><b>×${r.def_mult.toFixed(4)}</b></div>
+    <div class="stat-line"><span>RES zone</span><b>×${r.res_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>DMG taken zone</span><b>×${r.dmg_taken_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>Stun zone (stunned)</span><b>×${r.stun_mult.toFixed(2)}</b></div>
+    ${bonuses ? `<div class="stat-line"><span>Set bonuses</span><b>${bonuses}</b></div>` : ""}
+    <table>
+      <thead><tr><th>Scenario</th><th>Normal</th><th>Stunned</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="note">Anomalies cannot crit. Attacker-side buffs snapshot
+    during BUILDUP, so results are a range: the high end assumes your
+    entered buffs held for 100% of the buildup; the low end assumes 70% —
+    the other 30% counts as unbuffed/teammate-diluted buildup (plain
+    panel). Real rotations land in between; use the CLI's buildup
+    segments for exact mixed-state calibration work.</p>
     ${buffSummary(r)}`;
 }
 
@@ -1716,8 +2222,10 @@ function applyDynamicState(state) {
 
 let debounceTimer = null;
 function onAnyChange(ev) {
-  // Typing in an inventory filter is browsing, not editing the build.
-  if (ev && ev.target && ev.target.classList.contains("picker-filter")) return;
+  // Interacting with the inventory modal is browsing, not editing the
+  // build (equipping calls onAnyChange() itself, without an event).
+  if (ev && ev.target && ev.target.closest
+      && ev.target.closest("#inv-backdrop")) return;
   saveState();
   if (autoCalc) {
     clearTimeout(debounceTimer);
@@ -1735,16 +2243,55 @@ async function init() {
   renderKit();
   renderSupports();
   applyDynamicState(saved);
+  // Mode UI needs the restored mode/agent; the conversion-element pick is
+  // re-applied after the options exist, then the hint refreshed.
+  updateModeUI();
+  const savedElement = saved && saved.fields
+    ? saved.fields["conv-element"] : null;
+  if (savedElement
+      && [...$("conv-element").options].some(o => o.value === savedElement)) {
+    $("conv-element").value = savedElement;
+    updateModeUI();
+  }
 
   $("agent").addEventListener("change", onAgentChange);
   $("boss").addEventListener("change", () => updateDerived());
   $("engine").addEventListener("change", () => { updateDerived(true); });
   $("engine-rank").addEventListener("change", () => updateDerived());
+  $("mode").addEventListener("change", updateModeUI);
+  $("conv-element").addEventListener("change", updateModeUI);
   $("calc").addEventListener("click", runCalc);
   $("optimize").addEventListener("click", runOptimize);
   $("opt-add-constraint").addEventListener("click", () => {
     addConstraintRow().querySelector(".constraint-min").focus();
   });
+
+  // Inventory modal
+  $("browse-inventory").addEventListener("click", () => openInventory());
+  $("inv-close").addEventListener("click", closeInventory);
+  $("inv-cancel").addEventListener("click", closeInventory);
+  $("inv-equip").addEventListener("click", equipSelected);
+  $("inv-backdrop").addEventListener("mousedown", ev => {
+    if (ev.target === $("inv-backdrop")) closeInventory();
+  });
+  $("inv-set").addEventListener("change", renderInvGrid);
+  $("inv-main").addEventListener("change", () => {
+    $("inv-element-wrap").hidden = $("inv-main").value !== "Attribute DMG%";
+    renderInvGrid();
+  });
+  $("inv-element").addEventListener("change", renderInvGrid);
+  $("inv-text").addEventListener("input", renderInvGrid);
+  $("inv-add").addEventListener("click", () => {
+    const form = $("inv-addform");
+    form.hidden = !form.hidden;
+    if (!form.hidden) renderAddForm();
+  });
+  $("add-cancel").addEventListener("click", () => {
+    $("inv-addform").hidden = true;
+  });
+  $("add-save").addEventListener("click", saveNewDisc);
+  $("add-slot").addEventListener("change", renderAddMains);
+  $("add-main").addEventListener("change", renderAddSubs);
   $("load-loadout").addEventListener("click", () => {
     loadLoadout($("loadout").value); onAnyChange();
   });
@@ -1753,7 +2300,8 @@ async function init() {
   document.body.addEventListener("input", onAnyChange);
   document.body.addEventListener("change", onAnyChange);
   document.body.addEventListener("keydown", ev => {
-    if (ev.key === "Enter" && ev.ctrlKey) runCalc();
+    if (ev.key === "Escape" && !$("inv-backdrop").hidden) closeInventory();
+    else if (ev.key === "Enter" && ev.ctrlKey) runCalc();
   });
 }
 

@@ -43,8 +43,9 @@ from threading import Lock, Timer
 from urllib.parse import unquote
 
 try:
-    from ..api import CalcConfig, SupportConfig, calculate
+    from ..api import CalcConfig, SupportConfig, calculate, calculate_anomaly
     from ..agent import Agent, load_agents
+    from ..anomalies import AnomalyData, load_anomalies
     from ..constants import Constants, load_constants
     from ..discs import (
         Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
@@ -60,8 +61,11 @@ except ImportError:
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-    from zzz_dmg_calc.api import CalcConfig, SupportConfig, calculate
+    from zzz_dmg_calc.api import (
+        CalcConfig, SupportConfig, calculate, calculate_anomaly,
+    )
     from zzz_dmg_calc.agent import Agent, load_agents
+    from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
     from zzz_dmg_calc.constants import Constants, load_constants
     from zzz_dmg_calc.discs import (
         Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
@@ -93,6 +97,7 @@ class AppData:
     agents: dict[str, Agent]
     engines: dict[str, Engine]
     disc_sets: dict[str, DiscSet]
+    anomalies: AnomalyData
     user_discs: dict[str, Disc]
     loadouts: dict[str, Loadout]
 
@@ -108,6 +113,7 @@ def load_app_data() -> AppData:
         agents=load_agents(),
         engines=load_engines(),
         disc_sets=load_disc_sets(),
+        anomalies=load_anomalies(),
         user_discs=user_discs,
         loadouts=load_loadouts(disc_data, user_discs=user_discs),
     )
@@ -153,6 +159,8 @@ def frontend_payload(data: AppData) -> dict:
                     "kind": e.kind,
                     "value": e.value,
                     "skill_tag": e.skill_tag,
+                    "modes": list(e.modes) if e.modes else None,
+                    "element": e.element,
                     "scaling": (
                         None if e.scaling is None else {
                             "input": e.scaling.input,
@@ -209,10 +217,16 @@ def frontend_payload(data: AppData) -> dict:
                     }
                     for pd in e.passive_dmg
                 ],
+                "passive_ap_by_rank": list(e.passive_ap_by_rank),
                 "conditional_buff": (
                     None if e.conditional_buff is None else {
                         "name": e.conditional_buff.name,
                         "element": e.conditional_buff.element,
+                        "bracket": e.conditional_buff.bracket,
+                        "modes": (
+                            list(e.conditional_buff.modes)
+                            if e.conditional_buff.modes else None
+                        ),
                         "per_stack_by_rank": list(
                             e.conditional_buff.per_stack_by_rank
                         ),
@@ -276,6 +290,28 @@ def frontend_payload(data: AppData) -> dict:
             }
             for key, s in data.disc_sets.items()
         },
+        "anomalies": {
+            element: {
+                "name": a.name,
+                "supported": a.supported,
+                "mult": a.mult,
+                "hits": a.hits,
+                "interval": a.interval,
+                "duration": a.duration,
+                "debuff_note": a.debuff_note,
+            }
+            for element, a in data.anomalies.anomalies.items()
+        },
+        "disorder": {
+            element: {"base": r.base, "time_mult": r.time_mult,
+                      "window": r.window}
+            for element, r in data.anomalies.disorder.items()
+        },
+        "vortex": {
+            element: {"mult": r.mult, "time_mult": r.time_mult,
+                      "window": r.window}
+            for element, r in data.anomalies.vortex.items()
+        },
         "skill_tags": data.consts.skill_tags,
         "user_discs": user_discs_payload(data),
         "loadouts": loadouts_payload(data),
@@ -308,13 +344,46 @@ def _number(body: dict, key: str, default: float = 0.0) -> float:
     return float(value)
 
 
+#: Calculation modes the UI may request. ``rupture`` is a declared
+#: placeholder: selectable in data terms but rejected with a friendly
+#: message until Sheer Force damage is modeled (main plan Phase 5+).
+CALC_MODES = ("direct", "anomaly", "disorder", "vortex", "rupture")
+
+#: Share of the buildup the anomaly floor treats as unbuffed (teammate
+#: dilution / buff downtime): results show the [floor, optimal] range,
+#: assuming the user keeps their entered state up for >= 70% of it.
+UNBUFFED_FLOOR_SHARE = 0.30
+
+
+def _body_mode(body: dict) -> str:
+    """The request's calculation mode (default ``direct``).
+
+    Raises:
+        ValueError: unknown mode, or the ``rupture`` placeholder.
+    """
+    mode = str(body.get("mode") or "direct")
+    if mode not in CALC_MODES:
+        raise ValueError(
+            f"Unknown mode '{mode}'; options: {list(CALC_MODES)}"
+        )
+    if mode == "rupture":
+        raise ValueError(
+            "Rupture (Sheer Force) damage is not modeled yet — placeholder "
+            "for main plan Phase 5+. Pick another mode."
+        )
+    return mode
+
+
 def _build_config(body: dict) -> CalcConfig:
     """Build a CalcConfig from a request body (shared by /calculate and
     /optimize).
 
     The body mirrors :class:`~zzz_dmg_calc.api.CalcConfig` (fractions, not
     human percentages — the page converts). Substats arrive as TOTAL rolls,
-    same convention as ``loadouts.json``.
+    same convention as ``loadouts.json``. Mode-specific fields
+    (``disorder_replaced`` / ``vortex_infused`` / ``anomaly_mv_mult``) are
+    only taken from the body when the mode uses them, so a stale field
+    from a previous mode can never leak into the calculation.
 
     Raises:
         ValueError: malformed body fields (the lower layers validate the
@@ -322,6 +391,7 @@ def _build_config(body: dict) -> CalcConfig:
     """
     if not isinstance(body, dict):
         raise ValueError("Request body must be a JSON object")
+    mode = _body_mode(body)
 
     discs = [_parse_disc(entry) for entry in body.get("discs", [])]
 
@@ -333,6 +403,7 @@ def _build_config(body: dict) -> CalcConfig:
     dmg_bonus = _number(body, "external_dmg_bonus")
     dmg_taken = _number(body, "external_dmg_taken")
     stun_raw = body.get("stun_multiplier_override")
+    anomaly_buff = _number(body, "external_anomaly_buff")
 
     engine_rank_raw = body.get("engine_rank")
     mindscapes_raw = body.get("mindscapes") or {}
@@ -399,27 +470,85 @@ def _build_config(body: dict) -> CalcConfig:
         stun_multiplier_override=(
             None if stun_raw in (None, "") else _number(body, "stun_multiplier_override")
         ),
+        # --- Anomaly-mode inputs (mode-gated; see docstring) ---------------
+        external_anomaly_proficiency=_number(
+            body, "external_anomaly_proficiency"
+        ),
+        external_anomaly_buff=[anomaly_buff] if anomaly_buff else [],
+        disorder_replaced=(
+            str(body.get("disorder_replaced") or "") or None
+            if mode == "disorder" else None
+        ),
+        vortex_infused=(
+            str(body.get("vortex_infused") or "") or None
+            if mode == "vortex" else None
+        ),
+        disorder_elapsed_seconds=(
+            _number(body, "disorder_elapsed_seconds")
+            if mode in ("disorder", "vortex") else 0.0
+        ),
+        external_disorder_mult_add=(
+            _number(body, "external_disorder_mult_add")
+            if mode in ("disorder", "vortex") else 0.0
+        ),
+        anomaly_mv_mult=(
+            _number(body, "anomaly_mv_mult", default=1.0) or 1.0
+            if mode == "anomaly" else 1.0
+        ),
     )
 
 
 def run_calculation(data: AppData, body: dict) -> dict:
     """Run one calculation for the request body (see :func:`_build_config`).
 
+    ``body["mode"]`` picks the pipeline: ``direct`` (default) runs
+    :func:`calculate`; ``anomaly``/``disorder``/``vortex`` run
+    :func:`calculate_anomaly`. The response carries ``mode`` back so the
+    page renders the matching results panel.
+
     Raises:
         ValueError: any invalid input — malformed body fields, or the lower
             layers' CalcError/DiscError/etc. (all ValueError subclasses)
             with their own messages.
     """
+    mode = _body_mode(body)
     config = _build_config(body)
-    results = calculate(
-        config, consts=data.consts, disc_data=data.disc_data,
-        bosses=data.bosses, agents=data.agents, engines=data.engines,
-        disc_sets=data.disc_sets,
-    )
+    if mode == "direct":
+        results = calculate(
+            config, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets,
+        )
+    else:
+        results = calculate_anomaly(
+            config, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets, anomaly_data=data.anomalies,
+        )
 
     payload = asdict(results)
-    # Echo the applied set bonuses so the page can display them (calculate()
-    # already validated the discs, so this cannot raise new errors).
+    payload["mode"] = mode
+    if mode != "direct":
+        # Pessimistic floor: assume only UNBUFFED_FLOOR_SHARE of the
+        # buildup lacked the entered buffs (teammate dilution / buffs
+        # dropping) — the page shows the floor–optimal range.
+        floor = calculate_anomaly(
+            replace(config, unbuffed_share=UNBUFFED_FLOOR_SHARE),
+            consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets, anomaly_data=data.anomalies,
+        )
+        payload["floor"] = {
+            "unbuffed_share": UNBUFFED_FLOOR_SHARE,
+            "per_proc": floor.per_proc,
+            "per_proc_stunned": floor.per_proc_stunned,
+            "full": floor.full,
+            "full_stunned": floor.full_stunned,
+            "atk_final": floor.atk_final,
+            "anomaly_proficiency": floor.anomaly_proficiency,
+        }
+    # Echo the applied set bonuses so the page can display them (the
+    # calculation already validated the discs, so this cannot raise).
     payload["set_bonuses"] = set_bonus_stats(
         config.discs, data.disc_sets, config.set_stacks
     )
@@ -446,6 +575,11 @@ def run_optimization(data: AppData, body: dict) -> dict:
             an over-budget search (OptimizeError) — all with user-facing
             messages.
     """
+    if _body_mode(body) != "direct":
+        raise ValueError(
+            "The optimizer currently works on direct-hit damage only — "
+            "switch the mode to Direct hit to optimize discs"
+        )
     config = _build_config(body)
     opt_raw = body.get("optimize") or {}
     if not isinstance(opt_raw, dict):

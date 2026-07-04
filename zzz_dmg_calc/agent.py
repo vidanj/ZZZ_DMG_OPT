@@ -49,8 +49,18 @@ class AgentError(ValueError):
 #: Only damage-relevant effects are modeled (project convention): stat buffs
 #: and enemy debuffs. Motion-value increases (skill Lv. +N) are documented in
 #: notes but never modeled — the user enters multipliers manually.
+#: Anomaly-mode kinds (Phase 5e): ``anomaly_buff`` joins the separate
+#: Anomaly/Disorder "Buff Multiplier" bracket, ``disorder_mult_add`` adds to
+#: the Disorder/Vortex burst base multiplier, ``anomaly_proficiency`` adds
+#: flat AP.
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
-                    "dmg_taken", "flat_atk", "atk_pct", "daze_bonus")
+                    "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
+                    "anomaly_buff", "disorder_mult_add",
+                    "anomaly_proficiency")
+
+#: Calculation modes an effect may be gated to via its ``modes`` list.
+#: An effect without ``modes`` applies in every mode (original behavior).
+KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex")
 
 
 @dataclass(frozen=True)
@@ -71,7 +81,10 @@ class EffectScaling:
     cap: float | None = None
 
     def resolve(self, x: float) -> float:
-        value = self.base + (max(x - self.threshold, 0.0) // self.per_step) * self.per_value
+        # 1e-9 guard: fractional steps (Velina: 0.01 Energy Regen) would
+        # otherwise lose a step to float error ((1.92-1.2)//0.01 -> 71).
+        steps = (max(x - self.threshold, 0.0) + 1e-9) // self.per_step
+        value = self.base + steps * self.per_value
         return min(value, self.cap) if self.cap is not None else value
 
 
@@ -90,12 +103,21 @@ class KitEffect:
     Nekomata's Catwalk applies only to EX Specials). ``scaling`` replaces
     the fixed ``value`` with an owner-stat-scaled one (see
     :class:`EffectScaling`).
+
+    ``modes`` gates the effect to calculation modes (``direct`` /
+    ``anomaly`` / ``disorder`` / ``vortex``); ``None`` applies everywhere.
+    ``element`` gates it to damage dealt as that element. An effect that
+    EXPLICITLY lists a disorder/vortex mode skips the element check there
+    (those bursts deal another element on the kit owner's behalf); an
+    effect without ``modes`` stays element-checked in every mode.
     """
 
     kind: str
     value: float = 0.0
     skill_tag: str | None = None
     scaling: EffectScaling | None = None
+    modes: tuple[str, ...] | None = None
+    element: str | None = None
 
 
 @dataclass(frozen=True)
@@ -266,8 +288,24 @@ def _parse_kit_buff(raw, where: str) -> KitBuff:
         skill_tag = item.get("skill_tag")
         if skill_tag is not None and (not isinstance(skill_tag, str) or not skill_tag.strip()):
             raise AgentError(f"{where}: effect 'skill_tag' must be a string")
+        modes = item.get("modes")
+        if modes is not None:
+            if (not isinstance(modes, list) or not modes
+                    or any(m not in KIT_EFFECT_MODES for m in modes)):
+                raise AgentError(
+                    f"{where}: effect 'modes' must be a non-empty list from "
+                    f"{list(KIT_EFFECT_MODES)}"
+                )
+            modes = tuple(modes)
+        element = item.get("element")
+        if element is not None and element not in ELEMENTS:
+            raise AgentError(
+                f"{where}: effect 'element' must be one of {list(ELEMENTS)}, "
+                f"got {element!r}"
+            )
         effects.append(KitEffect(kind=kind, value=float(value),
-                                 skill_tag=skill_tag, scaling=scaling))
+                                 skill_tag=skill_tag, scaling=scaling,
+                                 modes=modes, element=element))
     condition = raw.get("condition")
     if condition is not None and not isinstance(condition, dict):
         raise AgentError(f"{where}: 'condition' must be an object")
@@ -456,6 +494,10 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
     elif stat == "Anomaly Mastery":
         build.anomaly_mastery += value
     elif stat == "Attribute DMG%":
+        build.dmg_bonuses.append(value)
+    elif stat == "DMG%":
+        # Generic (element-agnostic) DMG bonus, e.g. Fanged Metal 4pc —
+        # same additive bracket as Attribute DMG%.
         build.dmg_bonuses.append(value)
     else:
         # HP, DEF, HP%, DEF%, Impact%, Energy Regen%, ... — tracked but not
