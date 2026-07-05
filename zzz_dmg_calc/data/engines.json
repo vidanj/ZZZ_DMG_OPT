@@ -104,16 +104,55 @@
       "passive_note": "R1 passive (CRIT DMG +50%; Heartstring stacks ignore part of enemy Fire RES) is NOT auto-applied; enter as external CRIT DMG / RES shred when active."
     },
     "timeweaver": {
-      "name": "Timeweaver (R1)",
+      "name": "Timeweaver",
       "base_atk": 713,
       "advanced_stat": { "ATK%": 0.30 },
-      "passive_note": "Advanced stat ATK% 30 PROVISIONAL (one source said 12% - panel-check). R1 passive (Electric Anomaly Buildup +30%; AP +75 for 15s when EX hits an anomalous enemy; Disorder DMG +25% at AP >= 375) is NOT auto-applied."
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [75, 85, 95, 105, 115],
+        "conditional_buff": {
+          "name": "Timeweaver: Disorder DMG (AP >= 375)",
+          "bracket": "anomaly_buff",
+          "modes": ["disorder"],
+          "per_stack_by_rank": [0.25, 0.275, 0.30, 0.325, 0.35],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "When the equipper's AP >= 375: Disorder DMG +25% (R1) - Yanagi easily clears 375, so RAMP-UP, auto-applied. Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL)."
+        }
+      },
+      "passive_note": "Yanagi's signature (completed 2026-07-04, zenless-optimizer datamine, wengine params [0.3, 75, 15, 375, 0.25] at R1). Advanced stat ATK% 30 (0.12 x 2.5 at Lv.60 - confirmed). The AP +75..115 (on Special/EX vs an anomalous enemy, 15s) is effectively always up in her rotation, so modeled as ALWAYS-ON passive_ap (auto in anomaly modes). Electric Anomaly Buildup +30% affects buildup speed only - not modeled."
     },
     "flight_of_fancy": {
-      "name": "Flight of Fancy (R1)",
+      "name": "Flight of Fancy",
       "base_atk": 713,
       "advanced_stat": { "Anomaly Proficiency": 90 },
-      "passive_note": "R1 passive (Anomaly Buildup +40%; stacking AP up to +120 on Ether damage) is NOT auto-applied; enter active AP stacks as external AP when measuring."
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [120, 138, 156, 174, 192]
+      },
+      "passive_note": "Vivian's signature (completed 2026-07-04, zenless-optimizer datamine, wengine params [0.4, 20, 5, 6, 0.5] at R1). Advanced stat AP 90 (36 x 2.5 at Lv.60). The stacking AP +20/stack x 6 = +120 (R1) on Ether damage is effectively always max for Vivian, so modeled as ALWAYS-ON passive_ap (auto in anomaly modes) - on top of the 90 advanced stat. Anomaly Buildup +40% affects buildup speed only - not modeled."
+    },
+    "weeping_cradle": {
+      "name": "Weeping Cradle",
+      "base_atk": 713,
+      "advanced_stat": { "PEN Ratio": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Weeping Cradle: target DMG taken (ramp)",
+            "kind": "dmg_taken",
+            "values": [0.202, 0.245, 0.30, 0.355, 0.398],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "The equipper's attacks make ALL units deal +10% DMG to the struck target (R1), ramping +1.7%/0.5s to +10.2% extra = +20.2% total at max. RAMP-UP, auto-applied at the max value. Modeled in the 'DMG taken' bracket."
+          }
+        ]
+      },
+      "passive_note": "Rina's signature (added 2026-07-04, zenless-optimizer datamine, wengine params [0.6, 0.1, 3, 0.017, 0.5, 0.102] at R1). Advanced stat PEN Ratio 24% (0.096 x 2.5 at Lv.60). Off-field Energy Regen +0.6/s not modeled. The target-DMG-taken debuff is squad-facing (applies to the on-field DPS's damage) - toggled via the support's engine buffs."
     },
     "joyau_dore": {
       "name": "Joyau Dore",

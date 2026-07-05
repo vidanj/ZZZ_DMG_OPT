@@ -192,6 +192,18 @@ class CalcConfig:
             non-wind anomaly INFUSED into an active Windswept (damage is
             dealt as this element). Mutually exclusive with
             ``disorder_replaced``.
+        abloom: Vivian's ABLOOM — plain anomaly mode. Computes her
+            Featherbloom Abloom automatically: a separate instance dealt as
+            ``abloom_element`` (default the agent's attribute) equal to
+            ``VIVIAN_ABLOOM_MV[element]/100 × (AP/10) × base_mult`` of the
+            anomaly's DMG — i.e. AP-scaled (unlike Velina's fixed-MV Ablooms
+            via ``anomaly_mult_override``). ×1.30 when her M2 is toggled
+            (``mindscapes[2]``). Mutually exclusive with
+            ``anomaly_mult_override``.
+        abloom_element: The element of the anomaly the Abloom triggers on
+            (``None`` = the agent's attribute, e.g. ether for her own
+            Corruption). Its base mult and MV set the Abloom size; it is
+            dealt as this element.
         anomaly_mult_override: ABSOLUTE anomaly multiplier for plain
             anomaly mode, REPLACING the element's base (``None`` = normal,
             e.g. wind Windswept 12.5). Velina's ABLOOMS are separate
@@ -212,6 +224,21 @@ class CalcConfig:
             Disorder/Vortex burst base multiplier (fraction) — e.g.
             Velina's consumed Windbite (+1.50 at max core). Modeled kit
             sources (Yuzuha M6) add on top automatically.
+        polarity_disorder: Yanagi's POLARITY DISORDER — Disorder mode only.
+            Her downward thrust fires a Disorder on the enemy's EXISTING
+            anomaly (including her own electric Shock, so
+            ``disorder_replaced`` may equal her attribute) WITHOUT
+            consuming it, dealing ``POLARITY_DISORDER_FRACTION`` (0.15) of
+            a full Disorder per trigger — repeatable, her main DMG. Set
+            ``disorder_replaced`` to the anomaly present on the enemy
+            (e.g. ``"electric"`` for her own Shock, which also keeps
+            Thunder Metal's Shocked ATK active). One tick = the burst
+            result; sum ticks per rotation. Beyond the 15% base it adds an
+            AP-scaled term (see ``polarity_special_level``).
+        polarity_special_level: Yanagi's Special Attack skill level (1-16,
+            default 12 = base max). Sets the Polarity Disorder AP-term
+            coefficient ``(5% + level × 2.25%)`` — the second, AP-scaling
+            part of her damage (GO's ``anom_flat_dmg``). ⚠️ PROVISIONAL.
         unbuffed_share: Fraction of the buildup treated as UNBUFFED —
             contributed at the attacker's plain panel (kit/team buffs,
             engine conditional stacks, set 4pc stacks, external buffs and
@@ -253,8 +280,12 @@ class CalcConfig:
     disorder_elapsed_seconds: float = 0.0
     vortex_infused: str | None = None
     anomaly_mult_override: float | None = None
+    abloom: bool = False
+    abloom_element: str | None = None
     external_anomaly_buff: list[float] = field(default_factory=list)
     external_disorder_mult_add: float = 0.0
+    polarity_disorder: bool = False
+    polarity_special_level: int = 12
     unbuffed_share: float = 0.0
 
 
@@ -320,6 +351,24 @@ class AnomalyResults:
     # Every active conditional buff as {source, kind, value} — the front
     # ends render this as an itemized "Active buffs" summary.
     buff_breakdown: tuple = ()
+
+
+#: Polarity Disorder (Yanagi) reduces the BASE Disorder (base + time decay)
+#: to this fraction per trigger; the Disorder-mult additives (her +250%) and
+#: the AP term apply at FULL on top. It does NOT consume the anomaly, so it
+#: repeats — her main DMG. CALIBRATED in-game 2026-07-05 (within 0.3%).
+POLARITY_DISORDER_FRACTION = 0.15
+
+#: Vivian's Abloom (Dirge of Destiny) MV per element — % per 10 AP of the
+#: original anomaly's DMG, at max core. Her Featherbloom on an anomalous
+#: target adds a separate instance = (MV/100 × AP/10) × the anomaly's DMG,
+#: dealt as that element. ⚠️ PROVISIONAL (datamine, uncalibrated).
+VIVIAN_ABLOOM_MV = {
+    "ether": 6.15, "electric": 3.2, "fire": 8.0,
+    "physical": 0.75, "ice": 1.08, "wind": 0.32,
+}
+#: Vivian's M2 raises the Abloom's AP benefit to this fraction.
+VIVIAN_ABLOOM_M2_FACTOR = 1.30
 
 
 class CalcError(ValueError):
@@ -432,7 +481,7 @@ def _kit_contributions(
             scaling input (e.g. Zhao's initial Max HP).
     """
     totals = {"crit_rate": 0.0, "crit_dmg": 0.0, "res_shred": 0.0,
-              "flat_atk": 0.0, "atk_pct": 0.0,
+              "flat_atk": 0.0, "atk_pct": 0.0, "pen_ratio": 0.0,
               "anomaly_proficiency": 0.0, "disorder_mult_add": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
               "anomaly_buff": [],
@@ -571,6 +620,11 @@ def _kit_contributions(
     for set_key, count in auto_pieces.items():
         entry = disc_sets.get(set_key)
         if entry is None or count < 4 or not entry.auto_4pc_dmg:
+            continue
+        # Some auto 4pc DMG parts need a TEAMMATE to trigger (Phaethon's
+        # Melody: "when a teammate — not the equipper — uses an EX
+        # Special"). Solo (no supports) it can't fire.
+        if entry.auto_4pc_dmg_needs_teammate and not config.supports:
             continue
         totals["dmg_bonus"].append(entry.auto_4pc_dmg)
         record(f"{entry.name} 4pc (auto)", "dmg_bonus", entry.auto_4pc_dmg)
@@ -769,7 +823,8 @@ def calculate(
     bonus_entries.extend(tagged.values())
     bonus = formulas.dmg_bonus_mult(bonus_entries)
 
-    eff_def = formulas.effective_def(boss.base_def, build.pen_ratio, build.pen_flat)
+    eff_def = formulas.effective_def(
+        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat)
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
 
     res = formulas.res_mult(
@@ -905,6 +960,17 @@ def calculate_anomaly(
             "'disorder_replaced' and 'vortex_infused' are mutually "
             "exclusive - Vortex replaces Disorder while Windswept is active"
         )
+    if config.abloom:
+        if config.disorder_replaced is not None or config.vortex_infused is not None:
+            raise CalcError(
+                "'abloom' is a plain-anomaly instance - not compatible with "
+                "disorder/vortex mode"
+            )
+        if config.anomaly_mult_override is not None:
+            raise CalcError(
+                "'abloom' auto-computes the multiplier - don't also set "
+                "anomaly_mult_override (that's Velina's fixed-MV Ablooms)"
+            )
     # Additive burst-multiplier buffs (kit sources join below, once the
     # calculation mode is known and the kit is aggregated).
     extra_burst = config.external_disorder_mult_add
@@ -932,10 +998,16 @@ def calculate_anomaly(
             raise CalcError(
                 f"Unknown replaced anomaly element '{config.disorder_replaced}'"
             )
-        if replaced_key == agent.attribute:
+        # Normal Disorder needs a DIFFERENT element (you can't Disorder an
+        # anomaly with the same element). POLARITY DISORDER (Yanagi) is the
+        # exception: it fires on the enemy's EXISTING anomaly — including
+        # her own Shock (same element) — without replacing it, so it may be
+        # same-element.
+        if replaced_key == agent.attribute and not config.polarity_disorder:
             raise CalcError(
                 "Disorder needs a different element: the replaced anomaly "
-                "matches the agent's own attribute"
+                "matches the agent's own attribute (use polarity_disorder "
+                "for Yanagi's same-element Polarity Disorder)"
             )
         replaced = anomaly_data.anomalies[replaced_key]
         try:
@@ -946,9 +1018,30 @@ def calculate_anomaly(
         if rule is None:
             raise CalcError(f"No Disorder rule for element '{replaced_key}'")
         kind = "disorder"
-        name = f"Disorder ({replaced.name})"
+        name = (f"Polarity Disorder ({replaced.name})"
+                if config.polarity_disorder else f"Disorder ({replaced.name})")
         dealt_element = replaced_key
         hits = 1
+    elif config.abloom:
+        # Vivian's Abloom: AP-scaled instance of the anomaly on the target.
+        # The multiplier depends on AP, so it is finalised after the
+        # buildup-weighted AP is known (below); here we set up the element.
+        abloom_key = (config.abloom_element or agent.attribute).lower()
+        if abloom_key not in VIVIAN_ABLOOM_MV:
+            raise CalcError(
+                f"No Abloom MV for element '{abloom_key}'; options: "
+                f"{sorted(VIVIAN_ABLOOM_MV)}"
+            )
+        anomaly = anomaly_data.anomalies[abloom_key]
+        try:
+            anomaly.require_supported()
+        except Exception as exc:
+            raise CalcError(str(exc)) from None
+        kind = "anomaly"
+        name = f"Abloom ({anomaly.name})"
+        dealt_element = abloom_key
+        per_proc_mult = None            # set after weighted_ap
+        hits = 1                        # one Abloom instance
     else:
         anomaly = anomaly_data.anomalies[agent.attribute]
         try:
@@ -984,11 +1077,26 @@ def calculate_anomaly(
             extra_mult=extra_burst + kit["disorder_mult_add"],
         )
     elif kind == "disorder":
-        per_proc_mult = formulas.burst_conversion_mult(
-            rule.base, rule.time_mult, rule.window,
-            config.disorder_elapsed_seconds,
-            extra_mult=extra_burst + kit["disorder_mult_add"],
-        )
+        disorder_additive = extra_burst + kit["disorder_mult_add"]
+        if config.polarity_disorder:
+            # Polarity Disorder (Yanagi): reduce ONLY the base Disorder
+            # (base + time decay) to 15%; the Disorder-mult additives
+            # (Yanagi's core +250%, etc.) apply at FULL, NOT reduced. Plus
+            # the AP term (added after weighted_ap). CALIBRATED in-game
+            # 2026-07-05 (controlled solo, elapsed 0-3s all within 0.3% —
+            # see DOCS/sources.md): 0.15 x (4.5 + 1.25 x (10 - t)) + 2.5
+            # + coeff x AP/100 reproduced the whole decay cycle exactly.
+            base_disorder = formulas.burst_conversion_mult(
+                rule.base, rule.time_mult, rule.window,
+                config.disorder_elapsed_seconds, extra_mult=0.0,
+            )
+            per_proc_mult = (POLARITY_DISORDER_FRACTION * base_disorder
+                             + disorder_additive)
+        else:
+            per_proc_mult = formulas.burst_conversion_mult(
+                rule.base, rule.time_mult, rule.window,
+                config.disorder_elapsed_seconds, extra_mult=disorder_additive,
+            )
 
     # --- Attacker-side snapshot: buildup-weighted over segments ------------
     # (mechanic discovery #2: procs average attacker state over buildup)
@@ -1125,7 +1233,30 @@ def calculate_anomaly(
     ap = formulas.ap_mult(weighted_ap)
     bonus = weighted_bonus
 
-    eff_def = formulas.effective_def(boss.base_def, build.pen_ratio, build.pen_flat)
+    if config.abloom:
+        # Vivian's Abloom multiplier = base_mult × (MV/100) × (AP/10),
+        # ×1.30 with her M2 (mindscapes[2]). AP-scaled, so finalised here
+        # with the buildup-weighted AP. ⚠️ PROVISIONAL (uncalibrated).
+        abloom_key = (config.abloom_element or agent.attribute).lower()
+        mv = VIVIAN_ABLOOM_MV[abloom_key]
+        m2 = VIVIAN_ABLOOM_M2_FACTOR if config.mindscapes.get(2) else 1.0
+        per_proc_mult = (anomaly_data.anomalies[abloom_key].mult
+                         * (mv / 100.0) * (weighted_ap / 10.0) * m2)
+
+    if config.polarity_disorder:
+        # Polarity Disorder adds a second, AP-scaled term on top of the
+        # 15% base (GO: anom_flat_dmg = (5% + special-skill-Lv × 2.25%) ×
+        # AnomProf). Modeled as an addition to the burst multiplier of
+        # coeff × (AP/100) — combined with the standard AP term this gives
+        # the AP² scaling that makes AP doubly valuable for Yanagi.
+        # ⚠️ PROVISIONAL: matches the user's in-game LOWER bound at Lv12
+        # (2026-07-05); the median/peak imply a higher effective
+        # coefficient — needs a controlled measurement to pin exactly.
+        coeff = 0.05 + config.polarity_special_level * 0.0225
+        per_proc_mult = per_proc_mult + coeff * (weighted_ap / 100.0)
+
+    eff_def = formulas.effective_def(
+        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat)
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
     res = formulas.res_mult(
         boss.res_for(dealt_element),

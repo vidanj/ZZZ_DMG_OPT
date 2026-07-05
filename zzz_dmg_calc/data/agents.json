@@ -451,29 +451,217 @@
       "name": "Tsukishiro Yanagi",
       "attribute": "electric",
       "specialty": "anomaly",
+      "faction": "section_6",
       "level": 60,
-      "base_hp": 7788,
-      "base_atk": 797,
-      "base_def": 612,
+      "base_hp": 7789,
+      "base_atk": 798,
+      "base_def": 613,
       "impact": 86,
       "anomaly_mastery": 112,
       "anomaly_proficiency": 114,
-      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 12 },
-      "default_engine": "timeweaver"
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
+      "core_passive": {
+        "name": "Lunar Eclipse + Stances (on-field)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "disorder_mult_add", "value": 2.50, "modes": ["disorder"] },
+          { "kind": "dmg_bonus", "value": 0.20, "element": "electric" },
+          { "kind": "dmg_bonus", "value": 0.10, "element": "electric" },
+          { "kind": "pen_ratio", "value": 0.10 }
+        ],
+        "note": "Her on-field self buffs, bundled (toggle when Yanagi is the attacker): (1) Lunar Eclipse - after her EX Special, when ANY squad member applies Disorder: Disorder DMG multiplier +250% (max core) for 15s + Electric DMG +20% on her EX hit; (2) STANCES from Basic Attack Tsukuyomi Kagura - Jougen stance Electric DMG +10%, Kagen stance PEN Ratio +10%; she retains the previous stance's bonus for 8s after switching, so both are effectively up in rotation. Net when on-field: Electric DMG +30%, PEN Ratio +10%, and Disorder +250% in Disorder mode. The Disorder part is also a 'Lunar Eclipse: squad ...' team buff (support role) - never apply both at once. PROVISIONAL until Disorder calibration."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Know Thy Self, Know Thy Enemy",
+          "note": "Clarity stacks (max 3) grant AP / buildup on being hit - resource/buildup mechanic, not a clean damage toggle; not modeled (enter the AP as external if measuring)."
+        },
+        "2": {
+          "name": "Outstanding Adaptability",
+          "note": "EX Special rapid-thrust Electric Anomaly Buildup +20% and extra thrusts - buildup/energy only, not modeled."
+        },
+        "3": {
+          "name": "Tsukishiro Style Management",
+          "note": "Basic / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "Chessmaster",
+          "max_stacks": 1,
+          "effects": [ { "kind": "pen_ratio", "value": 0.16 } ],
+          "note": "When Yanagi inflicts Attribute Anomaly DMG: the enemy is Exposed for 15s; ALL attacks on Exposed enemies gain +16% PEN Ratio. Squad-wide enemy debuff - modeled as the 'M4: squad PEN Ratio vs Exposed' team buff too: never apply both at once."
+        },
+        "5": {
+          "name": "Other Mother",
+          "note": "Basic / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Inhuman Blood",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "ex_special" } ],
+          "note": "Shinrabanshou state extended to 30s; while active, EX Special Attack DMG +20% (applies when the calculated hit is an EX Special). The max additional-DMG-multiplier-increase part is a Polarity Disorder cap, not modeled here."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Lunar Eclipse: squad Disorder mult +250%",
+          "max_stacks": 1,
+          "effects": [ { "kind": "disorder_mult_add", "value": 2.50, "modes": ["disorder"] } ],
+          "note": "Core passive, max core. After Yanagi's EX Special, when any squad member applies Disorder: squad Disorder DMG multiplier +250% for 15s. Applies when she is OFF-FIELD amplifying a teammate's Disorder. Same effect as her core_passive: never apply both at once. HUGE and PROVISIONAL until Disorder calibration."
+        },
+        {
+          "name": "M4: squad PEN Ratio vs Exposed",
+          "max_stacks": 1,
+          "effects": [ { "kind": "pen_ratio", "value": 0.16 } ],
+          "note": "Requires Yanagi at Mindscape 4 (Chessmaster). All squad members gain +16% PEN Ratio against enemies she has Exposed (via inflicting Attribute Anomaly DMG). Same as her M4 mindscape: never apply both at once."
+        }
+      ],
+      "default_engine": "timeweaver",
+      "_note": "Anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 710+... = 7789, ATK 798, DEF 613, AM 112, AP 114; max core ATK+75 AM+36). POLARITY DISORDER is her main DMG source - see the anomaly_plan / calc note: her downward thrust on an anomalous enemy triggers Polarity Disorder = 15% of a normal Disorder's DMG (+ a flat ~27.25% of her AP term at max skill) and does NOT consume the anomaly, so it repeats many times. To calc: run Disorder mode (electric), apply her core +250% mult and Timeweaver +25%, then take 15% per trigger. M1/M2/M3/M5 not modeled (buildup/MV). Disorder numbers PROVISIONAL until in-game calibration."
     },
     "vivian": {
       "name": "Vivian Banshee",
       "attribute": "ether",
       "specialty": "anomaly",
+      "faction": "mockingbird",
       "level": 60,
-      "base_hp": 7673,
-      "base_atk": 805,
-      "base_def": 606,
+      "base_hp": 7674,
+      "base_atk": 806,
+      "base_def": 607,
       "impact": 86,
       "anomaly_mastery": 108,
       "anomaly_proficiency": 118,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
-      "default_engine": "flight_of_fancy"
+      "additional_ability": {
+        "name": "Prophetic Tears",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["anomaly"] },
+        "effects": [
+          { "kind": "anomaly_buff", "value": 0.12, "modes": ["anomaly"], "element": "ether" },
+          { "kind": "anomaly_buff", "value": 0.12, "modes": ["disorder"] }
+        ],
+        "note": "Needs an Anomaly squadmate or one sharing her attribute (ether). Squad Corruption DMG and Corruption's Disorder DMG +12% (Buff Multiplier bracket). The Featherbloom-on-teammate-anomaly part drives her Abloom (off-field damage feature, deferred). PROVISIONAL."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Walking Into the Orchard in Spring",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_taken", "value": 0.16, "modes": ["anomaly"] },
+            { "kind": "dmg_taken", "value": 0.16, "modes": ["disorder"] }
+          ],
+          "note": "Targets under Vivian's Prophecy take +16% Attribute Anomaly DMG and Disorder DMG (enemy debuff, DMG-taken bracket). The Guard/Flight Feather part is resource-only."
+        },
+        "2": {
+          "name": "Stormy Night, Stormy Night",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "Ether Anomaly Buildup +25% (buildup, not modeled); Abloom's AP benefit raised to 130% (enter 1.3x in the Abloom note calc); and 15% All-Attribute RES ignore (modeled). Verified 2026-07-04 (datamine)."
+        },
+        "3": {
+          "name": "Another and the Same",
+          "note": "Basic / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "The Wind Between the Reeds",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.12 } ],
+          "note": "Her Featherbloom / Fluttering Frock basics always CRIT (irrelevant to anomalies) and grant +12% ATK for 12s - effectively always up in her rotation. Panel ATK% bracket assumed."
+        },
+        "5": {
+          "name": "Sonnet",
+          "note": "Basic / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Vivian",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.40, "element": "ether" } ],
+          "note": "Vivian's Ether DMG +40%. The extra Flight Feather / Abloom-trigger parts are resource/off-field damage."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Prophetic Tears: squad Corruption & Disorder DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.12, "modes": ["anomaly"], "element": "ether" },
+            { "kind": "anomaly_buff", "value": 0.12, "modes": ["disorder"] }
+          ],
+          "note": "Her Additional Ability as a support: squad Corruption DMG and Corruption Disorder DMG +12%. Same as her attacker-role additional_ability: never apply both at once."
+        },
+        {
+          "name": "M1: Prophecy targets take +16% Anomaly/Disorder DMG",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_taken", "value": 0.16, "modes": ["anomaly"] },
+            { "kind": "dmg_taken", "value": 0.16, "modes": ["disorder"] }
+          ],
+          "note": "Requires Vivian at Mindscape 1. Enemies under her Prophecy take +16% Anomaly/Disorder DMG from ALL squad members. Same as her M1 mindscape: never apply both at once."
+        }
+      ],
+      "default_engine": "flight_of_fancy",
+      "_note": "Ether anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 7674 / ATK 806 / DEF 607, AM 108, AP 118; max core ATK+75 AM+36). Her Prophecy (Ether DMG 55% ATK / 0.55s) is off-field DoT (deferred). M3/M5 not modeled. Anomaly/Abloom numbers PROVISIONAL until in-game calibration.\n\nABLOOM CALC (her signature; AP-SCALING, unlike Velina's fixed MV): Featherbloom on an anomalous target deals a SEPARATE instance = (MV% per 10 AP) x (the ORIGINAL anomaly's per-proc DMG). MV per element at max core: Ether 6.15 / Electric 3.2 / Fire 8 / Physical 0.75 / Ice 1.08 / Wind 0.32 (x1.3 with her M2). Recipe - run ANOMALY mode as the anomaly's element with the multiplier OVERRIDE = anomaly_base_mult x (MV/100) x (AP/10). Base mults: Corruption(ether) 0.625, Shock(electric) 1.25, Burn(fire) 0.50, Assault(physical) 7.13, Shatter(ice) 5.0, Windswept(wind) 12.5. EXAMPLE - Ether Corruption, Vivian AP 446: override = 0.625 x 0.0615 x 44.6 = 1.714 (the Abloom is ~2.74x the Corruption at that AP). Note: the 'per 10 AP' scales with VIVIAN's AP; the 'original anomaly DMG' uses whoever applied it (usually Vivian's own Corruption, so same AP). M2's x1.3 and its 15% RES ignore are separate toggles."
+    },
+    "rina": {
+      "name": "Alexandrina Sebastiane (Rina)",
+      "attribute": "electric",
+      "specialty": "support",
+      "faction": "victoria_housekeeping",
+      "level": 60,
+      "base_hp": 8609,
+      "base_atk": 642,
+      "base_def": 601,
+      "impact": 83,
+      "anomaly_mastery": 93,
+      "anomaly_proficiency": 92,
+      "core_skill_bonuses": { "base_atk": 75, "pen_ratio": 0.144 },
+      "core_passive": {
+        "name": "Mini Destruction Partner (self)",
+        "max_stacks": 1,
+        "effects": [ { "kind": "dmg_bonus", "value": 0.10, "element": "electric" } ],
+        "note": "Self note: the squad PEN Ratio buff is her support role (see team_buffs). Her own PEN Ratio +14.4% core is folded into core_skill_bonuses. This entry keeps her Additional Ability's Electric DMG +10% available when SHE is the attacker (off-field damage feature) - normally she is a support (use team_buffs)."
+      },
+      "team_buffs": [
+        {
+          "name": "Mini Destruction Partner: squad PEN Ratio",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "pen_ratio",
+              "scaling": { "input": "pen_ratio", "base": 0.12, "per_step": 0.001, "per_value": 0.00025, "cap": 0.30 } }
+          ],
+          "note": "Core passive, max core. While Drusilla/Anastella are attacking: ALL squad members' PEN Ratio increases by 25% of RINA's PEN Ratio + 12%, capped at +30% (reached at 72% Rina PEN). Enter HER panel PEN Ratio as 'pen_ratio' (fraction, e.g. 0.24 -> +18%). Feeds the DEF zone. Verified 2026-07-04 (datamine coreParams [0.25, 0.12, 0.30]); 0.001 step approximates the linear 0.25x slope."
+        },
+        {
+          "name": "M1: PEN Ratio buff x1.3 (extra +30%)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "pen_ratio",
+              "scaling": { "input": "pen_ratio", "base": 0.036, "per_step": 0.001, "per_value": 0.000075, "cap": 0.09 } }
+          ],
+          "note": "Requires Rina at Mindscape 1 (Dance Duet). The Core Passive PEN Ratio buff for nearby characters is raised to 130% of its value (cap 30% -> 39%). Modeled as the EXTRA +30% (0.3 x the base buff, cap +9%): check TOGETHER with the core PEN buff, same 'pen_ratio' input. In-game 2026-07-05: gave 38.48% total (= 29.6% base x 1.3), confirmed by the user. Verified (datamine mindscapeParams M1 [5.5, 1.3])."
+        },
+        {
+          "name": "Banquet of Perfection: squad Electric DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_shares_attribute_or_faction": true },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.10, "element": "electric" } ],
+          "note": "Additional Ability - needs a squadmate sharing her Attribute (electric) or Faction (Victoria Housekeeping). While a Shocked enemy is on the field: all squad members' Electric DMG +10% (also extends Shock +3s - buildup). Verified 2026-07-04 (datamine abilityParams [3, 0.10])."
+        },
+        {
+          "name": "M2: Rina DMG +15% (self)",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.15 } ],
+          "note": "Requires Rina at Mindscape 2. When she becomes the active character: HER DMG +15% for 12s (once/18s). SELF-ONLY - only relevant if she is the attacker (off-field damage). Do not apply to the on-field DPS."
+        },
+        {
+          "name": "M6: squad Electric DMG +15%",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.15, "element": "electric" } ],
+          "note": "Requires Rina at Mindscape 6. Her EX Special / Chain / Ultimate hit: ALL squad members' Electric DMG +15% for 8s. Verified 2026-07-04 (datamine mindscapeParams M6 [0.15, 8])."
+        }
+      ],
+      "default_engine": "weeping_cradle",
+      "_note": "Electric support (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 8609 / ATK 642 / DEF 601, Impact 83, AM 93, AP 92; max core ATK+75, PEN Ratio+14.4%). Her value is the squad PEN Ratio buff (scales with her own PEN) + Electric DMG buffs. Modeled as team_buffs (support role); M2 is self-only. Bangboo-summon mechanics (Drusilla/Anastella deployment) are the trigger conditions - the user toggles what's active. M1/M3/M4/M5 not modeled (uptime/energy/MV). PEN Ratio +14.4% core folded into core_skill_bonuses. Not yet panel-checked in-game."
     },
     "velina": {
       "name": "Velina Airgid",

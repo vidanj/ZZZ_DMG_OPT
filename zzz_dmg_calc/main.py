@@ -298,7 +298,11 @@ def run() -> None:
     disorder_elapsed = 0.0
     vortex_infused = None
     anomaly_mult_override = None
+    abloom = False
+    abloom_element = None
     disorder_mult_add = 0.0
+    polarity_disorder = False
+    polarity_special_level = 12
     if mode == "Direct hit":
         print("\nNote: enter the move's TOTAL motion value. Results are the")
         print("whole move; in-game popups are per hit and will show smaller")
@@ -317,22 +321,48 @@ def run() -> None:
               + ("" if anomaly.supported else " — NOT YET SUPPORTED"))
         if anomaly.debuff_note:
             print(f"  Note: {anomaly.debuff_note}")
-        override_pct = _ask_percent(
-            "Anomaly multiplier OVERRIDE, replaces the base (Enter = normal "
-            f"{anomaly.name} proc; Velina Ablooms: 145 Condensed / 255 "
-            "Sweeping / 680 Ultimate - each a SEPARATE popup)",
-            0.0,
-        )
-        anomaly_mult_override = override_pct if override_pct > 0 else None
+        # Vivian's Abloom: auto AP-scaled instance of an anomaly.
+        abloom = input(
+            "Vivian Abloom (auto, AP-scaled instance of an anomaly)? "
+            "[y/N]: ").strip().lower() == "y"
+        if abloom:
+            options = [
+                f"{a.name} [{e}]" for e, a in anomaly_data.anomalies.items()
+                if a.supported and e in ("ether", "electric", "fire",
+                                         "physical", "ice", "wind")
+            ]
+            print("Anomaly the Abloom triggers on (default her Corruption):")
+            picked = _choose("Element", options)
+            abloom_element = picked.split("[")[1].rstrip("]")
+        else:
+            override_pct = _ask_percent(
+                "Anomaly multiplier OVERRIDE, replaces the base (Enter = "
+                f"normal {anomaly.name} proc; Velina Ablooms: 145 Condensed "
+                "/ 255 Sweeping / 680 Ultimate - each a SEPARATE popup)",
+                0.0,
+            )
+            anomaly_mult_override = override_pct if override_pct > 0 else None
     elif mode == "Disorder":
+        # Polarity Disorder (Yanagi) fires on the enemy's EXISTING anomaly
+        # (incl. her own Shock, same element) without replacing it - 15% of
+        # a full Disorder per tick, repeatable.
+        polarity_disorder = input(
+            "Polarity Disorder (Yanagi - same-element, keeps Thunder Metal)? "
+            "[y/N]: ").strip().lower() == "y"
+        if polarity_disorder:
+            polarity_special_level = int(_ask_float(
+                "  Yanagi Special Attack skill level (1-16, AP-term coeff "
+                "5% + Lv x 2.25%)", 12))
         options = [
             f"{a.name} [{e}]" for e, a in anomaly_data.anomalies.items()
-            if a.supported and e != agent_attr
+            if a.supported and (polarity_disorder or e != agent_attr)
         ]
-        picked = _choose("Anomaly being REPLACED", options)
+        label = ("Anomaly PRESENT on the enemy" if polarity_disorder
+                 else "Anomaly being REPLACED")
+        picked = _choose(label, options)
         disorder_replaced = picked.split("[")[1].rstrip("]")
         disorder_elapsed = _ask_float(
-            "Seconds elapsed since the replaced anomaly was applied", 5.0
+            "Seconds elapsed since that anomaly was applied", 0.0
         )
         disorder_mult_add = _ask_percent(
             "Additive Disorder base-mult increase not modeled elsewhere"
@@ -603,7 +633,11 @@ def run() -> None:
         disorder_replaced=disorder_replaced,
         disorder_elapsed_seconds=disorder_elapsed,
         vortex_infused=vortex_infused,
+        polarity_disorder=polarity_disorder,
+        polarity_special_level=polarity_special_level,
         anomaly_mult_override=anomaly_mult_override,
+        abloom=abloom,
+        abloom_element=abloom_element,
         external_anomaly_buff=[anomaly_buff_ext] if anomaly_buff_ext else [],
         external_disorder_mult_add=disorder_mult_add,
     )

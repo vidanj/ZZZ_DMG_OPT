@@ -56,7 +56,7 @@ class AgentError(ValueError):
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
                     "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
                     "anomaly_buff", "disorder_mult_add",
-                    "anomaly_proficiency")
+                    "anomaly_proficiency", "pen_ratio")
 
 #: Calculation modes an effect may be gated to via its ``modes`` list.
 #: An effect without ``modes`` applies in every mode (original behavior).

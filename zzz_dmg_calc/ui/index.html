@@ -185,7 +185,7 @@
 </style>
 </head>
 <body>
-<h1>ZZZ <span>DMG Optimizer</span></h1>
+<h1>ZZZ <span>DMG Optimizer</span>By Vid Anj</h1>
 
 <div class="layout">
 <div id="inputs">
@@ -267,12 +267,36 @@
       <div id="engine-buff-wrap" style="display:none"></div>
     </div>
     <div class="row c3" id="anomaly-inputs-1" style="display:none">
-      <div id="anom-mv-wrap"><label>Anomaly multiplier override % — leave blank for a normal proc; set for an Abloom (its own multiplier, REPLACES the base): Velina 145 Condensed / 255 Sweeping / 680 Ultimate — each a SEPARATE popup</label>
+      <div id="anom-mv-wrap"><label>Anomaly multiplier override % — leave blank for a normal proc; set for an Abloom (its own mult, REPLACES the base). Velina (fixed): 145 Condensed / 255 Sweeping / 680 Ultimate. Vivian (AP-scaled): base_mult × (MV/100) × (AP/10), MV Ether 6.15 / Elec 3.2 / Fire 8 / Phys 0.75 / Ice 1.08 / Wind 0.32 (see her note)</label>
         <input type="number" id="anom-mv" placeholder="normal proc" min="1" step="any"></div>
       <div id="conv-element-wrap"><label id="conv-element-label">Element</label>
         <select id="conv-element"></select></div>
       <div id="anom-elapsed-wrap"><label id="anom-elapsed-label">Seconds elapsed</label>
         <input type="number" id="anom-elapsed" value="0" min="0" step="any"></div>
+    </div>
+    <div id="abloom-wrap" style="display:none">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                    color:var(--text);font-size:13px;margin-top:2px"
+             title="Vivian's Featherbloom on an anomalous target adds a SEPARATE instance = (MV% per 10 AP) × the anomaly's DMG, AP-scaled (unlike Velina's fixed MV). Auto-computed from her AP. ×1.30 if her M2 is toggled. PROVISIONAL.">
+        <input type="checkbox" id="abloom">
+        Vivian Abloom (auto, AP-scaled) — a separate instance = MV% × AP/10 of the anomaly's DMG
+      </label>
+      <div id="abloom-element-wrap" style="display:none;max-width:360px;margin-top:4px">
+        <label>Anomaly the Abloom triggers on (default her own Corruption/ether)</label>
+        <select id="abloom-element"></select>
+      </div>
+    </div>
+    <label id="polarity-wrap" style="display:none;gap:8px;align-items:center;
+                  cursor:pointer;color:var(--text);font-size:13px;margin-top:2px"
+           title="Yanagi's downward thrust fires a Disorder on the enemy's EXISTING anomaly (including her own electric Shock, same element) WITHOUT replacing it — 15% of a full Disorder per tick, repeatable (her main DMG). Ticking this lets you pick the same element and keeps Thunder Metal (Shocked) active. One tick = the burst result; sum per rotation.">
+      <input type="checkbox" id="polarity-disorder">
+      Polarity Disorder (Yanagi) — 15% per tick on the enemy's existing anomaly
+      (incl. her own Shock; keeps Thunder Metal active)
+    </label>
+    <div id="polarity-lvl-wrap" style="display:none;max-width:340px;margin-top:4px">
+      <label>Yanagi Special Attack skill level (1–16) — sets the AP-scaling
+      term (5% + Lv×2.25%) × AP. PROVISIONAL</label>
+      <input type="number" id="polarity-lvl" value="12" min="1" max="16" step="1">
     </div>
     <div class="row c3" id="anomaly-inputs-2" style="display:none">
       <div id="disorder-add-wrap"><label>Additive base-mult % — manual, for sources not modeled as a toggle above (Velina's Windbite is the "Windbite: enhanced Vortex" team-buff checkbox — don't re-enter it here)</label>
@@ -780,20 +804,38 @@ function updateModeUI() {
   show("crit-dmg-wrap", mode === "direct");
   show("anomaly-inputs-1", mode !== "direct");
   show("anomaly-inputs-2", mode !== "direct");
-  show("anom-mv-wrap", mode === "anomaly");
+  // Vivian Abloom: auto AP-scaled multiplier (mutually exclusive with the
+  // manual override). Show the Abloom toggle in anomaly mode; when on, hide
+  // the manual override and show the element picker.
+  const abloomOn = mode === "anomaly" && $("abloom").checked;
+  show("abloom-wrap", mode === "anomaly");
+  $("abloom-element-wrap").style.display = abloomOn ? "" : "none";
+  show("anom-mv-wrap", mode === "anomaly" && !abloomOn);
+  if (mode === "anomaly" && $("abloom-element").options.length === 0) {
+    fillSelect($("abloom-element"), Object.entries(DB.anomalies)
+      .filter(([, a]) => a.supported)
+      .map(([el, a]) => [el, `${a.name} [${el}]`]));
+    $("abloom-element").value = agent.attribute;
+  }
   show("conv-element-wrap", mode === "disorder" || mode === "vortex");
   show("anom-elapsed-wrap", mode === "disorder" || mode === "vortex");
   show("disorder-add-wrap", mode === "disorder" || mode === "vortex");
+  $("polarity-wrap").style.display = mode === "disorder" ? "flex" : "none";
+  const polarity = mode === "disorder" && $("polarity-disorder").checked;
+  $("polarity-lvl-wrap").style.display = polarity ? "" : "none";
 
   // Element picker: what the burst converts (kept across rebuilds)
   const sel = $("conv-element");
   const kept = sel.value;
   if (mode === "disorder") {
-    $("conv-element-label").textContent = "Anomaly being REPLACED";
+    // Normal Disorder needs a different element; Polarity Disorder fires on
+    // the enemy's existing anomaly and MAY be the same element (her Shock).
+    $("conv-element-label").textContent = polarity
+      ? "Anomaly present on the enemy" : "Anomaly being REPLACED";
     $("anom-elapsed-label").textContent =
-      "Seconds since the replaced anomaly was applied";
+      "Seconds since that anomaly was applied";
     fillSelect(sel, Object.entries(DB.anomalies)
-      .filter(([el, a]) => a.supported && el !== agent.attribute)
+      .filter(([el, a]) => a.supported && (polarity || el !== agent.attribute))
       .map(([el, a]) => [el, `${a.name} [${el}]`]));
   } else if (mode === "vortex") {
     $("conv-element-label").textContent = "Anomaly INFUSED into the Windswept";
@@ -817,8 +859,10 @@ function updateModeUI() {
   } else if (mode === "disorder") {
     const r = DB.disorder[sel.value];
     if (r) hint = `Burst = (${+(r.base * 100).toFixed(0)}% + additive buffs + `
-      + `${+(r.time_mult * 100).toFixed(1)}%/s remaining in a ${r.window}s window) × ATK — `
-      + `dealt as the REPLACED element. PROVISIONAL (datamine) until calibrated.`;
+      + `${+(r.time_mult * 100).toFixed(1)}%/s remaining in a ${r.window}s window) × ATK`
+      + (polarity ? ` × 0.15 (Polarity Disorder, per tick — repeatable)` : "")
+      + ` — dealt as the ${polarity ? "PRESENT" : "REPLACED"} element. `
+      + `PROVISIONAL (datamine) until calibrated.`;
   } else if (mode === "vortex") {
     const r = DB.vortex[sel.value];
     if (r) hint = `Burst = (${+(r.mult * 100).toFixed(0)}% + additive buffs + `
@@ -841,6 +885,7 @@ const KIT_KIND_LABELS = {
   anomaly_buff: "Anomaly/Disorder DMG (buff bracket)",
   disorder_mult_add: "Disorder/Vortex base mult",
   anomaly_proficiency: "Anomaly Proficiency",
+  pen_ratio: "PEN Ratio",
 };
 
 //: Kit kinds whose values are plain numbers, not fractions.
@@ -1798,8 +1843,12 @@ function collectConfig() {
     // Blank = normal proc; a value is the Abloom's own multiplier.
     anomaly_mult_override: ($("anom-mv").value.trim() === "" ? null
                             : parseFloat($("anom-mv").value) / 100),
+    abloom: mode === "anomaly" && $("abloom").checked,
+    abloom_element: $("abloom-element").value || null,
     disorder_replaced: mode === "disorder" ? $("conv-element").value : null,
     vortex_infused: mode === "vortex" ? $("conv-element").value : null,
+    polarity_disorder: mode === "disorder" && $("polarity-disorder").checked,
+    polarity_special_level: parseInt($("polarity-lvl").value, 10) || 12,
     disorder_elapsed_seconds: parseFloat($("anom-elapsed").value) || 0,
     external_disorder_mult_add: pct("disorder-add"),
     external_anomaly_buff: pct("anomaly-buff"),
@@ -2363,6 +2412,8 @@ async function init() {
   $("engine-rank").addEventListener("change", () => updateDerived());
   $("mode").addEventListener("change", updateModeUI);
   $("conv-element").addEventListener("change", updateModeUI);
+  $("polarity-disorder").addEventListener("change", updateModeUI);
+  $("abloom").addEventListener("change", updateModeUI);
   $("calc").addEventListener("click", runCalc);
   $("optimize").addEventListener("click", runOptimize);
   $("opt-add-constraint").addEventListener("click", () => {

@@ -1455,6 +1455,205 @@
         "ATK": 2
       },
       "set": "WUTHERING_SALON"
+    },
+    "d136": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 2,
+        "CRIT Rate": 1,
+        "HP%": 2,
+        "Anomaly Proficiency": 4
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d139": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 1,
+        "Anomaly Proficiency": 3,
+        "ATK%": 3,
+        "HP": 1
+      },
+      "set": "FREEDOM_BLUES"
+    },
+    "d140": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "HP%": 2,
+        "ATK": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d141": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "ATK%": 2,
+        "DEF": 2,
+        "ATK": 3,
+        "CRIT DMG": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d142": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK": 1,
+        "DEF": 1,
+        "CRIT Rate": 4,
+        "Anomaly Proficiency": 3
+      },
+      "set": "PHAETHONS_MELODY",
+      "element": "ether"
+    },
+    "d143": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery",
+      "substats": {
+        "PEN": 1,
+        "ATK%": 1,
+        "ATK": 1,
+        "Anomaly Proficiency": 5
+      },
+      "set": "FREEDOM_BLUES"
+    },
+    "d144": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 1,
+        "Anomaly Proficiency": 4,
+        "HP%": 1,
+        "ATK%": 3
+      },
+      "set": "THUNDER_METAL"
+    },
+    "d145": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 1,
+        "DEF": 2,
+        "Anomaly Proficiency": 4,
+        "DEF%": 1
+      },
+      "set": "THUNDER_METAL"
+    },
+    "d146": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "DEF%": 1,
+        "ATK%": 3,
+        "PEN": 1,
+        "Anomaly Proficiency": 4
+      },
+      "set": "THUNDER_METAL"
+    },
+    "d147": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "CRIT DMG": 3,
+        "HP%": 1,
+        "HP": 2,
+        "ATK%": 2
+      },
+      "set": "CHAOS_JAZZ"
+    },
+    "d148": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "HP": 2,
+        "Anomaly Proficiency": 2,
+        "ATK%": 3,
+        "DEF%": 1
+      },
+      "set": "CHAOS_JAZZ"
+    },
+    "d149": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery",
+      "substats": {
+        "PEN": 2,
+        "HP": 1,
+        "ATK%": 4,
+        "Anomaly Proficiency": 1
+      },
+      "set": "THUNDER_METAL"
+    },
+    "d150": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "ATK": 2,
+        "CRIT DMG": 1,
+        "ATK%": 3
+      },
+      "set": "PUFFER_ELECTRO"
+    },
+    "d151": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "PEN": 2,
+        "HP": 2,
+        "ATK%": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d152": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT DMG": 1,
+        "ATK%": 2,
+        "Anomaly Proficiency": 3,
+        "ATK": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d153": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "HP": 2,
+        "CRIT DMG": 3,
+        "ATK%": 2,
+        "DEF%": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d154": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "HP%": 1,
+        "ATK%": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d155": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "DEF": 1,
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 2,
+        "PEN": 2
+      },
+      "set": "PUFFER_ELECTRO"
     }
   }
 }

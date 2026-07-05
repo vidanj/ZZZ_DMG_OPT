@@ -324,6 +324,7 @@ class DiscSet:
     bonus_4pc: SetBonus4pc | None = None
     bonus_4pc_dmg: tuple[SetDmgBonus, ...] = ()
     auto_4pc_dmg: float = 0.0
+    auto_4pc_dmg_needs_teammate: bool = False
     squad_4pc: SquadBonus4pc | None = None
     notes: str = ""
 
@@ -449,6 +450,8 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             bonus_4pc=bonus_4pc,
             bonus_4pc_dmg=tuple(dmg_bonuses),
             auto_4pc_dmg=float(auto_4pc_dmg),
+            auto_4pc_dmg_needs_teammate=bool(
+                entry.get("bonus_4pc_auto_dmg_needs_teammate", False)),
             squad_4pc=squad_4pc,
             notes=str(entry.get("notes", "")),
         )

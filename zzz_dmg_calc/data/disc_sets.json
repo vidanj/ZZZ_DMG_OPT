@@ -128,6 +128,32 @@
       },
       "notes": "Fire/Electric anomaly set (added 2026-07-04, zenless-optimizer datamine). The 4pc's second part - off-field EX Special and Assist Attack DMG +20% (persisting 5s after switch-in, once per 7.5s) - is a separate skill-gated conditional the single-4pc-slot schema can't hold: enter 20 as external DMG% on qualifying hits."
     },
+    "THUNDER_METAL": {
+      "name": "Thunder Metal",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "Combat ATK%",
+        "per_stack": 0.28,
+        "max_stacks": 1,
+        "auto": true,
+        "note": "While an enemy in combat is Shocked: the equipper's ATK +28% (Combat ATK%, panel-multiplying). RAMP-UP - a Shocked enemy comes up quickly in an Electric team, so auto-applied (the range covers uptime)."
+      },
+      "notes": "Electric anomaly/attack set (added 2026-07-04, zenless-optimizer datamine). 2pc is ELECTRIC DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Electric agents (assume-it-matches, like Wuthering Salon)."
+    },
+    "PHAETHONS_MELODY": {
+      "name": "Phaethon's Melody",
+      "bonus_2pc": { "Anomaly Mastery%": 0.08 },
+      "bonus_4pc": {
+        "stat": "Anomaly Proficiency",
+        "per_stack": 45,
+        "max_stacks": 1,
+        "auto": true,
+        "note": "When ANY squad member uses an EX Special Attack: the equipper's Anomaly Proficiency +45 for 8s. RAMP-UP in a team, auto-applied."
+      },
+      "bonus_4pc_auto_dmg": 0.25,
+      "bonus_4pc_auto_dmg_needs_teammate": true,
+      "notes": "Ether anomaly set (Vivian; added 2026-07-04, zenless-optimizer datamine). 2pc AM +8% affects BUILDUP speed only, not proc damage (tracked, not in the damage formula). 4pc's second part - 'if a teammate (NOT the equipper) uses the EX Special, equipper Ether DMG +25%' - is modeled as bonus_4pc_auto_dmg 0.25 (general DMG% on the ether wearer; assume-it-matches; RAMP-UP, the range covers uptime) but NEEDS_TEAMMATE: it can't fire SOLO (no teammate to use EX), so it's skipped when there are no supports. Confirmed in-game 2026-07-05 (solo Vivian Abloom matched to 1 unit once this was removed - see sources.md). Only equip on Ether agents."
+    },
     "WUTHERING_SALON": {
       "name": "Wuthering Salon",
       "bonus_2pc": { "Attribute DMG%": 0.10 },

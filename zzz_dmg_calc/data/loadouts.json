@@ -143,6 +143,52 @@
           "disc_id": "d135"
         }
       ]
+    },
+    "Yanagi Build 1": {
+      "description": "Yanagi Rina Vivian",
+      "discs": [
+        {
+          "disc_id": "d144"
+        },
+        {
+          "disc_id": "d145"
+        },
+        {
+          "disc_id": "d146"
+        },
+        {
+          "disc_id": "d147"
+        },
+        {
+          "disc_id": "d148"
+        },
+        {
+          "disc_id": "d149"
+        }
+      ]
+    },
+    "vivian Build": {
+      "description": "Vivian Yanagi Rina",
+      "discs": [
+        {
+          "disc_id": "d136"
+        },
+        {
+          "disc_id": "d139"
+        },
+        {
+          "disc_id": "d140"
+        },
+        {
+          "disc_id": "d141"
+        },
+        {
+          "disc_id": "d142"
+        },
+        {
+          "disc_id": "d143"
+        }
+      ]
     }
   }
 }

@@ -506,8 +506,17 @@ def _build_config(body: dict) -> CalcConfig:
             _number(body, "external_disorder_mult_add")
             if mode in ("disorder", "vortex") else 0.0
         ),
+        polarity_disorder=(
+            bool(body.get("polarity_disorder")) if mode == "disorder" else False
+        ),
+        polarity_special_level=int(body.get("polarity_special_level") or 12),
         anomaly_mult_override=(
             (_number(body, "anomaly_mult_override") or None)
+            if mode == "anomaly" else None
+        ),
+        abloom=bool(body.get("abloom")) if mode == "anomaly" else False,
+        abloom_element=(
+            (str(body.get("abloom_element") or "") or None)
             if mode == "anomaly" else None
         ),
     )
