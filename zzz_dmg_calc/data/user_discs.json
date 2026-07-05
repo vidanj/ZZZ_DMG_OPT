@@ -1389,6 +1389,72 @@
         "CRIT Rate": 2
       },
       "set": "FANGED_METAL"
+    },
+    "d130": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 3,
+        "Anomaly Proficiency": 3,
+        "HP%": 1,
+        "CRIT Rate": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d131": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF%": 2,
+        "DEF": 1,
+        "HP": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d132": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "PEN": 1,
+        "DEF%": 1,
+        "ATK%": 3,
+        "Anomaly Proficiency": 3
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d133": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "HP": 3,
+        "DEF": 1,
+        "ATK%": 3,
+        "ATK": 1
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d134": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "ATK": 1,
+        "PEN": 1,
+        "DEF": 2,
+        "Anomaly Proficiency": 4
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d135": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "DEF%": 2,
+        "ATK%": 1,
+        "ATK": 2
+      },
+      "set": "WUTHERING_SALON"
     }
   }
 }

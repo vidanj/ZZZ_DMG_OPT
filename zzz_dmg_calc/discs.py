@@ -244,11 +244,18 @@ class SetBonus4pc:
     Total contribution = ``per_stack × active stacks`` where the active
     stack count (0..``max_stacks``) is a runtime input — 4-piece effects
     are combat-conditional, unlike the always-on 2-piece bonuses.
+
+    ``auto``: the effect ramps up early and holds through a rotation
+    (e.g. Wuthering Salon's AP on EX), so the front end defaults it to
+    ``max_stacks``. The anomaly range's unbuffed floor covers the ramp /
+    uptime, so no manual toggle is needed (adopted 2026-07-04). Still
+    overridable. Situational effects leave ``auto`` false.
     """
 
     stat: str
     per_stack: float
     max_stacks: int
+    auto: bool = False
     note: str = ""
 
 
@@ -286,6 +293,7 @@ class SquadBonus4pc:
     value: float
     kind: str = "dmg_bonus"
     max_stacks: int = 1
+    auto: bool = False
     note: str = ""
 
 
@@ -300,6 +308,12 @@ class DiscSet:
             isn't modeled (its ``notes`` say why).
         bonus_4pc_dmg: Skill-type-conditional DMG% bonuses that come with
             the 4-piece (gated by the hit's skill tag, not by stacks).
+        auto_4pc_dmg: An always-assumed-on, general DMG% part of the
+            4-piece that ramps up early and holds through a rotation
+            (e.g. Wuthering Salon's +18% on Windswept trigger). Applied
+            automatically (no toggle) to the ON-FIELD wearer via the
+            dilutable kit-DMG% path, so the anomaly range's unbuffed floor
+            covers the ramp / uptime. 0 = none.
         squad_4pc: Team-facing 4-piece part (worn by a support, buffs the
             on-field agent), or ``None``.
     """
@@ -309,6 +323,7 @@ class DiscSet:
     bonus_2pc: dict[str, float]
     bonus_4pc: SetBonus4pc | None = None
     bonus_4pc_dmg: tuple[SetDmgBonus, ...] = ()
+    auto_4pc_dmg: float = 0.0
     squad_4pc: SquadBonus4pc | None = None
     notes: str = ""
 
@@ -365,6 +380,7 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 stat=stat,
                 per_stack=float(per_stack),
                 max_stacks=max_stacks,
+                auto=bool(raw_4pc.get("auto", False)),
                 note=str(raw_4pc.get("note", "")),
             )
 
@@ -416,7 +432,14 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 value=float(value),
                 kind=kind,
                 max_stacks=max_stacks,
+                auto=bool(raw_squad.get("auto", False)),
                 note=str(raw_squad.get("note", "")),
+            )
+
+        auto_4pc_dmg = entry.get("bonus_4pc_auto_dmg", 0.0)
+        if isinstance(auto_4pc_dmg, bool) or not isinstance(auto_4pc_dmg, (int, float)) or auto_4pc_dmg < 0:
+            raise DiscError(
+                f"Set '{key}': 'bonus_4pc_auto_dmg' must be a non-negative number"
             )
 
         sets[key] = DiscSet(
@@ -425,6 +448,7 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             bonus_2pc={s: float(v) for s, v in bonus_2pc.items()},
             bonus_4pc=bonus_4pc,
             bonus_4pc_dmg=tuple(dmg_bonuses),
+            auto_4pc_dmg=float(auto_4pc_dmg),
             squad_4pc=squad_4pc,
             notes=str(entry.get("notes", "")),
         )

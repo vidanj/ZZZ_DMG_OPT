@@ -198,6 +198,30 @@ def run() -> None:
         if buff.note:
             print(f"  Note: {buff.note}")
 
+    # On-field engine's OWN squad buffs — squad-wide, so the wearer gets
+    # them too (e.g. Velina + Joyau Doré's +60 AP at 2 stacks).
+    engine_squad_buffs: dict[str, int] = {}
+    for squad_buff in engine.squad_buffs:
+        per = (f"+{squad_buff.value(engine_rank):g}"
+               if squad_buff.kind in ("flat_atk", "anomaly_proficiency")
+               else f"+{squad_buff.value(engine_rank):.0%}")
+        # Ramp-up (auto) squad buffs default to max — the range covers uptime.
+        default = squad_buff.max_stacks if squad_buff.auto else 0
+        tag = " [auto]" if squad_buff.auto else ""
+        print(f"\n{squad_buff.name}{tag} — squad {squad_buff.kind} {per} "
+              f"(applies to {agents[agent_key].name} too): {squad_buff.note}")
+        if squad_buff.max_stacks == 1:
+            yn = "Y/n" if squad_buff.auto else "y/N"
+            answer = input(f"Active? [{yn}]: ").strip().lower()
+            active = (answer == "y") or (squad_buff.auto and answer == "")
+            if active:
+                engine_squad_buffs[squad_buff.name] = 1
+        else:
+            stacks = int(_ask_float(
+                f"Stacks (0-{squad_buff.max_stacks})", default))
+            if stacks:
+                engine_squad_buffs[squad_buff.name] = stacks
+
     # 3-4. Discs: saved loadout or manual entry
     loadouts = load_loadouts(disc_data)
     disc_sets = load_disc_sets()
@@ -235,18 +259,21 @@ def run() -> None:
     for key, count in piece_counts.items():
         bonus = disc_sets[key].bonus_4pc
         if count >= 4 and bonus is not None:
-            print(f"\n{disc_sets[key].name} 4-piece: {bonus.note}")
+            # Ramp-up (auto) 4pc default to max — the range covers uptime.
+            tag = " [auto]" if bonus.auto else ""
+            print(f"\n{disc_sets[key].name} 4-piece{tag}: {bonus.note}")
             if bonus.max_stacks == 1:
                 # On/off effect (e.g. Hormone Punk, Puffer Electro):
                 # internally stacks 1/0, asked as a yes/no.
-                active = input(
-                    f"Is +{bonus.per_stack:.0%} {bonus.stat} active? [y/N]: "
-                ).strip().lower() == "y"
-                stacks = 1 if active else 0
+                yn = "Y/n" if bonus.auto else "y/N"
+                answer = input(
+                    f"Is +{bonus.per_stack:.0%} {bonus.stat} active? [{yn}]: "
+                ).strip().lower()
+                stacks = 1 if (answer == "y" or (bonus.auto and answer == "")) else 0
             else:
                 stacks = int(_ask_float(
                     f"Active stacks of +{bonus.per_stack:.0%} {bonus.stat} "
-                    f"(0-{bonus.max_stacks})", 0
+                    f"(0-{bonus.max_stacks})", bonus.max_stacks if bonus.auto else 0
                 ))
             if stacks:
                 set_stacks[key] = stacks
@@ -270,7 +297,7 @@ def run() -> None:
     disorder_replaced = None
     disorder_elapsed = 0.0
     vortex_infused = None
-    anomaly_mv_mult = 1.0
+    anomaly_mult_override = None
     disorder_mult_add = 0.0
     if mode == "Direct hit":
         print("\nNote: enter the move's TOTAL motion value. Results are the")
@@ -290,11 +317,13 @@ def run() -> None:
               + ("" if anomaly.supported else " — NOT YET SUPPORTED"))
         if anomaly.debuff_note:
             print(f"  Note: {anomaly.debuff_note}")
-        anomaly_mv_mult = _ask_percent(
-            "Anomaly MV multiplier (100 = normal proc; Velina Ablooms: "
-            "145/255 cyclones, 680 Ultimate; her M6 overlap up to 140)",
-            1.0,
+        override_pct = _ask_percent(
+            "Anomaly multiplier OVERRIDE, replaces the base (Enter = normal "
+            f"{anomaly.name} proc; Velina Ablooms: 145 Condensed / 255 "
+            "Sweeping / 680 Ultimate - each a SEPARATE popup)",
+            0.0,
         )
+        anomaly_mult_override = override_pct if override_pct > 0 else None
     elif mode == "Disorder":
         options = [
             f"{a.name} [{e}]" for e, a in anomaly_data.anomalies.items()
@@ -319,8 +348,8 @@ def run() -> None:
             "Seconds elapsed since the infused anomaly was applied", 0.0
         )
         disorder_mult_add = _ask_percent(
-            "Additive Vortex base-mult increase (Velina's consumed "
-            "Windbite: 150 at max core)"
+            "Additive Vortex base-mult increase, manual (Velina's Windbite "
+            "is her 'Windbite: enhanced Vortex' team buff - don't re-enter here)"
         )
 
     # 6. Buffs. Attacker-side buffs snapshot during BUILDUP for anomalies
@@ -480,32 +509,34 @@ def run() -> None:
     if mode == "Direct hit":
         print("\nExternal buffs (press Enter to skip):")
         if buff is not None and buff.bracket == "dmg_bonus":
+            tag = " [auto]" if buff.auto else ""
             if buff.max_stacks == 1:
-                active = input(
-                    f"Is {buff.name} active? [y/N]: "
-                ).strip().lower() == "y"
+                yn = "Y/n" if buff.auto else "y/N"
+                answer = input(f"Is {buff.name}{tag} active? [{yn}]: ").strip().lower()
+                active = (answer == "y") or (buff.auto and answer == "")
                 engine_buff_stacks = 1.0 if active else 0.0
             else:
                 engine_buff_stacks = _ask_float(
-                    f"Active {buff.name} stacks (0-{buff.max_stacks})", 0
+                    f"Active {buff.name}{tag} stacks (0-{buff.max_stacks})",
+                    buff.max_stacks if buff.auto else 0
                 )
-        dmg_bonus = _ask_percent("Extra DMG% bonuses (total)")
-        crit_rate_buff = _ask_percent("Extra CRIT Rate from conditional buffs")
-        crit_dmg_buff = _ask_percent(
-            "Extra CRIT DMG from conditional buffs (e.g. core passive)"
-        )
+        dmg_bonus = _ask_percent("Extra DMG% - EXTERNAL only (season / boss)")
+        crit_rate_buff = _ask_percent("Extra CRIT Rate % - EXTERNAL only")
+        crit_dmg_buff = _ask_percent("Extra CRIT DMG % - EXTERNAL only")
     else:
         print("\nExternal buffs (press Enter to skip):")
         if buff is not None and buff.bracket == "anomaly_buff":
             # Separate-bracket engine buffs (Joyau Doré) are held constant
-            # over the buildup: one stacks value, not per segment.
+            # over the buildup: one stacks value, not per segment. Ramp-up
+            # (auto) buffs default to max — the range covers uptime.
+            tag = " [auto]" if buff.auto else ""
             engine_buff_stacks = _ask_float(
-                f"Active {buff.name} stacks (0-{buff.max_stacks}, "
-                f"constant during buildup)", 0
+                f"Active {buff.name}{tag} stacks (0-{buff.max_stacks}, "
+                f"constant during buildup)", buff.max_stacks if buff.auto else 0
             )
         anomaly_buff_ext = _ask_percent(
-            "Extra Anomaly/Disorder/Vortex DMG buffs not modeled elsewhere "
-            "(separate bracket, e.g. Wuthering Salon's Windswept +18)"
+            "Extra Anomaly/Disorder/Vortex DMG buff - EXTERNAL only (season / "
+            "boss buffs; kit/engine/set ramp-up buffs are auto-applied)"
         )
 
         print("\nBuildup segments - the proc snapshots attacker buffs as a")
@@ -560,6 +591,7 @@ def run() -> None:
         supports=supports,
         discs=discs,
         set_stacks=set_stacks,
+        engine_squad_buffs=engine_squad_buffs,
         engine_buff_stacks=engine_buff_stacks,
         external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
         external_crit_rate=crit_rate_buff,
@@ -571,7 +603,7 @@ def run() -> None:
         disorder_replaced=disorder_replaced,
         disorder_elapsed_seconds=disorder_elapsed,
         vortex_infused=vortex_infused,
-        anomaly_mv_mult=anomaly_mv_mult,
+        anomaly_mult_override=anomaly_mult_override,
         external_anomaly_buff=[anomaly_buff_ext] if anomaly_buff_ext else [],
         external_disorder_mult_add=disorder_mult_add,
     )

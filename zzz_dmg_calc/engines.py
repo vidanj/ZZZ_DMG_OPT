@@ -55,6 +55,7 @@ class EngineBuff:
     max_stacks: int
     bracket: str = "dmg_bonus"
     modes: tuple[str, ...] | None = None
+    auto: bool = False
     note: str = ""
 
     def per_stack(self, rank: int) -> float:
@@ -111,6 +112,7 @@ class EngineSquadBuff:
     kind: str
     values_by_rank: tuple[float, ...]
     max_stacks: int = 1
+    auto: bool = False
     note: str = ""
 
     def value(self, rank: int) -> float:
@@ -315,6 +317,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     max_stacks=max_stacks,
                     bracket=bracket,
                     modes=modes,
+                    auto=bool(buff_raw.get("auto", False)),
                     note=str(buff_raw.get("note", "")),
                 )
 
@@ -346,6 +349,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     kind=kind,
                     values_by_rank=rank_values(item.get("values"), "values"),
                     max_stacks=max_stacks,
+                    auto=bool(item.get("auto", False)),
                     note=str(item.get("note", "")),
                 ))
 

@@ -231,6 +231,7 @@ def frontend_payload(data: AppData) -> dict:
                             e.conditional_buff.per_stack_by_rank
                         ),
                         "max_stacks": e.conditional_buff.max_stacks,
+                        "auto": e.conditional_buff.auto,
                         "note": e.conditional_buff.note,
                     }
                 ),
@@ -240,6 +241,7 @@ def frontend_payload(data: AppData) -> dict:
                         "kind": b.kind,
                         "values_by_rank": list(b.values_by_rank),
                         "max_stacks": b.max_stacks,
+                        "auto": b.auto,
                         "note": b.note,
                     }
                     for b in e.squad_buffs
@@ -275,14 +277,17 @@ def frontend_payload(data: AppData) -> dict:
                         "stat": s.bonus_4pc.stat,
                         "per_stack": s.bonus_4pc.per_stack,
                         "max_stacks": s.bonus_4pc.max_stacks,
+                        "auto": s.bonus_4pc.auto,
                         "note": s.bonus_4pc.note,
                     }
                 ),
+                "auto_4pc_dmg": s.auto_4pc_dmg,
                 "squad_4pc": (
                     None if s.squad_4pc is None else {
                         "value": s.squad_4pc.value,
                         "kind": s.squad_4pc.kind,
                         "max_stacks": s.squad_4pc.max_stacks,
+                        "auto": s.squad_4pc.auto,
                         "note": s.squad_4pc.note,
                     }
                 ),
@@ -381,7 +386,7 @@ def _build_config(body: dict) -> CalcConfig:
     The body mirrors :class:`~zzz_dmg_calc.api.CalcConfig` (fractions, not
     human percentages — the page converts). Substats arrive as TOTAL rolls,
     same convention as ``loadouts.json``. Mode-specific fields
-    (``disorder_replaced`` / ``vortex_infused`` / ``anomaly_mv_mult``) are
+    (``disorder_replaced`` / ``vortex_infused`` / ``anomaly_mult_override``) are
     only taken from the body when the mode uses them, so a stale field
     from a previous mode can never leak into the calculation.
 
@@ -399,6 +404,15 @@ def _build_config(body: dict) -> CalcConfig:
     if not isinstance(set_stacks_raw, dict):
         raise ValueError("'set_stacks' must be an object of set key -> stacks")
     set_stacks = {str(k): int(v) for k, v in set_stacks_raw.items() if int(v)}
+
+    engine_squad_raw = body.get("engine_squad_buffs") or {}
+    if not isinstance(engine_squad_raw, dict):
+        raise ValueError(
+            "'engine_squad_buffs' must be an object of buff name -> stacks"
+        )
+    engine_squad_buffs = {
+        str(n): int(s) for n, s in engine_squad_raw.items() if int(s)
+    }
 
     dmg_bonus = _number(body, "external_dmg_bonus")
     dmg_taken = _number(body, "external_dmg_taken")
@@ -461,6 +475,7 @@ def _build_config(body: dict) -> CalcConfig:
         supports=supports,
         discs=discs,
         set_stacks=set_stacks,
+        engine_squad_buffs=engine_squad_buffs,
         engine_buff_stacks=_number(body, "engine_buff_stacks"),
         external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
         external_crit_rate=_number(body, "external_crit_rate"),
@@ -491,9 +506,9 @@ def _build_config(body: dict) -> CalcConfig:
             _number(body, "external_disorder_mult_add")
             if mode in ("disorder", "vortex") else 0.0
         ),
-        anomaly_mv_mult=(
-            _number(body, "anomaly_mv_mult", default=1.0) or 1.0
-            if mode == "anomaly" else 1.0
+        anomaly_mult_override=(
+            (_number(body, "anomaly_mult_override") or None)
+            if mode == "anomaly" else None
         ),
     )
 

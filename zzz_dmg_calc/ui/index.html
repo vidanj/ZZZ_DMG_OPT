@@ -214,6 +214,7 @@
     <div class="hint" id="matchup"></div>
     <div class="hint" id="engine-auto" style="color:var(--accent)"></div>
     <div class="note" id="engine-note"></div>
+    <div id="own-engine-squad"></div>
   </div>
 
   <div class="card" id="kit-card" style="display:none">
@@ -266,27 +267,32 @@
       <div id="engine-buff-wrap" style="display:none"></div>
     </div>
     <div class="row c3" id="anomaly-inputs-1" style="display:none">
-      <div id="anom-mv-wrap"><label>Anomaly damage scale % — leave 100 for a normal proc; only for "extra instance of Anomaly DMG at X%" kits (Velina Ablooms 145/255/680, her M6 overlap ≤140)</label>
-        <input type="number" id="anom-mv" value="100" min="1" step="any"></div>
+      <div id="anom-mv-wrap"><label>Anomaly multiplier override % — leave blank for a normal proc; set for an Abloom (its own multiplier, REPLACES the base): Velina 145 Condensed / 255 Sweeping / 680 Ultimate — each a SEPARATE popup</label>
+        <input type="number" id="anom-mv" placeholder="normal proc" min="1" step="any"></div>
       <div id="conv-element-wrap"><label id="conv-element-label">Element</label>
         <select id="conv-element"></select></div>
       <div id="anom-elapsed-wrap"><label id="anom-elapsed-label">Seconds elapsed</label>
         <input type="number" id="anom-elapsed" value="0" min="0" step="any"></div>
     </div>
     <div class="row c3" id="anomaly-inputs-2" style="display:none">
-      <div id="disorder-add-wrap"><label>Additive base-mult % (Velina consumed Windbite: 150)</label>
+      <div id="disorder-add-wrap"><label>Additive base-mult % — manual, for sources not modeled as a toggle above (Velina's Windbite is the "Windbite: enhanced Vortex" team-buff checkbox — don't re-enter it here)</label>
         <input type="number" id="disorder-add" placeholder="0" step="any"></div>
-      <div><label>Extra Anomaly/Disorder/Vortex DMG buff % (separate bracket)</label>
+      <div><label>Extra Anomaly/Disorder/Vortex DMG buff % — EXTERNAL only (separate bracket)</label>
         <input type="number" id="anomaly-buff" placeholder="0" step="any"></div>
-      <div><label>Extra flat Anomaly Proficiency</label>
+      <div><label>Extra flat Anomaly Proficiency — EXTERNAL only</label>
         <input type="number" id="extra-ap" placeholder="0" step="any"></div>
     </div>
+    <p class="hint">The "Extra" fields are for <b>external / unpredictable buffs
+    only</b> — season buffs, boss-encounter buffs, anything not in a kit / engine
+    / disc set. Kit, engine and disc-set buffs are handled by their own controls;
+    ramp-up ones (marked <b>auto</b>) are applied automatically since the 70–100%
+    range already covers imperfect rotations / uptime.</p>
     <div class="row c3">
-      <div><label>Extra DMG% bonuses (total)</label>
+      <div><label>Extra DMG% bonuses — EXTERNAL only</label>
         <input type="number" id="dmg-bonus" placeholder="0" step="any"></div>
-      <div id="crit-rate-wrap"><label>Extra CRIT Rate %</label>
+      <div id="crit-rate-wrap"><label>Extra CRIT Rate % — EXTERNAL only</label>
         <input type="number" id="crit-rate" placeholder="0" step="any"></div>
-      <div id="crit-dmg-wrap"><label>Extra CRIT DMG %</label>
+      <div id="crit-dmg-wrap"><label>Extra CRIT DMG % — EXTERNAL only</label>
         <input type="number" id="crit-dmg" placeholder="0" step="any"></div>
     </div>
     <div class="row c3">
@@ -569,26 +575,45 @@ function refreshSetStacks() {
   for (const [key, count] of Object.entries(counts)) {
     const bonus = DB.sets[key].bonus_4pc;
     if (count < 4 || !bonus) continue;
+    // Flat stats (AP, ATK) show +N; percent stats show +N%.
+    const flat = ["Anomaly Proficiency", "Anomaly Mastery", "ATK", "PEN",
+                  "Impact"].includes(bonus.stat);
+    const per = flat ? `+${bonus.per_stack} ${bonus.stat}`
+                     : `+${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat}`;
+    // Ramp-up (auto) 4pc default to max — the range covers uptime.
+    const saved = previous[key] != null ? previous[key]
+                  : (bonus.auto ? bonus.max_stacks : 0);
+    const autoTag = bonus.auto ? " (auto)" : "";
     const div = document.createElement("div");
     div.style.marginTop = "10px";
     if (bonus.max_stacks === 1) {
       div.innerHTML = `
         <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
                       font-size:13px;color:var(--text)">
-          <input type="checkbox" data-set="${key}"
-                 ${previous[key] > 0 ? "checked" : ""}>
-          ${DB.sets[key].name} 4pc active —
-          +${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat}
+          <input type="checkbox" data-set="${key}" ${saved > 0 ? "checked" : ""}>
+          ${DB.sets[key].name} 4pc${autoTag} active — ${per}
         </label>
         <p class="note">${bonus.note}</p>`;
     } else {
       div.innerHTML = `
-        <label>${DB.sets[key].name} 4pc — active stacks of
-          +${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat} (0–${bonus.max_stacks})</label>
+        <label>${DB.sets[key].name} 4pc${autoTag} — active stacks of
+          ${per} (0–${bonus.max_stacks})</label>
         <input type="number" min="0" max="${bonus.max_stacks}" step="1"
-               data-set="${key}" value="${previous[key] || 0}">
+               data-set="${key}" value="${saved}">
         <p class="note">${bonus.note}</p>`;
     }
+    wrap.appendChild(div);
+  }
+  // Auto 4pc DMG% parts (e.g. Wuthering Salon +18%) — applied server-side,
+  // shown here as a note so the user knows it's in without a control.
+  for (const [key, count] of Object.entries(counts)) {
+    const set = DB.sets[key];
+    if (count < 4 || !set.auto_4pc_dmg) continue;
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    div.innerHTML = `<p class="note" style="color:var(--accent)">
+      ${set.name} 4pc: +${(set.auto_4pc_dmg * 100).toFixed(0)}% DMG auto-applied
+      (ramp-up; the range covers uptime).</p>`;
     wrap.appendChild(div);
   }
 }
@@ -643,6 +668,55 @@ function updateDerived(resetRank = false) {
   $("engine-note").textContent = engine.passive_note || "";
 
   renderEngineBuff(engine, rank);
+  renderOwnEngineSquadBuffs(engine, rank);
+}
+
+/* The on-field agent's OWN engine squad buffs — squad buffs are squad-wide,
+   so the wearer receives them too (e.g. Velina + Joyau Doré's +60 AP at 2
+   stacks). Rendered as toggles/stacks applied to self, mirroring the
+   support engine buffs. Preserves current values across engine/rank change. */
+function renderOwnEngineSquadBuffs(engine, rank) {
+  const wrap = $("own-engine-squad");
+  const previous = ownEngineSquadState();
+  wrap.innerHTML = "";
+  if (!engine.squad_buffs || !engine.squad_buffs.length) return;
+  for (const b of engine.squad_buffs) {
+    const per = b.kind === "flat_atk" || b.kind === "anomaly_proficiency"
+      ? `+${b.values_by_rank[rank - 1]}`
+      : `+${+(b.values_by_rank[rank - 1] * 100).toFixed(1)}%`;
+    const kind = KIT_KIND_LABELS[b.kind] || b.kind;
+    // Ramp-up (auto) squad buffs default on — the range covers uptime.
+    const saved = previous[b.name] || (b.auto ? b.max_stacks : 0);
+    const autoTag = b.auto ? " (auto)" : "";
+    const name = b.name.replace(/"/g, "&quot;");
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    if (b.max_stacks === 1) {
+      div.innerHTML = `
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                      color:var(--text);font-size:13px"
+               title="${(b.note || "").replace(/"/g, "&quot;")}">
+          <input type="checkbox" data-ownsquad="${name}" ${saved > 0 ? "checked" : ""}>
+          ${b.name}${autoTag} — squad ${kind} ${per} (applies to the wearer too)
+        </label>`;
+    } else {
+      div.innerHTML = `
+        <label title="${(b.note || "").replace(/"/g, "&quot;")}">${b.name}${autoTag}
+          — squad ${kind} ${per}/stack (0–${b.max_stacks}, wearer included)</label>
+        <input type="number" min="0" max="${b.max_stacks}" step="1"
+               value="${saved}" data-ownsquad="${name}">`;
+    }
+    wrap.appendChild(div);
+  }
+}
+
+function ownEngineSquadState() {
+  const state = {};
+  for (const inp of $("own-engine-squad").querySelectorAll("[data-ownsquad]")) {
+    state[inp.dataset.ownsquad] = inp.type === "checkbox"
+      ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
+  }
+  return state;
 }
 
 /* The engine's conditional buff control: checkbox when on/off
@@ -651,9 +725,12 @@ function updateDerived(resetRank = false) {
    change, preserving the current value. */
 function renderEngineBuff(engine, rank) {
   const wrap = $("engine-buff-wrap");
-  const previous = engineBuffValue();
+  const prev = engineBuffValue();
   const buff = engine.conditional_buff;
   if (!buff) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  // Ramp-up buffs (auto) default to max — the anomaly range covers uptime.
+  const previous = prev || (buff.auto ? buff.max_stacks : 0);
+  const autoTag = buff.auto ? " (auto)" : "";
   const per = `+${+(buff.per_stack_by_rank[rank - 1] * 100).toFixed(1)}% `
     + `${buff.element || "DMG"}`;
   wrap.style.display = "";
@@ -664,13 +741,13 @@ function renderEngineBuff(engine, rank) {
              title="${buff.note.replace(/"/g, "&quot;")}">
         <input type="checkbox" id="engine-buff-stacks"
                ${previous > 0 ? "checked" : ""}>
-        ${buff.name} — ${per}
+        ${buff.name}${autoTag} — ${per}
       </label>`;
   } else {
     // step="any": anomaly procs snapshot buffs as a buildup-weighted
     // average, so fractional stacks are legal there (e.g. 2.35).
     wrap.innerHTML = `
-      <label>${buff.name} stacks (0–${buff.max_stacks}, ${per} each)</label>
+      <label>${buff.name}${autoTag} stacks (0–${buff.max_stacks}, ${per} each)</label>
       <input type="number" id="engine-buff-stacks" value="${previous || 0}"
              min="0" max="${buff.max_stacks}" step="any">`;
   }
@@ -827,10 +904,18 @@ function conditionHint(condition, ownerKey) {
     met = others.some(k => DB.agents[k] && list.includes(DB.agents[k].specialty));
     text = `needs ${list.join("/")} in squad`;
   } else if (condition.teammate_shares_attribute_or_faction) {
-    met = supports.some(k => {
+    // The condition is about the OWNER's attribute/faction: for an
+    // on-field ability the owner is the on-field agent; for a support's
+    // team buff (ownerKey set) it's that support, checked against the
+    // rest of the squad (on-field agent + other supports).
+    const owner = ownerKey ? DB.agents[ownerKey] : onField;
+    const others = ownerKey
+      ? [$("agent").value, ...supports.filter(k => k !== ownerKey)]
+      : supports;
+    met = others.some(k => {
       const a = DB.agents[k];
-      return a && (a.attribute === onField.attribute
-        || (a.faction && a.faction === onField.faction));
+      return a && (a.attribute === owner.attribute
+        || (owner.faction && a.faction === owner.faction));
     });
     text = "needs a teammate sharing attribute/faction";
   } else {
@@ -1101,12 +1186,16 @@ function renderSupportBody(slot, prev) {
       }
       buffsDiv.innerHTML = "";
       for (const b of engine.squad_buffs) {
-        const per = b.kind === "flat_atk"
+        const per = b.kind === "flat_atk" || b.kind === "anomaly_proficiency"
           ? `+${b.values_by_rank[rank - 1]}`
           : `+${+(b.values_by_rank[rank - 1] * 100).toFixed(1)}%`;
         const kind = KIT_KIND_LABELS[b.kind] || b.kind;
+        // Ramp-up (auto) squad buffs default on — the range covers uptime.
+        const dflt = b.auto ? b.max_stacks : 0;
         const saved = current[b.name] != null ? current[b.name]
-          : (prev && prev.engineBuffs ? (prev.engineBuffs[b.name] || 0) : 0);
+          : (prev && prev.engineBuffs && prev.engineBuffs[b.name] != null
+             ? prev.engineBuffs[b.name] : dflt);
+        const autoTag = b.auto ? " (auto)" : "";
         const name = b.name.replace(/"/g, "&quot;");
         const row = document.createElement("div");
         if (b.max_stacks === 1) {
@@ -1115,11 +1204,11 @@ function renderSupportBody(slot, prev) {
                           color:var(--text);font-size:13px;margin-top:6px"
                    title="${(b.note || "").replace(/"/g, "&quot;")}">
               <input type="checkbox" data-ebuff="${name}" ${saved > 0 ? "checked" : ""}>
-              ${b.name} — ${kind} ${per}
+              ${b.name}${autoTag} — ${kind} ${per}
             </label>`;
         } else {
           row.innerHTML = `
-            <label style="margin-top:6px">${b.name} — ${kind} ${per}/stack
+            <label style="margin-top:6px">${b.name}${autoTag} — ${kind} ${per}/stack
               (0–${b.max_stacks})</label>
             <input type="number" min="0" max="${b.max_stacks}" step="1"
                    value="${saved}" data-ebuff="${name}">`;
@@ -1149,16 +1238,19 @@ function renderSupportBody(slot, prev) {
       const chosen = DB.sets[setSel.value];
       if (!chosen) return;
       const squad = chosen.squad_4pc;
-      const saved = prev && prev.set === setSel.value ? prev.setStacks : 0;
+      // Ramp-up (auto) squad sets default on — the range covers uptime.
+      const dflt = squad.auto ? squad.max_stacks : 0;
+      const saved = prev && prev.set === setSel.value ? prev.setStacks : dflt;
       const kind = KIT_KIND_LABELS[squad.kind] || squad.kind;
       const per = `+${+(squad.value * 100).toFixed(0)}% squad ${kind}`;
+      const autoTag = squad.auto ? " (auto)" : "";
       if (squad.max_stacks === 1) {
         stacksDiv.innerHTML = `
           <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
                         color:var(--text);font-size:13px;margin-top:6px"
                  title="${(squad.note || "").replace(/"/g, "&quot;")}">
             <input type="checkbox" data-squadstacks ${saved > 0 ? "checked" : ""}>
-            Active — ${per}
+            Active${autoTag} — ${per}
           </label>`;
       } else {
         stacksDiv.innerHTML = `
@@ -1702,8 +1794,10 @@ function collectConfig() {
     boss_name: $("boss").value,
     skill_multiplier: mode === "direct" ? pct("skill") : 1,
     skill_tag: mode === "direct" ? ($("skill-tag").value || null) : null,
-    // Anomaly-mode inputs (the server only reads what the mode uses)
-    anomaly_mv_mult: pct("anom-mv") || 1,
+    // Anomaly-mode inputs (the server only reads what the mode uses).
+    // Blank = normal proc; a value is the Abloom's own multiplier.
+    anomaly_mult_override: ($("anom-mv").value.trim() === "" ? null
+                            : parseFloat($("anom-mv").value) / 100),
     disorder_replaced: mode === "disorder" ? $("conv-element").value : null,
     vortex_infused: mode === "vortex" ? $("conv-element").value : null,
     disorder_elapsed_seconds: parseFloat($("anom-elapsed").value) || 0,
@@ -1717,6 +1811,7 @@ function collectConfig() {
     supports,
     discs,
     set_stacks: setStacks,
+    engine_squad_buffs: ownEngineSquadState(),
     engine_buff_stacks: engineBuffValue(),
     external_dmg_bonus: pct("dmg-bonus"),
     external_crit_rate: pct("crit-rate"),
@@ -2122,6 +2217,7 @@ function applyBuild(option) {
 
 function saveState() {
   const state = { fields: {}, discs: [], setStacks: {}, kit: kitState(),
+                  ownSquad: ownEngineSquadState(),
                   supports: [...document.querySelectorAll(".support")]
                     .map(supportSlotState),
                   constraints: [...document.querySelectorAll(".constraint-row")]
@@ -2209,6 +2305,13 @@ function applyDynamicState(state) {
     if (buffEl.type === "checkbox")
       buffEl.checked = savedBuff === true || savedBuff > 0;
     else buffEl.value = savedBuff;
+  }
+  // On-field engine squad buffs (rebuilt by updateDerived above)
+  for (const inp of $("own-engine-squad").querySelectorAll("[data-ownsquad]")) {
+    const saved = (state.ownSquad || {})[inp.dataset.ownsquad];
+    if (saved == null) continue;
+    if (inp.type === "checkbox") inp.checked = saved > 0;
+    else inp.value = saved;
   }
   applyKit(state.kit);
   renderSupports(state.supports || []);

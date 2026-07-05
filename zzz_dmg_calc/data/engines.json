@@ -91,7 +91,8 @@
           "element": "physical",
           "per_stack_by_rank": [0.12, 0.15, 0.18, 0.21, 0.24],
           "max_stacks": 3,
-          "note": "Dash attacks grant stacks; 3 stacks are granted instantly on entering combat or perfect dodge - effectively always max in practice."
+          "auto": true,
+          "note": "Dash attacks grant stacks; 3 stacks are granted instantly on entering combat or perfect dodge - RAMP-UP, effectively always max, so auto-applied at max stacks (the anomaly range's floor covers uptime)."
         }
       },
       "passive_note": "Anomaly Buildup +40% (R1) to +80% (R5) at max stacks affects buildup speed only, not proc damage. The Physical DMG% stacks are modeled via the refinement system (stacks asked at runtime)."
@@ -129,18 +130,20 @@
           "modes": ["anomaly", "vortex"],
           "per_stack_by_rank": [0.07, 0.08, 0.09, 0.10, 0.11],
           "max_stacks": 2,
-          "note": "When the equipper's EX Special deals Wind DMG: Vortex and Windswept DMG +7%/stack (R1) for 40s, up to 2 stacks - effectively always max in rotation. Joins the Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL)."
+          "auto": true,
+          "note": "When the equipper's EX Special deals Wind DMG: Vortex and Windswept DMG +7%/stack (R1) for 40s, up to 2 stacks - RAMP-UP, effectively always max, so auto-applied at max. Joins the Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL)."
         },
         "squad_buffs": [
           {
             "name": "Joyau Dore: squad Anomaly Proficiency (2 stacks)",
             "kind": "anomaly_proficiency",
             "values": [60, 69, 78, 87, 96],
-            "note": "At 2 stacks of the equipper's Vortex/Windswept buff: ALL squad members' AP +60 (R1) for 40s. Anomaly modes only."
+            "auto": true,
+            "note": "At 2 stacks of the equipper's Vortex/Windswept buff: ALL squad members' AP +60 (R1) for 40s (reaches the wearer too). Anomaly modes only. RAMP-UP - auto-applied at max."
           }
         ]
       },
-      "passive_note": "Velina's signature (completed 2026-07-03: zenless-optimizer datamine, wengine params [70, 0.07, 40, 2, 2, 60] at R1). The equipper's AP +70..110 is ALWAYS-ON and auto-applied at the selected rank in anomaly modes; the Vortex/Windswept DMG stacks are the modeled conditional buff; the squad AP at 2 stacks is a squad buff (relevant when a second wind/anomaly unit wears it - as Velina's own engine its squad AP also reaches herself: enter it as external AP, do not double-apply). Advanced stat Energy Regen +60% feeds her core passive scaling (enter panel ER as 'initial_energy_regen')."
+      "passive_note": "Velina's signature (completed 2026-07-03: zenless-optimizer datamine, wengine params [70, 0.07, 40, 2, 2, 60] at R1). The equipper's AP +70..110 is ALWAYS-ON and auto-applied at the selected rank in anomaly modes; the Vortex/Windswept DMG stacks are the modeled conditional buff; the squad AP +60..96 at 2 stacks is a squad buff that reaches the WEARER too (squad buffs are squad-wide) - toggle it via the on-field engine squad-buff control (or SupportConfig.engine_buffs when a teammate wears it). CONFIRMED needed in-game 2026-07-04 (calibration #5: Velina's AP was 60 short without it). Advanced stat Energy Regen +60% feeds her core passive scaling (enter panel ER as 'initial_energy_regen')."
     },
     "metanukimorphosis": {
       "name": "Metanukimorphosis",
@@ -154,7 +157,8 @@
             "name": "Exquisite Ingenuity: squad Anomaly Proficiency",
             "kind": "anomaly_proficiency",
             "values": [60, 69, 78, 87, 96],
-            "note": "When the equipper's Aftershock hits an enemy: ALL squad members' AP +60 (R1) for 40s (one instance per squad). Anomaly modes only. Yuzuha's Hard Candy Shot basics are Aftershocks - effectively always up in her rotation."
+            "auto": true,
+            "note": "When the equipper's Aftershock hits an enemy: ALL squad members' AP +60 (R1) for 40s (one instance per squad). Anomaly modes only. Yuzuha's Hard Candy Shot basics are Aftershocks - RAMP-UP, effectively always up, so auto-applied."
           }
         ]
       },

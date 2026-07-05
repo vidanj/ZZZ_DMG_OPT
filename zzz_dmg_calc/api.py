@@ -148,6 +148,11 @@ class CalcConfig:
             (e.g. ``{"WOODPECKER_ELECTRO": 3}`` = +27% ATK). Default: no
             stacks — 4-piece
             effects are combat-conditional, like engine/core passives.
+        engine_squad_buffs: The ON-FIELD agent's OWN engine squad-buff
+            stacks (buff name -> stacks). Squad buffs are squad-wide, so
+            the wearer receives them too — e.g. Velina + Joyau Doré's
+            +60 AP at 2 stacks. (Off-field supports' squad buffs come via
+            ``SupportConfig.engine_buffs``.)
         engine_buff_stacks: Stacks of the engine's refinement-scaled
             conditional buff (pilot: Sharpened Stinger's Predatory Instinct).
             The per-stack value comes from the engine's refinement rank; the
@@ -187,10 +192,17 @@ class CalcConfig:
             non-wind anomaly INFUSED into an active Windswept (damage is
             dealt as this element). Mutually exclusive with
             ``disorder_replaced``.
-        anomaly_mv_mult: Multiplier on the anomaly's base MV, plain
-            anomaly mode only (1.0 = normal). Velina's ABLOOMS are an
-            extra wind-anomaly instance at a fixed MV: cyclones 1.45 /
-            2.55, Ultimate 6.80; her M6 Windswept overlap is up to 1.40.
+        anomaly_mult_override: ABSOLUTE anomaly multiplier for plain
+            anomaly mode, REPLACING the element's base (``None`` = normal,
+            e.g. wind Windswept 12.5). Velina's ABLOOMS are separate
+            wind-anomaly instances at their OWN multiplier — Condensed
+            cyclone 1.45, Sweeping cyclone 2.55, Ultimate 6.80 — where
+            "X% of Wind Anomaly DMG" IS the anomaly multiplier, NOT a
+            scale on 12.5 (confirmed in-game 2026-07-04: Ultimate Abloom =
+            6.80/12.5 of the Windswept popup, to the digit). Her M6
+            Windswept overlap instead scales the base (12.5 × up to 1.40
+            = up to 17.5). Ablooms are separate popups from Windswept/
+            Vortex — run one calc per instance, don't sum here.
         external_anomaly_buff: Entries of the separate Anomaly/Disorder
             "Buff Multiplier" bracket (fractions) — "Attribute Anomaly /
             Disorder / Windswept / Vortex DMG +X%" effects not already
@@ -226,6 +238,7 @@ class CalcConfig:
     supports: list[SupportConfig] = field(default_factory=list)
     discs: list[Disc] = field(default_factory=list)
     set_stacks: dict[str, int] = field(default_factory=dict)
+    engine_squad_buffs: dict[str, int] = field(default_factory=dict)
     engine_buff_stacks: float = 0.0
     external_dmg_bonuses: list[float] = field(default_factory=list)
     external_crit_rate: float = 0.0
@@ -239,7 +252,7 @@ class CalcConfig:
     disorder_replaced: str | None = None
     disorder_elapsed_seconds: float = 0.0
     vortex_infused: str | None = None
-    anomaly_mv_mult: float = 1.0
+    anomaly_mult_override: float | None = None
     external_anomaly_buff: list[float] = field(default_factory=list)
     external_disorder_mult_add: float = 0.0
     unbuffed_share: float = 0.0
@@ -482,6 +495,36 @@ def _kit_contributions(
                 f"got {stacks!r}"
             )
 
+    def apply_squad_buff(engine: Engine, rank: int, name: str, stacks: int,
+                         owner_label: str) -> None:
+        """Route one engine squad buff into the totals.
+
+        Squad buffs are squad-WIDE, so this is used both for off-field
+        supports' engines AND the on-field agent's OWN engine (the wearer
+        is a squad member too — e.g. Velina + Joyau Doré's +60 AP).
+        """
+        squad_by_name = {b.name: b for b in engine.squad_buffs}
+        buff = squad_by_name.get(name)
+        if buff is None:
+            raise CalcError(
+                f"Engine '{engine.name}' has no squad buff named '{name}'; "
+                f"options: {sorted(squad_by_name)}"
+            )
+        check_stacks(stacks, buff.max_stacks, f"{engine.name}: {buff.name}")
+        if not stacks:
+            return
+        amount = buff.value(rank) * stacks
+        if buff.kind in _LIST_KINDS:
+            totals[buff.kind].append(amount)
+        elif buff.kind in totals and buff.kind != "items":
+            totals[buff.kind] += amount
+        else:
+            raise CalcError(
+                f"Engine '{engine.name}': squad buff kind '{buff.kind}' "
+                f"is not supported"
+            )
+        record(f"{owner_label}: {buff.name} (R{rank})", buff.kind, amount)
+
     if config.core_passive_active:
         if agent.core_passive is None:
             raise CalcError(
@@ -516,6 +559,38 @@ def _kit_contributions(
                      f"Mindscape {level} ({mindscape.name})")
         if stacks:
             apply(mindscape.buff, stacks, config.scaling_inputs)
+
+    # --- On-field agent's equipped-set AUTO 4pc DMG% (effectively-always-on
+    # 4pc parts that ramp up in a rotation, e.g. Wuthering Salon's +18% on
+    # Windswept trigger). Auto-applied (no toggle) via the kit dmg_bonus
+    # path so the anomaly range's unbuffed floor covers the ramp / uptime.
+    auto_pieces: dict[str, int] = {}
+    for disc in config.discs:
+        if disc.disc_set:
+            auto_pieces[disc.disc_set] = auto_pieces.get(disc.disc_set, 0) + 1
+    for set_key, count in auto_pieces.items():
+        entry = disc_sets.get(set_key)
+        if entry is None or count < 4 or not entry.auto_4pc_dmg:
+            continue
+        totals["dmg_bonus"].append(entry.auto_4pc_dmg)
+        record(f"{entry.name} 4pc (auto)", "dmg_bonus", entry.auto_4pc_dmg)
+
+    # --- On-field agent's OWN engine squad buffs (the wearer is a squad
+    # member too, so they receive their own engine's squad buffs — e.g.
+    # Velina + Joyau Doré's +60 AP at 2 stacks). Off-field supports' squad
+    # buffs are handled below.
+    if config.engine_squad_buffs:
+        own_engine_key = (config.engine_key if config.engine_key is not None
+                          else agent.default_engine)
+        if own_engine_key not in engines:
+            raise CalcError(
+                f"Unknown engine '{own_engine_key}'; options: {sorted(engines)}"
+            )
+        own_engine = engines[own_engine_key]
+        own_rank = _resolve_engine_rank(own_engine, config.engine_rank)
+        for name, stacks in config.engine_squad_buffs.items():
+            apply_squad_buff(own_engine, own_rank, name, stacks,
+                             f"{agent.name} (self)")
 
     # --- Off-field supports: team buffs + squad set effects ---------------
     if len(config.supports) > 2:
@@ -575,30 +650,9 @@ def _kit_contributions(
                 )
             support_engine = engines[engine_key]
             rank = _resolve_engine_rank(support_engine, support.engine_rank)
-            squad_by_name = {b.name: b for b in support_engine.squad_buffs}
             for name, stacks in support.engine_buffs.items():
-                buff = squad_by_name.get(name)
-                if buff is None:
-                    raise CalcError(
-                        f"Engine '{support_engine.name}' has no squad buff "
-                        f"named '{name}'; options: {sorted(squad_by_name)}"
-                    )
-                check_stacks(stacks, buff.max_stacks,
-                             f"{support_engine.name}: {buff.name}")
-                if not stacks:
-                    continue
-                amount = buff.value(rank) * stacks
-                if buff.kind in _LIST_KINDS:
-                    totals[buff.kind].append(amount)
-                elif buff.kind in totals and buff.kind != "items":
-                    totals[buff.kind] += amount
-                else:
-                    raise CalcError(
-                        f"Engine '{support_engine.name}': squad buff kind "
-                        f"'{buff.kind}' is not supported"
-                    )
-                record(f"{member.name}: {buff.name} (R{rank})",
-                       buff.kind, amount)
+                apply_squad_buff(support_engine, rank, name, stacks,
+                                 member.name)
     return totals
 
 
@@ -901,17 +955,21 @@ def calculate_anomaly(
             anomaly.require_supported()
         except Exception as exc:
             raise CalcError(str(exc)) from None
-        if config.anomaly_mv_mult <= 0:
+        override = config.anomaly_mult_override
+        if override is not None and (
+                isinstance(override, bool)
+                or not isinstance(override, (int, float)) or override <= 0):
             raise CalcError(
-                "anomaly_mv_mult must be > 0 (1.0 = normal; Velina Ablooms "
-                "1.45 / 2.55 / 6.80, her M6 overlap up to 1.40)"
+                "anomaly_mult_override must be a positive multiplier "
+                "(Velina Ablooms: Condensed 1.45 / Sweeping 2.55 / "
+                "Ultimate 6.80; None = the element's normal proc)"
             )
         kind = "anomaly"
         name = anomaly.name
-        if config.anomaly_mv_mult != 1.0:
-            name += f" (MV x{config.anomaly_mv_mult:g})"
+        if override is not None:
+            name += f" (Abloom / mult x{override:g})"
         dealt_element = agent.attribute
-        per_proc_mult = anomaly.mult * config.anomaly_mv_mult
+        per_proc_mult = override if override is not None else anomaly.mult
         hits = anomaly.hits
 
     # --- Kit conditionals + supports (constant over the buildup) ----------

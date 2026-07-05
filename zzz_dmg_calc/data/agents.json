@@ -296,10 +296,10 @@
               "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } },
             { "kind": "dmg_bonus", "skill_tag": "ultimate",
               "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } },
-            { "kind": "dmg_bonus", "modes": ["anomaly"],
+            { "kind": "dmg_bonus", "modes": ["anomaly", "disorder", "vortex"],
               "scaling": { "input": "power_at_smash", "base": 0.10, "per_step": 1, "per_value": 0.01, "cap": 0.40 } }
           ],
-          "note": "Downward smash (One Trillion Tons / Special / EX Special / Ultimate) rider: Physical DMG +10% plus +1% per Power stack AT HIT TIME (spin hits grant Power mid-move; cap +40% at 30 Power with M1). Enter Power as 'power_at_smash' (0 is valid: base +10% applies). Direct hits: applies when the calculated hit's damage type is Special / EX Special / Ultimate. ASSAULT PROCS: the rider enters the buildup snapshot (mechanic discovery #3, CONFIRMED in-game 2026-07-04: +10.0% exact at 0 Power, bare build) - modeled at full value within the BUFFED buildup share, assuming her smashes dominate the gauge (Piper's standard loop); the results range's unbuffed floor covers smash-share/uptime dilution; use CLI buildup segments for exact shares."
+          "note": "Downward smash (One Trillion Tons / Special / EX Special / Ultimate) rider: Physical DMG +10% plus +1% per Power stack AT HIT TIME (spin hits grant Power mid-move; cap +40% at 30 Power with M1). Enter Power as 'power_at_smash' (0 is valid: base +10% applies). Direct hits: applies when the calculated hit's damage type is Special / EX Special / Ultimate. PHYSICAL ANOMALY REACTIONS (Assault / physical Vortex / physical Disorder): the rider enters the snapshot of the physical anomaly Piper builds, so it applies in anomaly/disorder/vortex modes (element gate waived in disorder/vortex - those deal physical on her behalf; Disorder included for future physical-Disorder testing). Mechanic discovery #3, CONFIRMED in-game 2026-07-04: bare-build Assault +10.0% exact at 0 Power. Modeled at full value within the BUFFED buildup share (assumes her smashes dominate the gauge, Piper's standard loop); the results range's unbuffed floor covers smash-share/uptime dilution; use CLI buildup segments for exact shares."
         },
         "3": {
           "name": "Truck Expert",
@@ -318,8 +318,17 @@
           "note": "EX Special: Engine Spin duration +2s and Power duration +4s - uptime only, not modeled."
         }
       },
+      "team_buffs": [
+        {
+          "name": "Synced Acceleration: squad DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_shares_attribute_or_faction": true },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.18 } ],
+          "note": "Her Additional Ability. When a squadmate shares Piper's Attribute (physical) or Faction (Sons of Calydon) - e.g. Yuzuha is physical - and Piper holds 20+ Power: ALL squad members' DMG +18%. Applies when Piper is OFF-FIELD supporting another on-field agent (e.g. Velina's Ablooms / Vortex). Same effect as her attacker-role 'Synced Acceleration' additional ability: never apply both at once."
+        }
+      ],
       "default_engine": "sharpened_stinger",
-      "_note": "Kit completed 2026-07-03 (Game8 + zenless-optimizer datamine). Core passive (Power: Physical Anomaly Buildup Rate +4%/stack at rank F, 20 stacks) affects buildup SPEED only, never proc damage - documented here, no modeled core_passive. Her Assault proc was game-validated 2026-07-02 (calibration #1: 30,416 exact)."
+      "_note": "Kit completed 2026-07-03 (Game8 + zenless-optimizer datamine). Core passive (Power: Physical Anomaly Buildup Rate +4%/stack at rank F, 20 stacks) affects buildup SPEED only, never proc damage - documented here, no modeled core_passive. Her Assault proc was game-validated 2026-07-02 (calibration #1: 30,416 exact). Synced Acceleration exists as BOTH the on-field additional_ability (Piper attacking) and a team_buff (Piper off-field supporting another DPS) - never apply both at once."
     },
     "yuzuha": {
       "name": "Yuzuha (Ukinami Yuzuha)",
@@ -486,7 +495,7 @@
           { "kind": "dmg_bonus",
             "scaling": { "input": "initial_energy_regen", "threshold": 1.2, "per_step": 0.01, "per_value": 0.0021, "cap": 0.35 } }
         ],
-        "note": "Per 0.01 initial Energy Regen above 1.2: DMG +0.21%, cap +35% (and AM +0.5, cap +84 - buildup only, not modeled). Enter her panel Energy Regen as 'initial_energy_regen' (e.g. 1.92 with Joyau Dore's +60%). Effectively always active. The Windbite part (consuming 2 points: that Vortex's base multiplier +150% at max core) is a per-burst input - enter it as the additive Vortex-mult increase in Vortex mode. Cyclone-explosion ABLOOMS: an extra instance of Wind Anomaly DMG at a fixed MV - Condensed 145% / Sweeping 255% at max core (datamine coreParams) - run wind Anomaly mode with that Anomaly MV multiplier."
+        "note": "Per 0.01 initial Energy Regen above 1.2: DMG +0.21%, cap +35% (and AM +0.5, cap +84 - buildup only, not modeled). Enter her panel Energy Regen as 'initial_energy_regen' (e.g. 1.92 with Joyau Dore's +60%). Effectively always active. The Windbite part (consuming 2 points: that Vortex's base multiplier +150% at max core) is a per-burst input - enter it as the additive Vortex-mult increase in Vortex mode. Cyclone-explosion ABLOOMS: a SEPARATE wind-anomaly instance at its OWN multiplier - Condensed 145% / Sweeping 255% at max core (datamine coreParams). The stated % IS the anomaly multiplier (like Windswept is 1250%), NOT a scale on 12.5 - run wind Anomaly mode with the multiplier OVERRIDE set to 145 / 255. CONFIRMED in-game 2026-07-04 (calibration #5: Ultimate Abloom = 6.80/12.5 of the Windswept popup, exact)."
       },
       "additional_ability": {
         "name": "Tea Party Etiquette",
@@ -496,7 +505,7 @@
           { "kind": "anomaly_buff", "value": 0.10, "modes": ["anomaly"], "element": "wind" },
           { "kind": "anomaly_buff", "value": 0.10, "modes": ["vortex"] }
         ],
-        "note": "Needs an Anomaly squadmate or one sharing her attribute (wind). Windswept and Vortex DMG +10% (separate Buff Multiplier bracket, zenless-optimizer - PROVISIONAL). Also: her Ultimate's heavy attack on a Wind-anomalous enemy triggers an ABLOOM fixed at 680% of Wind Anomaly DMG (wind Anomaly mode, MV multiplier 680); Sweeping Cyclone's extra Anomaly-Buildup-RES shred / Daze / buildup parts affect buildup only - not modeled."
+        "note": "Needs an Anomaly squadmate or one sharing her attribute (wind). Windswept and Vortex DMG +10% (separate Buff Multiplier bracket, zenless-optimizer - PROVISIONAL). Also: her Ultimate's heavy attack on a Wind-anomalous enemy triggers an ABLOOM at 680% (a separate wind-anomaly instance; run wind Anomaly mode with the multiplier OVERRIDE set to 680 - the % IS the multiplier, not a scale on 12.5); Sweeping Cyclone's extra Anomaly-Buildup-RES shred / Daze / buildup parts affect buildup only - not modeled."
       },
       "mindscapes": {
         "1": {
@@ -533,11 +542,47 @@
         },
         "6": {
           "name": "Chief Angel",
-          "note": "Windbite refund on consumption (6s cooldown) and +20% Wind Anomaly Buildup - resource/buildup, not modeled. Re-applying Windswept over an active one: the new burst's DMG +2.5% per remaining second, cap +40% - enter as the Anomaly MV multiplier in wind Anomaly mode (up to 140)."
+          "note": "Windbite refund on consumption (6s cooldown) and +20% Wind Anomaly Buildup - resource/buildup, not modeled. Re-applying Windswept over an active one: the new burst's DMG +2.5% per remaining second, cap +40% - this SCALES the Windswept base, so use the multiplier override at 12.5 x up to 1.40 = up to 1750 (1750%) in wind Anomaly mode."
         }
       },
+      "team_buffs": [
+        {
+          "name": "Tea Party Etiquette: squad Windswept & Vortex DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.10, "modes": ["vortex"] },
+            { "kind": "anomaly_buff", "value": 0.10, "modes": ["anomaly"], "element": "wind" }
+          ],
+          "note": "Her Additional Ability. When a teammate triggers a Vortex (or deals Windswept DMG): +10% to that Vortex/Windswept in the Anomaly/Disorder Buff Multiplier bracket. Applies when SHE is off-field enabling a teammate's reaction - e.g. Piper's physical Vortex. Same effect as her attacker-role 'Tea Party Etiquette' additional ability: never apply both at once. HYBRID-model assumption (the infused-anomaly carrier scales the base, Velina amplifies) - PROVISIONAL until an in-game Vortex calibration (anomaly_plan.md 5e)."
+        },
+        {
+          "name": "M1: squad Vortex/Windswept RES ignore",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.20, "modes": ["vortex"] },
+            { "kind": "res_shred", "value": 0.20, "modes": ["anomaly"], "element": "wind" }
+          ],
+          "note": "Requires Velina at Mindscape 1 (Orderly Elegance). The triggered Vortex ignores 20% of the target's All-Attribute RES; squad Windswept DMG ignores 20% Wind RES. Same as her attacker-role M1: never apply both at once."
+        },
+        {
+          "name": "M2: squad Windswept/Vortex DMG",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.15, "modes": ["vortex"] },
+            { "kind": "anomaly_buff", "value": 0.15, "modes": ["anomaly"], "element": "wind" }
+          ],
+          "note": "Requires Velina at Mindscape 2 (Saturation Project). Raises the Windswept/Vortex DMG increase by a further +15% (check together with the Tea Party Etiquette team buff). Same as her attacker-role M2: never apply both at once."
+        },
+        {
+          "name": "Windbite: enhanced Vortex base-mult",
+          "max_stacks": 1,
+          "effects": [ { "kind": "disorder_mult_add", "value": 1.50, "modes": ["vortex"] } ],
+          "note": "When Velina consumes 2 Windbite to enhance a Vortex: that Vortex's base DMG multiplier +150% at max core (datamine coreParams). SITUATIONAL - only the enhanced Vortex in her loop (roughly every other Vortex), so toggle it ONLY when measuring that specific hit. Adds to the Vortex burst base multiplier."
+        }
+      ],
       "default_engine": "joyau_dore",
-      "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = one extra instance of full Wind Anomaly DMG at a fixed MV (cyclones 145%/255%, Ultimate 680%): calculate as wind Anomaly mode with that Anomaly MV multiplier. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
+      "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = a SEPARATE wind-anomaly instance (its own popup) at its OWN multiplier (cyclones 145%/255%, Ultimate 680%): the stated % IS the anomaly multiplier, NOT a scale on the 12.5 Windswept base - calculate as wind Anomaly mode with the multiplier OVERRIDE (145/255/680). CONFIRMED in-game 2026-07-04 (calibration #5). VORTEX ROLE (added 2026-07-04): a physical/other-element Vortex is dealt as the INFUSED anomaly and scales off the infused-anomaly carrier's stats (e.g. Piper) - set that agent as the on-field attacker; Velina's Windswept/Vortex AMPLIFIERS then apply via her 'team_buffs' (her ability +10%, M1 20% RES ignore, M2 +15%, Windbite +150%). Her attacker-role kit (core_passive / additional_ability / mindscapes) and her team_buffs are the SAME effects for the two roles - never apply both at once. Joyau Dore's squad AP (+60 at 2 stacks) reaches Velina herself (squad buffs apply to the wearer too, since 2026-07-04) - toggle it via the on-field engine squad-buff control. Its squad-facing Vortex/Windswept DMG stacks are NOT yet modeled as a squad buff (squad_buffs lack the anomaly_buff bracket) - enter those as external Anomaly-buff % for now. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
     }
   }
 }

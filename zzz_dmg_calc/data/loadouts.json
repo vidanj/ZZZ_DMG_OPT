@@ -120,6 +120,29 @@
           "disc_id": "d128"
         }
       ]
+    },
+    "Velina Build 1": {
+      "description": "Piper Yuzuha Velina",
+      "discs": [
+        {
+          "disc_id": "d130"
+        },
+        {
+          "disc_id": "d131"
+        },
+        {
+          "disc_id": "d132"
+        },
+        {
+          "disc_id": "d133"
+        },
+        {
+          "disc_id": "d134"
+        },
+        {
+          "disc_id": "d135"
+        }
+      ]
     }
   }
 }
