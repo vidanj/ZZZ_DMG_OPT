@@ -54,7 +54,7 @@ try:
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
-    from ..optimizer import OptimizeOptions, optimize
+    from ..optimizer import OptimizeOptions, optimize, optimize_anomaly
 except ImportError:
     # Executed directly as a script (``py server.py``): no parent package,
     # so relative imports fail. Same fallback as main.py.
@@ -74,7 +74,9 @@ except ImportError:
     )
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
-    from zzz_dmg_calc.optimizer import OptimizeOptions, optimize
+    from zzz_dmg_calc.optimizer import (
+        OptimizeOptions, optimize, optimize_anomaly,
+    )
 
 
 #: The single page served at ``/`` (self-contained: inline CSS/JS).
@@ -589,7 +591,11 @@ def run_optimization(data: AppData, body: dict) -> dict:
     """Search the saved disc inventory for the best build (plan §3/§7).
 
     The body is the same payload as ``/calculate`` plus an ``optimize``
-    object: ``{objective, set_assumption, locked_slots, top_n}``. The
+    object: ``{objective, set_assumption, locked_slots, top_n, min_stats,
+    required_4pc}``. Direct mode runs
+    :func:`~zzz_dmg_calc.optimizer.optimize`; anomaly / Disorder / Vortex
+    modes run :func:`~zzz_dmg_calc.optimizer.optimize_anomaly` (its
+    objectives and default differ — full-duration anomaly damage). The
     response serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`;
     each build carries its discs (with inventory ids), the 4-piece stacks
     it was evaluated at (for Apply), and its full verified results table.
@@ -599,11 +605,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
             an over-budget search (OptimizeError) — all with user-facing
             messages.
     """
-    if _body_mode(body) != "direct":
-        raise ValueError(
-            "The optimizer currently works on direct-hit damage only — "
-            "switch the mode to Direct hit to optimize discs"
-        )
+    mode = _body_mode(body)
     config = _build_config(body)
     opt_raw = body.get("optimize") or {}
     if not isinstance(opt_raw, dict):
@@ -614,8 +616,10 @@ def run_optimization(data: AppData, body: dict) -> dict:
     min_stats_raw = opt_raw.get("min_stats") or {}
     if not isinstance(min_stats_raw, dict):
         raise ValueError("'min_stats' must be an object of stat -> minimum")
+    # Anomaly modes default to full-duration damage; direct to average.
+    default_objective = "average" if mode == "direct" else "full"
     options = OptimizeOptions(
-        objective=str(opt_raw.get("objective") or "average"),
+        objective=str(opt_raw.get("objective") or default_objective),
         set_assumption=str(opt_raw.get("set_assumption") or "max"),
         locked_slots=frozenset(int(s) for s in locked_raw),
         top_n=int(opt_raw.get("top_n") or 5),
@@ -624,11 +628,19 @@ def run_optimization(data: AppData, body: dict) -> dict:
         required_4pc=opt_raw.get("required_4pc") or None,
     )
 
-    result = optimize(
-        config, options, consts=data.consts, disc_data=data.disc_data,
-        bosses=data.bosses, agents=data.agents, engines=data.engines,
-        disc_sets=data.disc_sets, user_discs=data.user_discs,
-    )
+    if mode == "direct":
+        result = optimize(
+            config, options, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets, user_discs=data.user_discs,
+        )
+    else:
+        result = optimize_anomaly(
+            config, options, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets, anomaly_data=data.anomalies,
+            user_discs=data.user_discs,
+        )
 
     def build_option(option) -> dict:
         return {

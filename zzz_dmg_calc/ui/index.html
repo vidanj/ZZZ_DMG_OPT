@@ -185,7 +185,7 @@
 </style>
 </head>
 <body>
-<h1>ZZZ <span>DMG Optimizer</span>By Vid Anj</h1>
+<h1>ZZZ <span>DMG Optimizer</span> By Vid Anj</h1>
 
 <div class="layout">
 <div id="inputs">
@@ -423,6 +423,10 @@
     <div class="inv-grid" id="inv-grid"></div>
     <footer>
       <span id="inv-error"></span>
+      <label id="inv-multi-label" style="display:flex;align-items:center;gap:6px;
+             font-size:12px;color:var(--muted);cursor:pointer;user-select:none"
+             title="Keep this window open after equipping, so you can equip several discs in a row. Switch slot tabs to reach other slots.">
+        <input type="checkbox" id="inv-multi"> Multi‑equip (keep open)</label>
       <button class="primary" id="inv-equip" style="width:auto;padding:8px 24px"
               disabled>Equip selected</button>
       <button id="inv-cancel">Cancel</button>
@@ -1650,8 +1654,17 @@ function equipSelected() {
   const target = document.querySelector(`.disc[data-slot="${disc.slot}"]`);
   fillCard(target, disc);
   refreshSetStacks();
-  closeInventory();
   onAnyChange();
+  if ($("inv-multi").checked) {
+    // Multi‑equip: keep the modal open so several discs can be equipped in
+    // a row. Refresh the grid so the just‑equipped disc shows its badge,
+    // and clear the selection so the next pick is deliberate.
+    invState.selected = null;
+    renderInvGrid();
+    invShowError("");
+  } else {
+    closeInventory();
+  }
 }
 
 /* --- + Add disc: an inline form saving through POST /discs -------------- */
@@ -1895,8 +1908,10 @@ async function runCalc() {
     renderResults(data);
     lastResults = data;
     autoCalc = true;
-    // The optimizer works on direct-hit damage only (server enforces too).
-    $("optimize-wrap").style.display = data.mode === "direct" ? "" : "none";
+    // The optimizer runs in every mode; its objective list depends on
+    // whether direct-hit or anomaly damage was just calculated.
+    syncOptimizeObjectives(data.mode);
+    $("optimize-wrap").style.display = "";
   } catch (exc) {
     showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
@@ -2028,6 +2043,50 @@ const SCENARIOS = [
   ["Non-crit (stunned)", "non_crit_stunned"],
   ["Crit (stunned)", "crit_stunned"], ["Average (stunned)", "average_stunned"],
 ];
+
+// Anomaly-mode comparison rows (AnomalyResults fields) and objective
+// <option>s. Anomalies can't crit, so the table shows per-proc/tick and
+// full-duration totals, normal and stunned.
+const ANOMALY_SCENARIOS = [
+  ["Per proc/tick", "per_proc"], ["Full duration", "full"],
+  ["Per proc/tick (stunned)", "per_proc_stunned"],
+  ["Full duration (stunned)", "full_stunned"],
+];
+
+const OBJECTIVE_OPTIONS = {
+  direct: [
+    ["average", "Average damage (normal)"], ["crit", "Crit damage (normal)"],
+    ["non_crit", "Non-crit damage (normal)"],
+    ["average_stunned", "Average damage (stunned)"],
+    ["crit_stunned", "Crit damage (stunned)"],
+    ["non_crit_stunned", "Non-crit damage (stunned)"],
+  ],
+  anomaly: [
+    ["full", "Full duration (normal)"],
+    ["per_proc", "Per proc/tick (normal)"],
+    ["full_stunned", "Full duration (stunned)"],
+    ["per_proc_stunned", "Per proc/tick (stunned)"],
+  ],
+};
+
+/* Repopulate the "Optimize for" dropdown for the mode just calculated:
+   direct-hit crit fields, or the anomaly family (default full duration).
+   Keeps the current selection when it stays valid. */
+function syncOptimizeObjectives(mode) {
+  const family = mode === "direct" ? "direct" : "anomaly";
+  const sel = $("opt-objective");
+  if (sel.dataset.family === family) return;
+  const prev = sel.value;
+  fillSelect(sel, OBJECTIVE_OPTIONS[family]);
+  sel.dataset.family = family;
+  if (OBJECTIVE_OPTIONS[family].some(([k]) => k === prev)) sel.value = prev;
+}
+
+/* The comparison rows to show for a given objective (anomaly vs direct). */
+function scenariosFor(objective) {
+  return ANOMALY_SCENARIOS.some(([, k]) => k === objective)
+    ? ANOMALY_SCENARIOS : SCENARIOS;
+}
 
 function lockedSlots() {
   return [...document.querySelectorAll(".disc")]
@@ -2190,7 +2249,7 @@ function renderOptimize(data) {
 
   const best = data.best;
   const cur = lastResults || {};
-  const rows = SCENARIOS.map(([label, key]) => {
+  const rows = scenariosFor(data.objective).map(([label, key]) => {
     const highlight = key === data.objective ? ' class="avg"' : "";
     const c = cur[key];
     const b = best.results[key];
