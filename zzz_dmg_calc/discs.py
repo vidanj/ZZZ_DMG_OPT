@@ -250,12 +250,19 @@ class SetBonus4pc:
     ``max_stacks``. The anomaly range's unbuffed floor covers the ramp /
     uptime, so no manual toggle is needed (adopted 2026-07-04). Still
     overridable. Situational effects leave ``auto`` false.
+
+    ``at_max_extra_stat`` / ``at_max_extra_value``: an EXTRA stat the
+    4-piece grants only while the effect sits at ``max_stacks`` (Yunkui
+    Tales: "at 3 stacks, Sheer DMG +10%" — calibrated in-game
+    2026-07-10). ``None`` = no extra part.
     """
 
     stat: str
     per_stack: float
     max_stacks: int
     auto: bool = False
+    at_max_extra_stat: str | None = None
+    at_max_extra_value: float = 0.0
     note: str = ""
 
 
@@ -377,11 +384,32 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 raise DiscError(f"Set '{key}': 4pc 'per_stack' must be positive")
             if isinstance(max_stacks, bool) or not isinstance(max_stacks, int) or max_stacks < 1:
                 raise DiscError(f"Set '{key}': 4pc 'max_stacks' must be an integer >= 1")
+            extra_stat = None
+            extra_value = 0.0
+            raw_extra = raw_4pc.get("at_max_extra")
+            if raw_extra is not None:
+                if not isinstance(raw_extra, dict):
+                    raise DiscError(
+                        f"Set '{key}': 4pc 'at_max_extra' must be an object"
+                    )
+                extra_stat = raw_extra.get("stat")
+                extra_value = raw_extra.get("value")
+                if not isinstance(extra_stat, str) or not extra_stat.strip():
+                    raise DiscError(
+                        f"Set '{key}': 'at_max_extra' needs a 'stat' name"
+                    )
+                if isinstance(extra_value, bool) or not isinstance(
+                        extra_value, (int, float)) or extra_value <= 0:
+                    raise DiscError(
+                        f"Set '{key}': 'at_max_extra' value must be positive"
+                    )
             bonus_4pc = SetBonus4pc(
                 stat=stat,
                 per_stack=float(per_stack),
                 max_stacks=max_stacks,
                 auto=bool(raw_4pc.get("auto", False)),
+                at_max_extra_stat=extra_stat,
+                at_max_extra_value=float(extra_value or 0.0),
                 note=str(raw_4pc.get("note", "")),
             )
 
@@ -521,6 +549,13 @@ def set_bonus_stats(
             if stacks:
                 b = entry.bonus_4pc
                 bonuses[b.stat] = bonuses.get(b.stat, 0.0) + b.per_stack * stacks
+                # Extra part granted only at MAX stacks (Yunkui Tales:
+                # "at 3 stacks, Sheer DMG +10%" — calibrated 2026-07-10).
+                if b.at_max_extra_stat is not None and stacks == b.max_stacks:
+                    bonuses[b.at_max_extra_stat] = (
+                        bonuses.get(b.at_max_extra_stat, 0.0)
+                        + b.at_max_extra_value
+                    )
     return bonuses
 
 

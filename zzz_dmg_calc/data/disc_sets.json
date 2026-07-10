@@ -55,9 +55,11 @@
         "stat": "CRIT Rate",
         "per_stack": 0.04,
         "max_stacks": 3,
-        "note": "Wearer's EX Special / Chain Attack / Ultimate grants +4% CRIT Rate for 15s, stacking to 3. Verified 2026-07-03 (Game8)."
+        "auto": true,
+        "at_max_extra": { "stat": "Sheer DMG%", "value": 0.10 },
+        "note": "Wearer's EX Special / Chain Attack / Ultimate grants +4% CRIT Rate for 15s (refreshing), stacking to 3; AT 3 STACKS additionally Sheer DMG +10% (dedicated Sheer bracket). RAMP-UP in a Rupture rotation (EX/Ult spam) - auto-applied at max stacks; the Sheer part lands only at 3. CALIBRATED in-game 2026-07-10 (Rupture calibration #2: x1.100 on the swing total exactly, multiplicatively SEPARATE from the DMG% bracket)."
       },
-      "notes": "2pc HP +10% has no damage effect for ATK-scalers. The 4pc's extra 'Sheer DMG +10% at 3 stacks' is for Rupture agents - Sheer Force isn't modeled yet (main plan Phase 5+), so only the CRIT Rate part applies."
+      "notes": "2pc HP +10% feeds Yixuan's HP->Sheer Force conversion. 4pc CRIT stacks + the at-3-stacks Sheer DMG +10% both modeled; the GO datamine routes the Sheer part as team-facing - modeled self-only until a squad test says otherwise."
     },
     "SWING_JAZZ": {
       "name": "Swing Jazz",

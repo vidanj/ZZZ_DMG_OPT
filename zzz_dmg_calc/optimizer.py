@@ -725,14 +725,19 @@ def optimize(
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
-    crit_rate_const = config.external_crit_rate + kit["crit_rate"]
+    # Engine always-on CRIT Rate (Qingming Birdcage) joins the crit total
+    # exactly as in calculate().
+    crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
+                       + engine.passive_crit(rank))
     crit_dmg_const = config.external_crit_dmg + kit["crit_dmg"]
     # Kit/support PEN Ratio (e.g. Rina's squad PEN Ratio) — a constant that
     # calculate() folds into the DEF zone (build.pen_ratio + kit pen_ratio);
     # the fast path must too, or a support granting PEN Ratio under-values
     # every build's DefMult (PEN interacts non-linearly, so it is not a flat
-    # scalar — hence the §4 re-check catches the omission).
+    # scalar — hence the §4 re-check catches the omission). Same for enemy
+    # DEF reduction (Qingyi M1), a separate factor in the DEF zone.
     pen_ratio_const = kit["pen_ratio"]
+    def_red_const = kit["def_red"]
     ap_const = (agent.base_anomaly_proficiency
                 + agent.core_bonus_anomaly_proficiency)
     am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
@@ -740,7 +745,8 @@ def optimize(
         sum(config.external_dmg_bonuses)
         + sum(_engine_passive_bonuses(engine, agent.attribute, rank))
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank)
+                             agent.attribute, rank,
+                             skill_tag=config.skill_tag)
         + sum(kit["dmg_bonus"])
     )
     level_coef = consts.level_coefficient(agent.level)
@@ -789,7 +795,7 @@ def optimize(
         bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged
         eff_def = formulas.effective_def(
             boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
-            buckets[_B_PEN_FLAT]
+            buckets[_B_PEN_FLAT], def_red=def_red_const
         )
         defense = level_coef / (level_coef + eff_def)
         return atk_total * crit_mult * bonus * defense * const_mult, atk_total
@@ -1151,6 +1157,7 @@ def optimize_anomaly(
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
     pen_ratio_const = kit["pen_ratio"]
+    def_red_const = kit["def_red"]
     crit_rate_const = config.external_crit_rate + kit["crit_rate"]
     crit_dmg_const = config.external_crit_dmg + kit["crit_dmg"]
     ap_const = (agent.base_anomaly_proficiency
@@ -1259,7 +1266,7 @@ def optimize_anomaly(
             bonus += buckets[_B_ATTR_DMG]
         eff_def = formulas.effective_def(
             boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
-            buckets[_B_PEN_FLAT],
+            buckets[_B_PEN_FLAT], def_red=def_red_const,
         )
         defense = level_coef / (level_coef + eff_def)
         value = (mult_of_ap(ap_total) * atk_total * formulas.ap_mult(ap_total)

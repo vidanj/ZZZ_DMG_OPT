@@ -38,6 +38,9 @@ class Constants:
         base_crit_rate: CRIT Rate every agent starts with (fraction, 0.05).
         base_crit_dmg: CRIT DMG every agent starts with (fraction, 0.50).
         crit_rate_cap: Maximum effective CRIT Rate (fraction, 1.0).
+        sheer_force_atk_conversion: Rupture agents' ATK -> Sheer Force
+            conversion rate (fraction, 0.30 — datamine, PROVISIONAL until a
+            Sheer popup calibration; see DOCS/rupture_plan.md).
         skill_tags: Skill-type tag key -> display name (e.g. ``"ultimate"``
             -> ``"Ultimate"``). Gates skill-type-conditional DMG% bonuses:
             a hit's tag is chosen by the user before calculating.
@@ -48,6 +51,7 @@ class Constants:
     base_crit_rate: float
     base_crit_dmg: float
     crit_rate_cap: float
+    sheer_force_atk_conversion: float
     skill_tags: dict[str, str]
 
     def level_coefficient(self, level: int) -> float:
@@ -158,5 +162,8 @@ def load_constants(path: Path = DATA_FILE) -> Constants:
         base_crit_rate=_require_fraction(raw, "base_crit_rate"),
         base_crit_dmg=_require_fraction(raw, "base_crit_dmg"),
         crit_rate_cap=_require_fraction(raw, "crit_rate_cap"),
+        sheer_force_atk_conversion=_require_fraction(
+            raw, "sheer_force_atk_conversion"
+        ),
         skill_tags=skill_tags,
     )

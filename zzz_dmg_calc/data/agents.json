@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
+    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency, pen_ratio, sheer_force, hp_pct, sheer_dmg, def_red; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. RUPTURE (Phase 5 Rupture): 'core_skill_bonuses.base_hp' is FLAT base HP (scales with HP%, like base_atk with ATK%); 'sheer_force_hp_conversion' is the agent's HP -> Sheer Force rate (Yixuan 0.10, absent/0 for everyone else); 'sheer_force' effects add flat Sheer Force, 'hp_pct' joins the combat Max-HP% bracket, 'sheer_dmg' joins the dedicated Sheer DMG bracket, 'def_red' reduces enemy DEF (multiplicative with PEN Ratio; irrelevant to Sheer damage, which ignores DEF). Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
   },
   "agents": {
     "dummy": {
@@ -662,6 +662,269 @@
       ],
       "default_engine": "weeping_cradle",
       "_note": "Electric support (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 8609 / ATK 642 / DEF 601, Impact 83, AM 93, AP 92; max core ATK+75, PEN Ratio+14.4%). Her value is the squad PEN Ratio buff (scales with her own PEN) + Electric DMG buffs. Modeled as team_buffs (support role); M2 is self-only. Bangboo-summon mechanics (Drusilla/Anastella deployment) are the trigger conditions - the user toggles what's active. M1/M3/M4/M5 not modeled (uptime/energy/MV). PEN Ratio +14.4% core folded into core_skill_bonuses. Not yet panel-checked in-game."
+    },
+    "yixuan": {
+      "name": "Yixuan",
+      "attribute": "ether",
+      "specialty": "rupture",
+      "faction": "yunkui_summit",
+      "level": 60,
+      "base_hp": 7953,
+      "base_atk": 872,
+      "base_def": 441,
+      "impact": 93,
+      "anomaly_mastery": 92,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_hp": 420, "crit_rate": 0.144 },
+      "sheer_force_hp_conversion": 0.10,
+      "core_passive": {
+        "name": "Grandmaster of Mysticism: enhanced-skill DMG",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.60, "skill_tag": "ex_special" },
+          { "kind": "dmg_bonus", "value": 0.60, "skill_tag": "chain" },
+          { "kind": "dmg_bonus", "value": 0.60, "skill_tag": "ultimate" },
+          { "kind": "dmg_bonus", "value": 0.60, "skill_tag": "assist_followup" },
+          { "kind": "dmg_bonus", "value": 0.60, "skill_tag": "basic" }
+        ],
+        "note": "Core, max rank F: +60% DMG on her EX Special, Chain Attack, Ultimate, Assist Follow-Up, and the Basic Attacks 'Auric Array' / 'Qingming Eruption' (NOT the Cirrus Strike basic chain - only those two count for the 'basic' tag). UNCONDITIONAL in combat: check it whenever the calculated hit is one of these types. Her HP->Sheer Force conversion (0.1 SF per Max HP point) and the 30% ATK conversion are separate always-on fields, not this toggle. Datamine coreParams dmg_ [0.3..0.6]."
+      },
+      "additional_ability": {
+        "name": "Auric Ink Undercurrent",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["stun", "support", "defense"] },
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ex_special" },
+          { "kind": "crit_dmg", "value": 0.40 }
+        ],
+        "note": "Needs a Stun/Support/Defense squadmate (Qingyi or Lucia qualify). Two parts bundled: +30% DMG applies to her EX SPECIALS ONLY, and only while the target is STUNNED (datamine: the buff is attached to her two EX Special hits, stun-gated; CONFIRMED in-game 2026-07-10, Rupture calibration #3 - an N1 swing during stun took NO +30% while the +40% applied); the +40% CRIT DMG is GLOBAL during her Vital View / meditation state (~15s, her standard loop - panel-confirmed: CD +100 = 30+30+40). The ability also fires an extra Sheer hit of 225% Sheer Force - run it as its own calc with skill multiplier 2.25. Datamine abilityParams [2, 10, 2.25, 5, 0.3, 0.4, 15]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Spiritual Path",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_rate", "value": 0.10 } ],
+          "note": "CRIT Rate +10%. Also fires an extra 50%-Sheer-Force hit on certain skills (run separately with skill multiplier 0.5, 6s cooldown) and grants early Technique Points - resource parts not modeled. Datamine mindscapeParams[0] [0.1, 120, 180, 0.5, 5, 6]."
+        },
+        "2": {
+          "name": "Ward Off Misfortune",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.15, "skill_tag": "ex_special" },
+            { "kind": "res_shred", "value": 0.15, "skill_tag": "ultimate" }
+          ],
+          "note": "Her Ultimate and EX Special ignore 15% of the target's Ether RES (applies when the calculated hit carries those tags). Stun duration +3s is enemy-state QoL. The 1200%-Sheer-Force extra hit on EX Special is a separate instance - run it with skill multiplier 12.0. Datamine mindscapeParams[1] [0.15, 3, 12]."
+        },
+        "3": {
+          "name": "Cycle of Yin and Yang",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "The One Path of Mysticism",
+          "max_stacks": 2,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ex_special" } ],
+          "note": "Tranquility stacks (max 2): each grants +30% DMG to her EX Special Attacks. Datamine mindscapeParams[3] [2, 0.3]."
+        },
+        "5": {
+          "name": "Calm Sky Vigil",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Swift Yet Still",
+          "max_stacks": 1,
+          "effects": [ { "kind": "sheer_dmg", "value": 0.20, "modes": ["sheer"] } ],
+          "note": "While her meditation (Vital View) state is active: Sheer DMG +20% (dedicated Sheer DMG bracket). The Technique Point barrier removal (30s cooldown) is resource QoL. Datamine mindscapeParams[5] [30, 0.2]. Bracket placement PROVISIONAL."
+        }
+      },
+      "default_engine": "qingming_birdcage",
+      "_note": "RUPTURE DPS (Team 4, added 2026-07-10, zenless-optimizer datamine: HP 673+59x84.2519+2310=7953, ATK 126+59x8.8572+224=872, DEF 441, Impact 93, AM 92, AP 90; max core +420 base HP, +14.4% CRIT Rate - note her core boosts HP, not ATK). ALL her damage is SHEER: base = Sheer Force x MV, crits normally, IGNORES ENEMY DEF entirely, so PEN/PEN Ratio do nothing for her. SF = 0.30 x final ATK + 0.10 x final HP (+ flat SF buffs) - both post-buff panels, so HP%/flat-HP and team HP buffs (Lucia) scale her damage. Run her in the 'sheer' mode with her move MVs as the skill multiplier. CALIBRATED in-game 2026-07-10 (sources.md Rupture calibration #1, exact to 0.04%): the whole pipeline incl. the no-DEF rule and SF conversions; note a swing's MV splits into several popups (Cirrus hit 1 -> 3 popups at 30/30/40 of the 92% MV) - the calculator returns the swing's TOTAL, per the v1 whole-move convention. Kit magnitudes (core +60%, ability, mindscapes) still PROVISIONAL individually."
+    },
+    "qingyi": {
+      "name": "Qingyi",
+      "attribute": "electric",
+      "specialty": "stun",
+      "faction": "criminal_investigation_special_response_team",
+      "level": 60,
+      "base_hp": 8250,
+      "base_atk": 683,
+      "base_def": 612,
+      "impact": 118,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "core_passive": {
+        "name": "Flash Connect: consumed points (self DMG)",
+        "max_stacks": 25,
+        "effects": [ { "kind": "dmg_bonus", "value": 0.01 } ],
+        "note": "Attacker role: each Flash Connect point consumed by her Enchanted Moonlit Blossoms basics grants +1% DMG to those hits (max 25 points = +25%). Enter the points consumed as stacks. The matching Daze increase affects buildup only - not modeled. Datamine (flash_connect_consumed x 0.01)."
+      },
+      "additional_ability": {
+        "name": "Three Verses of Farewell at Yang Pass",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["attack"] },
+        "effects": [
+          { "kind": "flat_atk",
+            "scaling": { "input": "impact", "threshold": 120, "per_step": 1, "per_value": 6, "cap": 600 } }
+        ],
+        "note": "Needs an Attack squadmate or another Criminal Investigation Special Response Team member. Her ATK +6 per point of Impact above 120, capped at +600 (reached at 220 Impact). Enter HER panel Impact as 'impact' (base 118 + core +18 + Ice-Jade Teapot stacks). Basics +20% Daze affects buildup only. Datamine abilityParams [0.2, 120, 6, 600]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Insulation Breakdown",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "def_red", "value": 0.15 },
+            { "kind": "crit_rate", "value": 0.20 }
+          ],
+          "note": "When 25 Flash Connect points are consumed at once: the enemy's DEF is reduced 15% and her CRIT Rate +20% for 15s. The DEF part is an enemy debuff (squad-wide) - it exists as the 'M1: enemy DEF reduction' team buff too: never apply both at once. Datamine mindscapeParams[0] [0.3, 0.15, 0.2, 15]."
+        },
+        "2": {
+          "name": "Minimal Effort, Maximum Impact",
+          "max_stacks": 20,
+          "effects": [ { "kind": "daze_bonus", "value": 0.014 } ],
+          "note": "Raises the core Subjugation effect to 135% of its value - modeled as the EXTRA +1.4%/stack (0.35 x 4%): check TOGETHER with the Subjugation buff at the same stack count. Also exists as the 'M2: Subjugation boost' team buff: never apply both at once. The +15% Daze at max stacks affects buildup only. Datamine mindscapeParams[1] [1.35, 0.15]."
+        },
+        "3": {
+          "name": "Drink Hot Water",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "4": {
+          "name": "Stable Arc Barrier",
+          "note": "Shield = 10% of her Max HP on EX Special (+ energy, 10s cooldown) - defensive only, no damage-formula effect, not modeled."
+        },
+        "5": {
+          "name": "Youthful Spirit",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Eight Meridians",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.20 },
+            { "kind": "crit_dmg", "value": 1.00, "skill_tag": "basic" }
+          ],
+          "note": "When her Enchanted Moonlit Blossoms hits: the enemy's All-Attribute RES -20% for 15s (enemy debuff, squad-wide - also the 'M6: enemy RES shred' team buff: never both), and those basics gain +100% CRIT DMG (applies when the calculated hit is a Basic). Datamine mindscapeParams[5] [1, 0.2, 15]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Subjugation: stunned vulnerability",
+          "max_stacks": 20,
+          "effects": [ { "kind": "daze_bonus", "value": 0.04 } ],
+          "note": "Core, max rank F: each Subjugation stack on the enemy raises its Stun DMG Multiplier by 4% (max 20 stacks = +80%). On-enemy debuff - benefits the whole squad's Stunned columns; stacks build via her Moonlit Blossoms finishers and reset when the stun ends. Enter the realistic stack count at burst time (20 for a full loop). Datamine coreParams stun_ [2..4] x0.01/stack. PROVISIONAL until a stunned-window popup calibration."
+        },
+        {
+          "name": "M2: Subjugation boost (x1.35)",
+          "max_stacks": 20,
+          "effects": [ { "kind": "daze_bonus", "value": 0.014 } ],
+          "note": "Requires Qingyi at Mindscape 2. The Subjugation effect is raised to 135% - modeled as the EXTRA +1.4%/stack: check TOGETHER with the Subjugation buff at the SAME stack count. Datamine mindscapeParams M2 [1.35, 0.15]."
+        },
+        {
+          "name": "M1: enemy DEF reduction",
+          "max_stacks": 1,
+          "effects": [ { "kind": "def_red", "value": 0.15 } ],
+          "note": "Requires Qingyi at Mindscape 1. When she consumes 25 Flash Connect points: the enemy's DEF -15% for 15s. Multiplies enemy DEF before PEN Ratio in the DEF zone (datamine def x (1-defRed) x (1-pen)). Matters for direct-hit/anomaly attackers only - SHEER damage ignores DEF entirely, so it does nothing for Yixuan. Same as her M1 mindscape: never apply both at once."
+        },
+        {
+          "name": "M6: enemy RES shred",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.20 } ],
+          "note": "Requires Qingyi at Mindscape 6 (Eight Meridians). Her Moonlit Blossoms hits reduce the enemy's All-Attribute RES by 20% for 15s - applies to every squad member's damage, including Sheer. Same as her M6 mindscape: never apply both at once."
+        }
+      ],
+      "default_engine": "ice_jade_teapot",
+      "_note": "Electric stunner (Team 4, added 2026-07-10, zenless-optimizer datamine: HP 8250 / ATK 683 / DEF 612, Impact 118, AM 94, AP 93; max core ATK+75, Impact+18 - the +18 Impact is NOT folded into the stored 118: enter panel Impact incl. it for her ability input). Her value: the Subjugation stun-multiplier debuff (up to +80%, x1.35 at M2) + M1 DEF shred + M6 RES shred. Her own attacker role (direct hits) works normally: Flash Connect core + chain +3%/Subjugation-stack (minor, enter manually). Not yet panel-checked in-game."
+    },
+    "lucia": {
+      "name": "Lucia (Lucia von Roland)",
+      "attribute": "ether",
+      "specialty": "support",
+      "faction": "spook_shack",
+      "level": 60,
+      "base_hp": 8477,
+      "base_atk": 683,
+      "base_def": 594,
+      "impact": 83,
+      "anomaly_mastery": 96,
+      "anomaly_proficiency": 95,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "mindscapes": {
+        "1": {
+          "name": "Secret Friend",
+          "note": "Team-facing: 18% All-Attribute RES ignore during Dreamer's Nursery Rhyme - modeled as the 'M1: squad RES ignore' team buff (apply it there even when she attacks). Decibel/echo parts are resource-only."
+        },
+        "2": {
+          "name": "Great Magician",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.15 } ],
+          "note": "Self part: her own Harmony hits deal +15% DMG (when SHE attacks). The squad Sheer DMG +15% is the 'M2: squad Sheer DMG' team buff - never apply both at once. Datamine mindscapeParams[1] [0.15, 0.15]."
+        },
+        "3": {
+          "name": "The Best Partner",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled. (Raises her Special skill level, which slightly raises the Darkbreaker Sheer Force cap - covered in that buff's note.)"
+        },
+        "4": {
+          "name": "Late-Night Hours",
+          "note": "Decibel generation on Aftershocks (100, 15s cooldown) - resource only, not modeled."
+        },
+        "5": {
+          "name": "Dream Watcher",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "The Never-Ending Journey",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_max_hp", "per_step": 1, "per_value": 0.02 } }
+          ],
+          "note": "Self part: while the Ether Veil is active, her ATK +2% of her initial Max HP (enter HER panel Max HP as 'initial_max_hp'). Her Harmony hits also always CRIT with +30% CRIT DMG - only relevant when SHE attacks (off-field damage feature). Datamine mindscapeParams[5] [0.02, 0.3]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Darkbreaker: squad Sheer Force (tooltip value)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "sheer_force", "modes": ["sheer"],
+              "scaling": { "input": "darkbreaker_sheer_force", "per_step": 0.01, "per_value": 0.01 } }
+          ],
+          "note": "Her EX Special (Symphony of the Reaper: Daybreak) grants the squad the Darkbreaker state for 20s (refreshes): flat Sheer Force. ENTER THE NUMBER HER IN-GAME BUFF TOOLTIP SHOWS as 'darkbreaker_sheer_force' (e.g. 854.7) - always exact, any skill level. Reference formula (for planning a build): min(612+24xLv, 12 + LUCIA's INITIAL out-of-combat Max HP x 0.5% x (5+0.2xLv)) at her Special skill level - Lv. 12: 3.7%/cap 900 at 24,000 HP; Lv. 11: 3.6%/cap 876. CONFIRMED in-game 2026-07-10: tooltip 854.7 = 12 + 3.6% x 23,408 (Special Lv. 11) to the decimal (validation #1), and POPUP-CONFIRMED via calibration #3 (SF panel 2,466 + 854.7 + 92.1 Veil-HP term = 3,413, inside the exact 72,084 decode)."
+        },
+        {
+          "name": "Ether Veil: squad Max HP",
+          "max_stacks": 1,
+          "effects": [ { "kind": "hp_pct", "value": 0.05 } ],
+          "note": "Core (Wellspring): while her Ether Veil is active, all squad members' Max HP +5% (40s, extendable to 300s - effectively always up in rotation). Multiplies the finished HP panel (combat HP bracket). Feeds Yixuan's HP->Sheer Force conversion. Datamine coreParams hp_ 0.05."
+        },
+        {
+          "name": "Dreamer's Nursery Rhyme: squad DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.20 } ],
+          "note": "Core, max rank F: when she triggers a skill upgrade or Aftershock, all squad members' DMG +20% for 12s (repeated triggers reset - high uptime in her loop). Datamine coreParams common_dmg_ [0.1..0.2]."
+        },
+        {
+          "name": "Ballad of the Long Night: squad CRIT DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["rupture", "stun"] },
+          "effects": [ { "kind": "crit_dmg", "value": 0.30 } ],
+          "note": "Additional Ability - needs a Rupture or Stun squadmate (Yixuan/Qingyi qualify). While her Darkbreaker state is active: all squad members' CRIT DMG +30%. Datamine abilityParams [0.3]."
+        },
+        {
+          "name": "M1: squad RES ignore",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.18 } ],
+          "note": "Requires Lucia at Mindscape 1 (Secret Friend). During Dreamer's Nursery Rhyme: all squad members' attacks ignore 18% of the target's All-Attribute RES. Datamine mindscapeParams M1 [0.18, ...]."
+        },
+        {
+          "name": "M2: squad Sheer DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "sheer_dmg", "value": 0.15, "modes": ["sheer"] } ],
+          "note": "Requires Lucia at Mindscape 2 (Great Magician). While Darkbreaker AND the Ether Veil are both active: squad Sheer DMG +15% (dedicated Sheer DMG bracket). Same mindscape also has her self +15% Harmony DMG - never apply both at once. Datamine mindscapeParams M2 [0.15, 0.15]. Bracket placement PROVISIONAL."
+        }
+      ],
+      "default_engine": "unfettered_game_ball",
+      "_note": "Rupture-support (Team 4, added 2026-07-10, zenless-optimizer datamine: HP 681+59x92.4944+2339=8477, ATK 683, DEF 594, Impact 83, AM 96, AP 95; max core ATK+75, Energy Regen +0.36 - ER not modeled). Ether attribute, SPOOK SHACK faction (shares it with Yuzuha; shares ether with Yixuan/Vivian - satisfies attribute/faction team conditions). Her value: squad flat SHEER FORCE (HP-scaled, the signature Rupture buff), squad HP +5%, squad DMG +20%, squad CRIT DMG +30%, M1 RES ignore, M2 Sheer DMG. DEFAULT ENGINE: Unfettered Game Ball (user choice - her signature Dreamlit Hearth is in the DB for when users own it). Her own attacker role: Harmony hits add flat DMG = HP x (0.34 + 0.03 x special Lv) - off-field damage feature, deferred; M2/M6 self parts modeled for that future. Not yet panel-checked in-game."
     },
     "velina": {
       "name": "Velina Airgid",

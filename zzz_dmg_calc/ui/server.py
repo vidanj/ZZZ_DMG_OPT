@@ -43,7 +43,10 @@ from threading import Lock, Timer
 from urllib.parse import unquote
 
 try:
-    from ..api import CalcConfig, SupportConfig, calculate, calculate_anomaly
+    from ..api import (
+        CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        calculate_sheer,
+    )
     from ..agent import Agent, load_agents
     from ..anomalies import AnomalyData, load_anomalies
     from ..constants import Constants, load_constants
@@ -63,6 +66,7 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from zzz_dmg_calc.api import (
         CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        calculate_sheer,
     )
     from zzz_dmg_calc.agent import Agent, load_agents
     from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
@@ -189,6 +193,7 @@ def frontend_payload(data: AppData) -> dict:
                 "faction": a.faction,
                 "level": a.level,
                 "default_engine": a.default_engine,
+                "sheer_force_hp_conversion": a.sheer_force_hp_conversion,
                 "core_passive": kit_buff(a.core_passive),
                 "additional_ability": kit_buff(a.additional_ability),
                 "team_buffs": [kit_buff(b) for b in a.team_buffs],
@@ -220,6 +225,26 @@ def frontend_payload(data: AppData) -> dict:
                     for pd in e.passive_dmg
                 ],
                 "passive_ap_by_rank": list(e.passive_ap_by_rank),
+                "passive_crit_by_rank": list(e.passive_crit_by_rank),
+                # One stack counter may drive several buff parts (Qingming
+                # Birdcage); 'conditional_buff' stays as the first part for
+                # the page's single stacks control.
+                "conditional_buffs": [
+                    {
+                        "name": b.name,
+                        "element": b.element,
+                        "bracket": b.bracket,
+                        "modes": list(b.modes) if b.modes else None,
+                        "skill_tags": (
+                            list(b.skill_tags) if b.skill_tags else None
+                        ),
+                        "per_stack_by_rank": list(b.per_stack_by_rank),
+                        "max_stacks": b.max_stacks,
+                        "auto": b.auto,
+                        "note": b.note,
+                    }
+                    for b in e.conditional_buffs
+                ],
                 "conditional_buff": (
                     None if e.conditional_buff is None else {
                         "name": e.conditional_buff.name,
@@ -351,9 +376,8 @@ def _number(body: dict, key: str, default: float = 0.0) -> float:
     return float(value)
 
 
-#: Calculation modes the UI may request. ``rupture`` is a declared
-#: placeholder: selectable in data terms but rejected with a friendly
-#: message until Sheer Force damage is modeled (main plan Phase 5+).
+#: Calculation modes the UI may request. ``rupture`` runs the Sheer
+#: Force pipeline (:func:`~zzz_dmg_calc.api.calculate_sheer`).
 CALC_MODES = ("direct", "anomaly", "disorder", "vortex", "rupture")
 
 #: Share of the buildup the anomaly floor treats as unbuffed (teammate
@@ -366,17 +390,12 @@ def _body_mode(body: dict) -> str:
     """The request's calculation mode (default ``direct``).
 
     Raises:
-        ValueError: unknown mode, or the ``rupture`` placeholder.
+        ValueError: unknown mode.
     """
     mode = str(body.get("mode") or "direct")
     if mode not in CALC_MODES:
         raise ValueError(
             f"Unknown mode '{mode}'; options: {list(CALC_MODES)}"
-        )
-    if mode == "rupture":
-        raise ValueError(
-            "Rupture (Sheer Force) damage is not modeled yet — placeholder "
-            "for main plan Phase 5+. Pick another mode."
         )
     return mode
 
@@ -521,6 +540,15 @@ def _build_config(body: dict) -> CalcConfig:
             (str(body.get("abloom_element") or "") or None)
             if mode == "anomaly" else None
         ),
+        # --- Sheer/Rupture inputs (mode-gated) ------------------------------
+        sheer_force_flat=(
+            _number(body, "sheer_force_flat") if mode == "rupture" else 0.0
+        ),
+        external_sheer_dmg=(
+            [_number(body, "external_sheer_dmg")]
+            if mode == "rupture" and _number(body, "external_sheer_dmg")
+            else []
+        ),
     )
 
 
@@ -545,6 +573,12 @@ def run_calculation(data: AppData, body: dict) -> dict:
             bosses=data.bosses, agents=data.agents, engines=data.engines,
             disc_sets=data.disc_sets,
         )
+    elif mode == "rupture":
+        results = calculate_sheer(
+            config, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets,
+        )
     else:
         results = calculate_anomaly(
             config, consts=data.consts, disc_data=data.disc_data,
@@ -554,7 +588,7 @@ def run_calculation(data: AppData, body: dict) -> dict:
 
     payload = asdict(results)
     payload["mode"] = mode
-    if mode != "direct":
+    if mode not in ("direct", "rupture"):
         # Pessimistic floor: assume only UNBUFFED_FLOOR_SHARE of the
         # buildup lacked the entered buffs (teammate dilution / buffs
         # dropping) — the page shows the floor–optimal range.
@@ -606,6 +640,12 @@ def run_optimization(data: AppData, body: dict) -> dict:
             messages.
     """
     mode = _body_mode(body)
+    if mode == "rupture":
+        raise ValueError(
+            "The optimizer doesn't cover Sheer (Rupture) damage yet — "
+            "that's a planned follow-up (DOCS/rupture_plan.md). Calculate "
+            "works; use it to compare builds manually meanwhile."
+        )
     config = _build_config(body)
     opt_raw = body.get("optimize") or {}
     if not isinstance(opt_raw, dict):

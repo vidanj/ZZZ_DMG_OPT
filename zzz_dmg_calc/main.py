@@ -20,7 +20,8 @@ from __future__ import annotations
 
 try:
     from .api import (
-        BuildupSegment, CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        BuildupSegment, CalcConfig, SupportConfig, calculate,
+        calculate_anomaly, calculate_sheer,
     )
     from .agent import load_agents
     from .anomalies import load_anomalies
@@ -40,7 +41,8 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from zzz_dmg_calc.api import (
-        BuildupSegment, CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        BuildupSegment, CalcConfig, SupportConfig, calculate,
+        calculate_anomaly, calculate_sheer,
     )
     from zzz_dmg_calc.agent import load_agents
     from zzz_dmg_calc.anomalies import load_anomalies
@@ -188,15 +190,21 @@ def run() -> None:
         print(f"  Auto-applied at R{engine_rank}: "
               f"+{passive.value(engine_rank):.0%} {element} DMG")
 
-    # Rank-scaled engine conditional buff — prompted later: single stacks
-    # value for direct hits, per-segment for anomalies.
+    # Rank-scaled engine conditional buff(s) — prompted later: single
+    # stacks value for direct/sheer hits, per-segment for anomalies. An
+    # engine may model several parts sharing ONE stack counter (Qingming
+    # Birdcage); the first part carries the counter's max/auto defaults.
     buff = engine.conditional_buff
-    if buff is not None:
-        print(f"\n{buff.name} (R{engine_rank}: "
-              f"+{buff.per_stack(engine_rank):.0%} "
-              f"{buff.element or 'DMG'} per stack)")
-        if buff.note:
-            print(f"  Note: {buff.note}")
+    for part in engine.conditional_buffs:
+        print(f"\n{part.name} (R{engine_rank}: "
+              f"+{part.per_stack(engine_rank):.0%} "
+              f"{part.element or 'DMG'} per stack)")
+        if part.note:
+            print(f"  Note: {part.note}")
+    if engine.passive_crit_by_rank:
+        print(f"  Auto-applied at R{engine_rank}: "
+              f"+{engine.passive_crit(engine_rank):.0%} CRIT Rate "
+              f"(always-on passive)")
 
     # On-field engine's OWN squad buffs — squad-wide, so the wearer gets
     # them too (e.g. Velina + Joyau Doré's +60 AP at 2 stacks).
@@ -283,11 +291,19 @@ def run() -> None:
                             for s, v in applied.items())
         print(f"Set bonuses applied: {summary or 'none (need 2+ pieces)'}")
 
-    # 5. Calculation mode
+    # 5. Calculation mode. Sheer (Rupture) is offered only for Rupture
+    # agents — their skills scale off Sheer Force, not ATK.
     print("\nCalculation mode:")
-    mode = _choose("Mode", ["Direct hit", "Anomaly proc", "Disorder", "Vortex"])
+    mode_options = ["Direct hit", "Anomaly proc", "Disorder", "Vortex"]
+    if agents[agent_key].specialty == "rupture":
+        mode_options.insert(0, "Sheer (Rupture)")
+        print(f"  Note: {agents[agent_key].name} is a Rupture agent - her "
+              f"skills deal SHEER damage (Sheer Force x MV, ignores enemy "
+              f"DEF). Pick 'Sheer (Rupture)'.")
+    mode = _choose("Mode", mode_options)
     mode_key = {"Direct hit": "direct", "Anomaly proc": "anomaly",
-                "Disorder": "disorder", "Vortex": "vortex"}[mode]
+                "Disorder": "disorder", "Vortex": "vortex",
+                "Sheer (Rupture)": "sheer"}[mode]
 
     anomaly_data = load_anomalies()
     agent_attr = agents[agent_key].attribute
@@ -303,14 +319,21 @@ def run() -> None:
     disorder_mult_add = 0.0
     polarity_disorder = False
     polarity_special_level = 12
-    if mode == "Direct hit":
+    sheer_force_flat = 0.0
+    sheer_dmg_ext = 0.0
+    if mode in ("Direct hit", "Sheer (Rupture)"):
+        if mode == "Sheer (Rupture)":
+            print("\nSHEER damage: base = Sheer Force x MV (SF = 30% ATK "
+                  "+ the agent's HP conversion + flat SF buffs). Crits "
+                  "normally; IGNORES enemy DEF (PEN does nothing).")
         print("\nNote: enter the move's TOTAL motion value. Results are the")
         print("whole move; in-game popups are per hit and will show smaller")
         print("numbers that add up to the result.")
         skill = _ask_percent("Skill multiplier", 1.0)
 
         # Damage type: gates skill-type-conditional bonuses (e.g. Puffer
-        # Electro 4pc's Ultimate DMG +20% applies only to Ultimate hits).
+        # Electro 4pc's Ultimate DMG +20%, Yixuan's core +60%, Qingming
+        # Birdcage's Ult/EX Sheer part).
         print("\nDamage type of the move:")
         tag_by_label = {label: key for key, label in consts.skill_tags.items()}
         picked = _choose("Type", ["Untyped / not relevant", *tag_by_label])
@@ -536,23 +559,38 @@ def run() -> None:
             engine_rank=support_rank, engine_buffs=engine_buffs,
         ))
 
-    if mode == "Direct hit":
+    if mode in ("Direct hit", "Sheer (Rupture)"):
         print("\nExternal buffs (press Enter to skip):")
-        if buff is not None and buff.bracket == "dmg_bonus":
-            tag = " [auto]" if buff.auto else ""
-            if buff.max_stacks == 1:
-                yn = "Y/n" if buff.auto else "y/N"
-                answer = input(f"Is {buff.name}{tag} active? [{yn}]: ").strip().lower()
-                active = (answer == "y") or (buff.auto and answer == "")
+        # One stack counter may drive several engine buff parts (Qingming
+        # Companion: Ether DMG% + Ult/EX Sheer DMG%) — ask once when any
+        # part lands in a bracket this mode uses.
+        wanted = (("dmg_bonus",) if mode == "Direct hit"
+                  else ("dmg_bonus", "sheer_dmg"))
+        counter = next((b for b in engine.conditional_buffs
+                        if b.bracket in wanted), None)
+        if counter is not None:
+            tag = " [auto]" if counter.auto else ""
+            if counter.max_stacks == 1:
+                yn = "Y/n" if counter.auto else "y/N"
+                answer = input(f"Is {counter.name}{tag} active? [{yn}]: ").strip().lower()
+                active = (answer == "y") or (counter.auto and answer == "")
                 engine_buff_stacks = 1.0 if active else 0.0
             else:
                 engine_buff_stacks = _ask_float(
-                    f"Active {buff.name}{tag} stacks (0-{buff.max_stacks})",
-                    buff.max_stacks if buff.auto else 0
+                    f"Active {counter.name}{tag} stacks "
+                    f"(0-{counter.max_stacks})",
+                    counter.max_stacks if counter.auto else 0
                 )
         dmg_bonus = _ask_percent("Extra DMG% - EXTERNAL only (season / boss)")
         crit_rate_buff = _ask_percent("Extra CRIT Rate % - EXTERNAL only")
         crit_dmg_buff = _ask_percent("Extra CRIT DMG % - EXTERNAL only")
+        if mode == "Sheer (Rupture)":
+            sheer_force_flat = _ask_float(
+                "Extra FLAT Sheer Force - EXTERNAL only (Lucia's squad buff "
+                "is her team buff - don't re-enter here)", 0.0)
+            sheer_dmg_ext = _ask_percent(
+                "Extra Sheer DMG % - EXTERNAL only (kit/engine Sheer parts "
+                "are modeled)")
     else:
         print("\nExternal buffs (press Enter to skip):")
         if buff is not None and buff.bracket == "anomaly_buff":
@@ -640,10 +678,47 @@ def run() -> None:
         abloom_element=abloom_element,
         external_anomaly_buff=[anomaly_buff_ext] if anomaly_buff_ext else [],
         external_disorder_mult_add=disorder_mult_add,
+        sheer_force_flat=sheer_force_flat,
+        external_sheer_dmg=[sheer_dmg_ext] if sheer_dmg_ext else [],
     )
 
     # 7. Output table
-    if mode == "Direct hit":
+    if mode == "Sheer (Rupture)":
+        r = calculate_sheer(
+            config, consts=consts, disc_data=disc_data, bosses=bosses,
+            agents=agents, engines=engines, disc_sets=disc_sets,
+        )
+        print(f"\n=== Sheer damage [{r.element}] vs {boss_name} ===")
+        print(f"Sheer Force: {r.sheer_force:,.1f}  "
+              f"(ATK part {r.sheer_force_atk_part:,.1f} + "
+              f"HP part {r.sheer_force_hp_part:,.1f} + "
+              f"flat {r.sheer_force_flat_part:,.1f})")
+        print(f"Final ATK: {r.atk_final:,.1f}   Final HP: {r.hp_final:,.1f}   "
+              f"CRIT: {r.crit_rate:.1%} / {r.crit_dmg:.1%}")
+        print(f"Zones: DMG% x{r.dmg_bonus_mult:.3f} | "
+              f"Sheer DMG x{r.sheer_dmg_mult:.3f} | "
+              f"DEF x{r.def_mult:.0f} (Sheer ignores DEF) | "
+              f"RES x{r.res_mult:.2f} | "
+              f"Taken x{r.dmg_taken_mult:.2f} | Stun x{r.stun_mult:.2f}")
+        if r.buff_breakdown:
+            print("Active buffs:")
+            for item in r.buff_breakdown:
+                shown = (f"+{item['value']:g}"
+                         if item["kind"] in ("flat_atk", "anomaly_proficiency",
+                                             "sheer_force")
+                         else f"+{item['value']:.1%}")
+                print(f"  {item['source']}: {item['kind']} {shown}")
+        header = f"{'Scenario':<12}{'Normal':>14}{'Stunned':>14}"
+        print("\n" + header)
+        print("-" * len(header))
+        rows = (
+            ("Non-crit", r.non_crit, r.non_crit_stunned),
+            ("Crit", r.crit, r.crit_stunned),
+            ("Average", r.average, r.average_stunned),
+        )
+        for label, normal, stunned in rows:
+            print(f"{label:<12}{normal:>14,.1f}{stunned:>14,.1f}")
+    elif mode == "Direct hit":
         results = calculate(
             config, consts=consts, disc_data=disc_data, bosses=bosses,
             agents=agents, engines=engines, disc_sets=disc_sets,

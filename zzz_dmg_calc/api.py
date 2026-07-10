@@ -9,6 +9,11 @@ Entry points::
 
     calculate(config)         -> CalcResults      # direct hits (v1)
     calculate_anomaly(config) -> AnomalyResults   # anomaly / Disorder / Vortex
+    calculate_sheer(config)   -> SheerResults     # Rupture / Sheer Force
+
+``calculate_sheer`` computes Rupture agents' Sheer damage: base = Sheer
+Force × MV, crits normally, dedicated Sheer DMG bracket, and **no DEF
+zone** (Sheer damage ignores enemy DEF — see DOCS/rupture_plan.md).
 
 ``calculate_anomaly`` computes the agent's own attribute anomaly (optionally
 MV-scaled: Velina's Ablooms), or — when ``config.disorder_replaced`` is set —
@@ -239,6 +244,12 @@ class CalcConfig:
             default 12 = base max). Sets the Polarity Disorder AP-term
             coefficient ``(5% + level × 2.25%)`` — the second, AP-scaling
             part of her damage (GO's ``anom_flat_dmg``). ⚠️ PROVISIONAL.
+        sheer_force_flat: Extra FLAT Sheer Force from external buffs
+            (kit sources — Lucia's squad buff — add on top automatically).
+            Sheer mode only.
+        external_sheer_dmg: Entries of the dedicated Sheer DMG bracket
+            (fractions) — "Sheer DMG +X%" effects not already modeled.
+            Sheer mode only; bracket placement PROVISIONAL.
         unbuffed_share: Fraction of the buildup treated as UNBUFFED —
             contributed at the attacker's plain panel (kit/team buffs,
             engine conditional stacks, set 4pc stacks, external buffs and
@@ -287,6 +298,8 @@ class CalcConfig:
     polarity_disorder: bool = False
     polarity_special_level: int = 12
     unbuffed_share: float = 0.0
+    sheer_force_flat: float = 0.0
+    external_sheer_dmg: list[float] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -353,6 +366,46 @@ class AnomalyResults:
     buff_breakdown: tuple = ()
 
 
+@dataclass(frozen=True)
+class SheerResults:
+    """Output of :func:`calculate_sheer` (Rupture / Sheer damage).
+
+    Same damage table as :class:`CalcResults` (Sheer damage crits and
+    reacts to Stun like a direct hit) plus the Sheer Force breakdown.
+    ``def_mult`` is always 1.0 — Sheer damage ignores enemy DEF entirely
+    (datamine + Yixuan's core text); the field is kept for display
+    symmetry with the other result types.
+    """
+
+    # Damage table
+    non_crit: float
+    crit: float
+    average: float
+    non_crit_stunned: float
+    crit_stunned: float
+    average_stunned: float
+    # Sheer Force breakdown
+    sheer_force: float
+    sheer_force_atk_part: float   # ATK_final × atk_conversion
+    sheer_force_hp_part: float    # HP_final × hp_conversion (Yixuan)
+    sheer_force_flat_part: float  # config flat + kit (Lucia) flat SF
+    atk_final: float
+    hp_final: float
+    # Breakdown (display / cross-checking)
+    crit_rate: float          # uncapped total; capping happens in the formula
+    crit_dmg: float
+    base_dmg: float           # SkillMultiplier × Sheer Force
+    dmg_bonus_mult: float
+    sheer_dmg_mult: float     # dedicated Sheer DMG bracket
+    def_mult: float           # always 1.0 — Sheer ignores DEF
+    res_mult: float
+    dmg_taken_mult: float
+    stun_mult: float
+    element: str
+    # Every active conditional buff as {source, kind, value}.
+    buff_breakdown: tuple = ()
+
+
 #: Polarity Disorder (Yanagi) reduces the BASE Disorder (base + time decay)
 #: to this fraction per trigger; the Disorder-mult additives (her +250%) and
 #: the AP term apply at FULL on top. It does NOT consume the anomaly, so it
@@ -391,53 +444,88 @@ def _resolve_engine_rank(engine: Engine, override: int | None) -> int:
     return override
 
 
-def _engine_buff_bonus(
+def _engine_buff_bonuses(
     engine: Engine, stacks: float, dealt_element: str, rank: int,
     mode: str = "direct", bracket: str = "dmg_bonus",
-) -> float:
-    """Contribution of the engine's conditional buff at ``stacks``.
+    skill_tag: str | None = None,
+) -> list[dict]:
+    """Contributions of the engine's conditional buff parts at ``stacks``.
+
+    An engine models one stack counter that may drive SEVERAL buff parts
+    (``Engine.conditional_buffs`` — e.g. Qingming Companion grants Ether
+    DMG% and Ult/EX Sheer DMG% per stack); each applicable part yields one
+    ``{"name", "value"}`` entry for the requested ``bracket``.
 
     ``stacks`` may be fractional: anomaly procs snapshot buffs as a
     buildup-weighted average (in-game finding, 2026-07-02), so e.g. 2.35
     expresses "buildup happened at a mix of 2 and 3 stacks". The per-stack
-    value comes from the refinement ``rank``.
+    value comes from the refinement ``rank``; a part with a lower stack cap
+    than the entered count clamps to its own cap.
 
-    Returns 0 when the buff doesn't apply: its ``bracket`` differs from the
-    requested one, its ``modes`` gate excludes ``mode``, or its element
-    doesn't match the dealt element. A buff that EXPLICITLY lists a
+    A part is skipped when it doesn't apply: its ``bracket`` differs from
+    the requested one, its ``modes`` gate excludes ``mode``, its
+    ``skill_tags`` gate excludes the hit's ``skill_tag``, or its element
+    doesn't match the dealt element. A part that EXPLICITLY lists a
     disorder/vortex mode skips the element check there (those bursts deal
     another element on the equipper's behalf — Joyau Doré); a plain
-    element-gated buff (Sharpened Stinger) stays element-checked in every
-    mode.
+    element-gated part (Sharpened Stinger) stays element-checked in every
+    mode, including sheer.
 
     Raises:
         CalcError: stacks requested for an engine without a modeled buff,
-            or out of the buff's range.
+            or out of the buffs' range.
     """
     if stacks == 0:
-        return 0.0
-    buff = engine.conditional_buff
-    if buff is None:
+        return []
+    buffs = engine.conditional_buffs
+    if not buffs:
         raise CalcError(
             f"Engine '{engine.name}' has no modeled conditional buff; "
             f"enter its passive manually as external buffs instead"
         )
-    if isinstance(stacks, bool) or not isinstance(stacks, (int, float)) or not 0 <= stacks <= buff.max_stacks:
+    stack_cap = max(b.max_stacks for b in buffs)
+    if isinstance(stacks, bool) or not isinstance(stacks, (int, float)) or not 0 <= stacks <= stack_cap:
         raise CalcError(
-            f"{buff.name} stacks must be a number 0..{buff.max_stacks}, "
+            f"{buffs[0].name} stacks must be a number 0..{stack_cap}, "
             f"got {stacks!r}"
         )
-    if buff.bracket != bracket:
-        return 0.0
-    if buff.modes is not None and mode not in buff.modes:
-        return 0.0
-    element_gate_waived = (
-        buff.modes is not None and mode in ("disorder", "vortex")
+    entries: list[dict] = []
+    for buff in buffs:
+        if buff.bracket != bracket:
+            continue
+        if buff.modes is not None and mode not in buff.modes:
+            continue
+        if buff.skill_tags is not None and skill_tag not in buff.skill_tags:
+            continue
+        element_gate_waived = (
+            buff.modes is not None and mode in ("disorder", "vortex")
+        )
+        if (buff.element is not None and not element_gate_waived
+                and buff.element != dealt_element):
+            continue
+        value = buff.per_stack(rank) * min(stacks, buff.max_stacks)
+        if value:
+            entries.append({"name": buff.name, "value": value})
+    return entries
+
+
+def _engine_buff_bonus(
+    engine: Engine, stacks: float, dealt_element: str, rank: int,
+    mode: str = "direct", bracket: str = "dmg_bonus",
+    skill_tag: str | None = None,
+) -> float:
+    """Summed contribution of the engine's conditional buff parts.
+
+    Thin wrapper over :func:`_engine_buff_bonuses` for callers that only
+    need the bracket total (the optimizer's constant-folding fast paths).
+    """
+    return sum(
+        part["value"]
+        for part in _engine_buff_bonuses(
+            engine, stacks, dealt_element, rank,
+            mode=mode, bracket=bracket, skill_tag=skill_tag,
+        )
     )
-    if (buff.element is not None and not element_gate_waived
-            and buff.element != dealt_element):
-        return 0.0
-    return buff.per_stack(rank) * stacks
 
 
 def _engine_passive_bonuses(
@@ -451,7 +539,8 @@ def _engine_passive_bonuses(
 
 
 #: Kit effect kinds collected as bracket-entry LISTS (the rest are sums).
-_LIST_KINDS = ("dmg_bonus", "dmg_taken", "daze_bonus", "anomaly_buff")
+_LIST_KINDS = ("dmg_bonus", "dmg_taken", "daze_bonus", "anomaly_buff",
+               "sheer_dmg")
 
 
 def _kit_contributions(
@@ -483,8 +572,9 @@ def _kit_contributions(
     totals = {"crit_rate": 0.0, "crit_dmg": 0.0, "res_shred": 0.0,
               "flat_atk": 0.0, "atk_pct": 0.0, "pen_ratio": 0.0,
               "anomaly_proficiency": 0.0, "disorder_mult_add": 0.0,
+              "sheer_force": 0.0, "hp_pct": 0.0, "def_red": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
-              "anomaly_buff": [],
+              "anomaly_buff": [], "sheer_dmg": [],
               "items": []}
 
     def record(source: str, kind: str, value: float) -> None:
@@ -792,6 +882,11 @@ def calculate(
 
     crit_rate = build.crit_rate + config.external_crit_rate + kit["crit_rate"]
     crit_dmg = build.crit_dmg + config.external_crit_dmg + kit["crit_dmg"]
+    engine_crit = engine.passive_crit(rank)
+    if engine_crit:
+        crit_rate += engine_crit
+        buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
+                           "kind": "crit_rate", "value": engine_crit})
     crit_none = formulas.crit_mult_non_crit()
     crit_full = formulas.crit_mult_crit(crit_dmg)
     crit_avg = formulas.crit_mult_average(
@@ -803,15 +898,14 @@ def calculate(
         bonus_entries.append(passive_value)
         buff_items.append({"source": f"{engine.name} passive (R{rank})",
                            "kind": "dmg_bonus", "value": passive_value})
-    engine_buff = _engine_buff_bonus(
+    for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, agent.attribute, rank,
-        mode="direct",
-    )
-    if engine_buff:
-        bonus_entries.append(engine_buff)
+        mode="direct", skill_tag=config.skill_tag,
+    ):
+        bonus_entries.append(part["value"])
         buff_items.append({
-            "source": f"{engine.conditional_buff.name} (R{rank})",
-            "kind": "dmg_bonus", "value": engine_buff,
+            "source": f"{part['name']} (R{rank})",
+            "kind": "dmg_bonus", "value": part["value"],
         })
     bonus_entries.extend(kit["dmg_bonus"])
     # Skill-type-conditional set bonuses (e.g. Puffer Electro 4pc's Ultimate
@@ -824,7 +918,8 @@ def calculate(
     bonus = formulas.dmg_bonus_mult(bonus_entries)
 
     eff_def = formulas.effective_def(
-        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat)
+        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat,
+        def_red=kit["def_red"])
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
 
     res = formulas.res_mult(
@@ -1137,15 +1232,14 @@ def calculate_anomaly(
     # entries. Snapshots with the attacker state, so it joins the
     # per-segment product (the unbuffed slice runs without it).
     abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
-    engine_abuff = _engine_buff_bonus(
+    for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, dealt_element, rank,
         mode=kind, bracket="anomaly_buff",
-    )
-    if engine_abuff:
-        abuff_entries.append(engine_abuff)
+    ):
+        abuff_entries.append(part["value"])
         kit["items"].append({
-            "source": f"{engine.conditional_buff.name} (R{rank})",
-            "kind": "anomaly_buff", "value": engine_abuff,
+            "source": f"{part['name']} (R{rank})",
+            "kind": "anomaly_buff", "value": part["value"],
         })
     abuff = formulas.anomaly_buff_mult(abuff_entries)
 
@@ -1190,11 +1284,10 @@ def calculate_anomaly(
         bonus_entries.extend(
             _engine_passive_bonuses(engine, dealt_element, rank)
         )
-        engine_buff = _engine_buff_bonus(
+        for part in _engine_buff_bonuses(
             engine, seg.engine_buff_stacks, dealt_element, rank, mode=kind
-        )
-        if engine_buff:
-            bonus_entries.append(engine_buff)
+        ):
+            bonus_entries.append(part["value"])
         seg_bonus = formulas.dmg_bonus_mult(bonus_entries)
 
         w = seg.share * buffed_scale
@@ -1256,7 +1349,8 @@ def calculate_anomaly(
         per_proc_mult = per_proc_mult + coeff * (weighted_ap / 100.0)
 
     eff_def = formulas.effective_def(
-        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat)
+        boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat,
+        def_red=kit["def_red"])
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
     res = formulas.res_mult(
         boss.res_for(dealt_element),
@@ -1310,4 +1404,226 @@ def calculate_anomaly(
         dmg_taken_mult=taken,
         stun_mult=stun_on,
         buff_breakdown=tuple(kit["items"]),
+    )
+
+
+def calculate_sheer(
+    config: CalcConfig,
+    *,
+    consts: Constants | None = None,
+    disc_data: DiscData | None = None,
+    bosses: dict[str, Boss] | None = None,
+    agents: dict[str, Agent] | None = None,
+    engines: dict[str, Engine] | None = None,
+    disc_sets: dict[str, DiscSet] | None = None,
+) -> SheerResults:
+    """Run the Sheer (Rupture) damage calculation for one configuration.
+
+    Sheer damage is a direct-hit-shaped hit with three differences
+    (zenless-optimizer datamine 2026-07-10 + Yixuan's core text — see
+    DOCS/rupture_plan.md):
+
+    1. ``BaseDMG = SkillMultiplier × Sheer Force`` where
+       ``SF = ATK_final × 0.30 + HP_final × hp_conversion + flat SF``
+       (both post-buff panels — team ATK%/HP% feed the conversions).
+    2. **No DEF zone**: Sheer damage ignores enemy DEF entirely, so
+       PEN Ratio / flat PEN / DEF reduction do nothing.
+    3. A dedicated **Sheer DMG bracket** (``1 + Σ Sheer-DMG%``) multiplies
+       on top of the ordinary DMG% bracket.
+
+    Everything else matches :func:`calculate`: Sheer damage crits, is dealt
+    as the agent's attribute (RES/Attribute-DMG% apply), reacts to Stun,
+    and takes the same kit/support/engine/set conditionals under
+    ``mode="sheer"`` gates.
+
+    ⚠️ All Sheer coefficients are PROVISIONAL until an in-game popup
+    calibration (DOCS/rupture_plan.md §5).
+
+    Raises:
+        CalcError: unknown agent/engine/boss, a non-Rupture agent, or
+            invalid inputs.
+    """
+    consts = consts if consts is not None else load_constants()
+    disc_data = disc_data if disc_data is not None else load_disc_data()
+    bosses = bosses if bosses is not None else load_bosses()
+    agents = agents if agents is not None else load_agents()
+    engines = engines if engines is not None else load_engines()
+    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
+
+    if config.agent_key not in agents:
+        raise CalcError(
+            f"Unknown agent '{config.agent_key}'; options: {sorted(agents)}"
+        )
+    agent = agents[config.agent_key]
+    if agent.specialty != "rupture":
+        raise CalcError(
+            f"Agent '{agent.name}' is not a Rupture agent — Sheer damage "
+            f"needs the rupture specialty (its skills scale off Sheer "
+            f"Force). Use the direct mode instead."
+        )
+
+    engine_key = config.engine_key if config.engine_key is not None else agent.default_engine
+    if engine_key not in engines:
+        raise CalcError(
+            f"Unknown engine '{engine_key}'; options: {sorted(engines)}"
+        )
+    engine = engines[engine_key]
+
+    if config.boss_name not in bosses:
+        raise CalcError(
+            f"Unknown boss '{config.boss_name}'; options: {sorted(bosses)}"
+        )
+    boss = bosses[config.boss_name]
+
+    if config.skill_multiplier <= 0:
+        raise CalcError("skill_multiplier must be > 0 (fraction: 2.5 = 250%)")
+
+    if config.skill_tag is not None and config.skill_tag not in consts.skill_tags:
+        raise CalcError(
+            f"Unknown skill tag '{config.skill_tag}'; "
+            f"options: {sorted(consts.skill_tags)}"
+        )
+    if config.sheer_force_flat < 0:
+        raise CalcError("sheer_force_flat must be >= 0")
+
+    build = aggregate_build(
+        agent, engine, config.discs, disc_data, consts,
+        disc_sets=disc_sets, set_stacks=config.set_stacks,
+    )
+
+    rank = _resolve_engine_rank(engine, config.engine_rank)
+    kit = _kit_contributions(
+        agent, config, agents, disc_sets, engines,
+        mode="sheer", dealt_element=agent.attribute,
+    )
+    buff_items = kit["items"]
+
+    # ATK: same bracket structure as the direct-hit path (validation #4).
+    atk_total = (
+        build.atk_pre_combat
+        * (1.0 + build.combat_atk_pct + kit["atk_pct"])
+        + kit["flat_atk"]
+    )
+    # HP: team HP% buffs (Lucia, Dreamlit Hearth) multiply the finished
+    # panel — the combat HP bracket (datamine: final hp = initial ×
+    # (1 + combat hp_)).
+    hp_total = build.hp * (1.0 + kit["hp_pct"])
+
+    # --- Sheer Force (the Rupture base stat) ------------------------------
+    flat_sf = config.sheer_force_flat + kit["sheer_force"]
+    sf_atk_part = atk_total * consts.sheer_force_atk_conversion
+    sf_hp_part = hp_total * agent.sheer_force_hp_conversion
+    sf = sf_atk_part + sf_hp_part + flat_sf
+
+    base = formulas.base_dmg(config.skill_multiplier, sf)
+
+    crit_rate = build.crit_rate + config.external_crit_rate + kit["crit_rate"]
+    crit_dmg = build.crit_dmg + config.external_crit_dmg + kit["crit_dmg"]
+    engine_crit = engine.passive_crit(rank)
+    if engine_crit:
+        crit_rate += engine_crit
+        buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
+                           "kind": "crit_rate", "value": engine_crit})
+    crit_none = formulas.crit_mult_non_crit()
+    crit_full = formulas.crit_mult_crit(crit_dmg)
+    crit_avg = formulas.crit_mult_average(
+        crit_rate, crit_dmg, consts.crit_rate_cap
+    )
+
+    bonus_entries = build.dmg_bonuses + list(config.external_dmg_bonuses)
+    for passive_value in _engine_passive_bonuses(engine, agent.attribute, rank):
+        bonus_entries.append(passive_value)
+        buff_items.append({"source": f"{engine.name} passive (R{rank})",
+                           "kind": "dmg_bonus", "value": passive_value})
+    for part in _engine_buff_bonuses(
+        engine, config.engine_buff_stacks, agent.attribute, rank,
+        mode="sheer", skill_tag=config.skill_tag,
+    ):
+        bonus_entries.append(part["value"])
+        buff_items.append({
+            "source": f"{part['name']} (R{rank})",
+            "kind": "dmg_bonus", "value": part["value"],
+        })
+    bonus_entries.extend(kit["dmg_bonus"])
+    tagged = set_tagged_dmg_bonuses(
+        config.discs, disc_sets, config.skill_tag,
+        valid_tags=frozenset(consts.skill_tags),
+    )
+    bonus_entries.extend(tagged.values())
+    bonus = formulas.dmg_bonus_mult(bonus_entries)
+
+    # Dedicated Sheer DMG bracket (build sets + kit + engine parts +
+    # manual entries). CALIBRATED multiplicatively separate from DMG%
+    # in-game 2026-07-10 (Rupture calibration #2: Yunkui Tales +10%).
+    sheer_entries = (build.sheer_dmg_bonuses
+                     + list(config.external_sheer_dmg) + kit["sheer_dmg"])
+    for part in _engine_buff_bonuses(
+        engine, config.engine_buff_stacks, agent.attribute, rank,
+        mode="sheer", bracket="sheer_dmg", skill_tag=config.skill_tag,
+    ):
+        sheer_entries.append(part["value"])
+        buff_items.append({
+            "source": f"{part['name']} (R{rank})",
+            "kind": "sheer_dmg", "value": part["value"],
+        })
+    sheer_mult = formulas.sheer_dmg_bonus_mult(sheer_entries)
+
+    # NO DEF zone: Sheer damage ignores enemy DEF entirely (datamine:
+    # the sheerDmg formula never multiplies def_mult; Yixuan's core text:
+    # "ignoring enemy DEF"). PEN Ratio / flat PEN / DEF shred do nothing.
+    defense = 1.0
+
+    res = formulas.res_mult(
+        boss.res_for(agent.attribute),
+        res_ignore=config.external_res_shred + kit["res_shred"],
+    )
+    taken = formulas.dmg_taken_mult(
+        list(config.external_dmg_taken) + kit["dmg_taken"]
+    )
+
+    stun_base = (
+        config.stun_multiplier_override
+        if config.stun_multiplier_override is not None
+        else boss.stun_dmg_multiplier
+    )
+    if stun_base < 1.0:
+        raise CalcError(
+            f"stun multiplier must be >= 1.0 (fraction: 2.35 = 235%), "
+            f"got {stun_base}"
+        )
+    stun_off = formulas.stun_mult(False, stun_base)
+    stun_on = formulas.stun_mult(
+        True, stun_base,
+        list(config.external_daze_bonuses) + kit["daze_bonus"],
+    )
+
+    def dmg(crit_mult: float, stun: float) -> float:
+        return (formulas.total_dmg(base, crit_mult, bonus, defense, res,
+                                   taken, stun)
+                * sheer_mult)
+
+    return SheerResults(
+        non_crit=dmg(crit_none, stun_off),
+        crit=dmg(crit_full, stun_off),
+        average=dmg(crit_avg, stun_off),
+        non_crit_stunned=dmg(crit_none, stun_on),
+        crit_stunned=dmg(crit_full, stun_on),
+        average_stunned=dmg(crit_avg, stun_on),
+        sheer_force=sf,
+        sheer_force_atk_part=sf_atk_part,
+        sheer_force_hp_part=sf_hp_part,
+        sheer_force_flat_part=flat_sf,
+        atk_final=atk_total,
+        hp_final=hp_total,
+        crit_rate=crit_rate,
+        crit_dmg=crit_dmg,
+        base_dmg=base,
+        dmg_bonus_mult=bonus,
+        sheer_dmg_mult=sheer_mult,
+        def_mult=defense,
+        res_mult=res,
+        dmg_taken_mult=taken,
+        stun_mult=stun_on,
+        element=agent.attribute,
+        buff_breakdown=tuple(buff_items),
     )

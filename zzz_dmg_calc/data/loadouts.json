@@ -189,6 +189,29 @@
           "disc_id": "d143"
         }
       ]
+    },
+    "Yixuan Build 1": {
+      "description": "Qingyi Lucia Yixuan",
+      "discs": [
+        {
+          "disc_id": "d157"
+        },
+        {
+          "disc_id": "d161"
+        },
+        {
+          "disc_id": "d61"
+        },
+        {
+          "disc_id": "d159"
+        },
+        {
+          "disc_id": "d160"
+        },
+        {
+          "disc_id": "d73"
+        }
+      ]
     }
   }
 }

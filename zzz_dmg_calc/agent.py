@@ -53,14 +53,21 @@ class AgentError(ValueError):
 #: Anomaly/Disorder "Buff Multiplier" bracket, ``disorder_mult_add`` adds to
 #: the Disorder/Vortex burst base multiplier, ``anomaly_proficiency`` adds
 #: flat AP.
+#: Rupture kinds (Phase 5 Rupture): ``sheer_force`` adds flat Sheer Force,
+#: ``hp_pct`` joins the combat Max-HP% bracket (multiplies the finished HP
+#: panel, like Combat ATK%), ``sheer_dmg`` joins the dedicated Sheer DMG
+#: bracket. ``def_red`` reduces enemy DEF (multiplicative with PEN Ratio in
+#: the DEF zone — Sheer damage ignores DEF, so it matters in direct/anomaly
+#: modes only).
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
                     "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
                     "anomaly_buff", "disorder_mult_add",
-                    "anomaly_proficiency", "pen_ratio")
+                    "anomaly_proficiency", "pen_ratio",
+                    "sheer_force", "hp_pct", "sheer_dmg", "def_red")
 
 #: Calculation modes an effect may be gated to via its ``modes`` list.
 #: An effect without ``modes`` applies in every mode (original behavior).
-KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex")
+KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
 
 
 @dataclass(frozen=True)
@@ -161,8 +168,13 @@ class Agent:
     """Preset agent at Lv. 60 with max core skill.
 
     ``base_atk`` already *excludes* core bonuses; use :meth:`total_base_atk`
-    for the ATK%-scaling agent bucket. The engine is *not* part of the agent —
+    for the ATK%-scaling agent bucket (same for ``base_hp`` /
+    :meth:`total_base_hp`). The engine is *not* part of the agent —
     ``default_engine`` only names a key in ``data/engines.json``.
+
+    ``sheer_force_hp_conversion`` is the Rupture HP → Sheer Force rate:
+    only Yixuan converts HP (0.10); it is 0 for everyone else, so the HP
+    term of :func:`~.formulas.sheer_force` vanishes.
     """
 
     key: str
@@ -179,7 +191,9 @@ class Agent:
     core_bonus_anomaly_proficiency: float
     core_bonus_anomaly_mastery: float
     default_engine: str
-    specialty: str = ""          # attack / stun / anomaly / support / defense
+    core_bonus_hp: float = 0.0
+    sheer_force_hp_conversion: float = 0.0
+    specialty: str = ""          # attack / stun / anomaly / support / defense / rupture
     faction: str | None = None
     core_passive: KitBuff | None = None
     additional_ability: KitBuff | None = None
@@ -189,6 +203,16 @@ class Agent:
     def total_base_atk(self) -> float:
         """Agent-side base ATK bucket: own base + flat core skill ATK."""
         return self.base_atk + self.core_bonus_atk
+
+    def total_base_hp(self) -> float:
+        """Agent-side base HP bucket: own base + flat core skill HP.
+
+        Core flat HP (Yixuan's +420) is *base* HP — it scales with HP%,
+        exactly like core flat ATK scales with ATK% (datamine: core flat
+        hp/atk enter the base bucket; only hp_/atk_ core boosts are
+        initial-bracket).
+        """
+        return self.base_hp + self.core_bonus_hp
 
 
 @dataclass
@@ -205,6 +229,16 @@ class BuildStats:
             of the per-proc damage formula).
         dmg_bonuses: DMG% bracket contributions (attribute DMG% from discs;
             external buffs are appended by the API layer).
+        hp: Panel Max HP: ``hp_base × (1 + hp_pct) + hp_flat``. Team HP%
+            buffs multiply this finished panel at the API layer (combat
+            bracket, like Combat ATK%). Feeds Sheer Force (Phase 5 Rupture).
+        hp_base: Agent base HP + core flat HP (the HP%-scaling bucket).
+        hp_pct: Sheet HP% total (disc mains/subs + engine advanced stat).
+        hp_flat: Flat HP total (disc mains/subs) — added after HP%.
+        sheer_dmg_bonuses: Dedicated Sheer DMG bracket entries from the
+            build itself (Yunkui Tales 4pc's "at 3 stacks Sheer DMG +10%"
+            — calibrated in-game 2026-07-10); the API adds kit/engine/
+            external entries on top. Only the sheer mode reads it.
         other: Aggregated stats that don't affect damage in v1.
     """
 
@@ -216,6 +250,11 @@ class BuildStats:
     anomaly_proficiency: float = 0.0
     anomaly_mastery: float = 0.0
     dmg_bonuses: list[float] = field(default_factory=list)
+    hp: float = 0.0
+    hp_base: float = 0.0
+    hp_pct: float = 0.0
+    hp_flat: float = 0.0
+    sheer_dmg_bonuses: list[float] = field(default_factory=list)
     other: dict[str, float] = field(default_factory=dict)
     # Panel ATK before the combat bracket, and that bracket's sum — kept
     # separate so team ATK% buffs can join the same additive bracket
@@ -434,6 +473,14 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
         if len(seen_names) != len(set(seen_names)):
             raise AgentError(f"Agent '{key}': duplicate team buff names")
 
+        hp_conversion = entry.get("sheer_force_hp_conversion", 0.0)
+        if isinstance(hp_conversion, bool) or not isinstance(
+                hp_conversion, (int, float)) or hp_conversion < 0:
+            raise AgentError(
+                f"Agent '{key}': 'sheer_force_hp_conversion' must be a "
+                f"number >= 0"
+            )
+
         agents[key] = Agent(
             key=key,
             name=name,
@@ -450,6 +497,8 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
                 core.get("anomaly_proficiency", 0.0)
             ),
             core_bonus_anomaly_mastery=float(core.get("anomaly_mastery", 0.0)),
+            core_bonus_hp=float(core.get("base_hp", 0.0)),
+            sheer_force_hp_conversion=float(hp_conversion),
             default_engine=default_engine,
             specialty=str(entry.get("specialty", "")),
             faction=entry.get("faction"),
@@ -472,6 +521,10 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
     """
     if stat == "ATK%":
         build.other["_atk_pct"] = build.other.get("_atk_pct", 0.0) + value
+    elif stat == "HP%":
+        build.hp_pct += value
+    elif stat == "HP":
+        build.hp_flat += value
     elif stat == "Combat ATK%":
         # In-combat ATK buffs multiply final (panel) ATK — measured in-game
         # 2026-07-02 (Woodpecker 4pc: +300/+599 on a 3330 panel) — unlike
@@ -499,6 +552,10 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
         # Generic (element-agnostic) DMG bonus, e.g. Fanged Metal 4pc —
         # same additive bracket as Attribute DMG%.
         build.dmg_bonuses.append(value)
+    elif stat == "Sheer DMG%":
+        # Dedicated Sheer DMG bracket (Yunkui Tales 4pc at max stacks) —
+        # separate multiplicative zone, calibrated in-game 2026-07-10.
+        build.sheer_dmg_bonuses.append(value)
     else:
         # HP, DEF, HP%, DEF%, Impact%, Energy Regen%, ... — tracked but not
         # part of damage in v1.
@@ -554,6 +611,7 @@ def aggregate_build(
         anomaly_mastery=(
             agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
         ),
+        hp_base=agent.total_base_hp(),
     )
 
     for stat, value in engine.advanced_stat.items():
@@ -589,4 +647,9 @@ def aggregate_build(
     # ATK% entries into the same bracket.
     build.combat_atk_pct = build.other.pop("_combat_atk_pct", 0.0)
     build.atk = build.atk_pre_combat * (1.0 + build.combat_atk_pct)
+    # Max HP panel: base bucket × (1 + sheet HP%) + flat HP. Team HP% buffs
+    # (Lucia, Dreamlit Hearth) multiply this finished panel at the API layer
+    # — the combat HP bracket mirrors the combat ATK% structure (datamine:
+    # final hp = initial hp × (1 + combat hp_) + combat hp).
+    build.hp = build.hp_base * (1.0 + build.hp_pct) + build.hp_flat
     return build

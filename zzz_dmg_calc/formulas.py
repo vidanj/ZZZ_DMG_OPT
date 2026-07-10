@@ -10,6 +10,12 @@ Full direct-hit formula::
     DMG = BaseDMG × CritMult × DmgBonusMult × DefMult × ResMult
           × DmgTakenMult × StunMult
 
+Sheer (Rupture) damage reuses the same zones with two differences: BaseDMG
+uses Sheer Force instead of ATK (:func:`sheer_force`), a dedicated Sheer
+DMG bracket (:func:`sheer_dmg_bonus_mult`) multiplies in, and the **DEF
+zone is skipped entirely** — Sheer damage ignores enemy DEF (datamine +
+Yixuan's core text; see DOCS/rupture_plan.md).
+
 Conventions:
 
 - All percentage-like stats are **fractions**: 30% ATK is ``0.30``, CRIT DMG
@@ -108,17 +114,29 @@ def dmg_bonus_mult(bonuses: Iterable[float]) -> float:
     return 1.0 + sum(bonuses)
 
 
-def effective_def(enemy_def: float, pen_ratio: float, pen_flat: float) -> float:
-    """Enemy DEF after penetration, floored at 0.
+def effective_def(
+    enemy_def: float,
+    pen_ratio: float,
+    pen_flat: float,
+    def_red: float = 0.0,
+) -> float:
+    """Enemy DEF after reduction and penetration, floored at 0.
 
-    ``EffDEF = max(EnemyDEF × (1 − PEN_Ratio) − PEN_flat, 0)``
+    ``EffDEF = max(EnemyDEF × (1 − DEF_red) × (1 − PEN_Ratio) − PEN_flat, 0)``
+
+    DEF reduction (enemy debuffs like Qingyi's M1) and PEN Ratio are
+    separate multiplicative factors on enemy DEF — the zenless-optimizer
+    datamine models ``def × (1 − defRed_) × (1 − pen_) − pen`` (2026-07-10).
 
     Args:
         enemy_def: Enemy's DEF at its level.
         pen_ratio: Attacker's PEN Ratio as a fraction (0.24 for 24%).
         pen_flat: Attacker's flat PEN.
+        def_red: Enemy DEF reduction debuffs as a fraction (0.15 for −15%).
     """
-    return max(enemy_def * (1.0 - pen_ratio) - pen_flat, 0.0)
+    return max(
+        enemy_def * (1.0 - def_red) * (1.0 - pen_ratio) - pen_flat, 0.0
+    )
 
 
 def def_mult(level_coefficient: float, eff_def: float) -> float:
@@ -252,6 +270,58 @@ def anomaly_buff_mult(bonuses: Iterable[float]) -> float:
 
     Args:
         bonuses: Each contribution as a fraction (0.10 for a 10% bonus).
+    """
+    return 1.0 + sum(bonuses)
+
+
+# ---------------------------------------------------------------------------
+# Sheer Force zones (Phase 5 Rupture — see DOCS/rupture_plan.md)
+# ---------------------------------------------------------------------------
+
+
+def sheer_force(
+    atk: float,
+    hp: float,
+    atk_conversion: float,
+    hp_conversion: float = 0.0,
+    flat_sheer_force: float = 0.0,
+) -> float:
+    """Sheer Force of a Rupture agent.
+
+    ``SF = ATK × atk_conversion + HP × hp_conversion + flat``
+
+    Every Rupture agent converts ATK at ``atk_conversion`` (0.30, from
+    constants.json). ``hp_conversion`` is per-agent — only Yixuan converts
+    HP (0.10, her core: "every 1 point of Max HP increases Sheer Force by
+    0.1"); it is 0 for everyone else. Flat Sheer Force (Lucia's squad buff,
+    external buffs) adds last and is never scaled.
+
+    Both ATK and HP are the **post-buff** panel values — combat ATK%/HP%
+    feed the conversions (datamine: combat sheerForce tracks final ATK).
+    ⚠️ Coefficients PROVISIONAL until an in-game Sheer popup calibration.
+
+    Args:
+        atk: Final ATK (all buckets + combat buffs).
+        hp: Final Max HP (all buckets + combat buffs).
+        atk_conversion: ATK → SF rate as a fraction (0.30).
+        hp_conversion: HP → SF rate as a fraction (0.10 for Yixuan, else 0).
+        flat_sheer_force: Sum of flat Sheer Force buffs.
+    """
+    return atk * atk_conversion + hp * hp_conversion + flat_sheer_force
+
+
+def sheer_dmg_bonus_mult(bonuses: Iterable[float]) -> float:
+    """Dedicated Sheer DMG bracket: ``1 + Σ(bonuses)``.
+
+    A separate multiplicative zone from :func:`dmg_bonus_mult` for
+    "Sheer DMG +X%" effects (Yixuan M6, Lucia M2, Qingming Birdcage's
+    Ult/EX stacks) — the zenless-optimizer models these in their own
+    ``sheer_mult_`` bracket (``1 + sheer_dmg_``), distinct from the
+    ordinary DMG% bonuses. ⚠️ Bracket placement PROVISIONAL until
+    popup-checked in-game.
+
+    Args:
+        bonuses: Each contribution as a fraction (0.20 for a 20% bonus).
     """
     return 1.0 + sum(bonuses)
 

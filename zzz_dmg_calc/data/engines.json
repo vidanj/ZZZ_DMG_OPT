@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default) or 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex; the element gate is checked in direct/anomaly modes only). 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, ...)."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket) or 'sheer_dmg' (the dedicated Sheer DMG bracket), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
   },
   "engines": {
     "dummy_engine": {
@@ -183,6 +183,101 @@
         ]
       },
       "passive_note": "Velina's signature (completed 2026-07-03: zenless-optimizer datamine, wengine params [70, 0.07, 40, 2, 2, 60] at R1). The equipper's AP +70..110 is ALWAYS-ON and auto-applied at the selected rank in anomaly modes; the Vortex/Windswept DMG stacks are the modeled conditional buff; the squad AP +60..96 at 2 stacks is a squad buff that reaches the WEARER too (squad buffs are squad-wide) - toggle it via the on-field engine squad-buff control (or SupportConfig.engine_buffs when a teammate wears it). CONFIRMED needed in-game 2026-07-04 (calibration #5: Velina's AP was 60 short without it). Advanced stat Energy Regen +60% feeds her core passive scaling (enter panel ER as 'initial_energy_regen')."
+    },
+    "qingming_birdcage": {
+      "name": "Qingming Birdcage",
+      "base_atk": 743,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+        "conditional_buffs": [
+          {
+            "name": "Qingming Companion: Ether DMG",
+            "element": "ether",
+            "per_stack_by_rank": [0.08, 0.092, 0.104, 0.116, 0.128],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Per Qingming Companion stack: Ether DMG +8% (R1). 2 stacks are granted on entering combat and refresh on EX Special - RAMP-UP, effectively always max, so auto-applied at 2."
+          },
+          {
+            "name": "Qingming Companion: Ult/EX Sheer DMG",
+            "element": "ether",
+            "bracket": "sheer_dmg",
+            "modes": ["sheer"],
+            "skill_tags": ["ultimate", "ex_special"],
+            "per_stack_by_rank": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Per stack: the Ether Sheer DMG of Ultimates and EX Specials +10% (R1) - dedicated Sheer DMG bracket, applies when the calculated hit carries those tags. Shares the same 2-stack counter as the Ether DMG part."
+          }
+        ]
+      },
+      "passive_note": "Yixuan's signature (added 2026-07-10, zenless-optimizer datamine, wengine params [0.2, 1, 2, 15, 2, 0.08, 0.1] at R1). Lv.60 base ATK 743, advanced stat HP% 30 (0.12 x 2.5). The always-on CRIT Rate +20% (R1) is modeled as passive_crit (rupture-specialty wearer). Both Qingming Companion parts share one 2-stack counter (auto at max). PROVISIONAL until Sheer calibration."
+    },
+    "ice_jade_teapot": {
+      "name": "Ice-Jade Teapot",
+      "base_atk": 713,
+      "advanced_stat": { "Impact%": 0.18 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Tea-riffic: squad DMG (15+ stacks)",
+            "kind": "dmg_bonus",
+            "values": [0.20, 0.23, 0.26, 0.29, 0.32],
+            "auto": true,
+            "note": "At 15+ stacks of the equipper's Tea-riffic (basics grant 1/hit, 30 max): ALL squad members' DMG +20% (R1) for 10s - RAMP-UP in Qingyi's basic-heavy loop, auto-applied."
+          }
+        ]
+      },
+      "passive_note": "Qingyi's signature (added 2026-07-10, zenless-optimizer datamine, wengine params [1, 0.007, 30, 8, 15, 0.2, 10] at R1). Advanced stat Impact 18% (0.072 x 2.5). The self Impact +0.7%/stack (R1, 30 stacks = +21%) raises her panel Impact - include it in the 'impact' input of her Additional Ability (Impact -> ATK); it has no direct damage-formula term of its own."
+    },
+    "dreamlit_hearth": {
+      "name": "Dreamlit Hearth",
+      "base_atk": 713,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Dreamlit Hearth: squad DMG (Ether Veil)",
+            "kind": "dmg_bonus",
+            "values": [0.25, 0.288, 0.325, 0.363, 0.40],
+            "auto": true,
+            "note": "While the equipper's Ether Veil is active: ALL squad members' DMG +25% (R1) for 45s - effectively always up in Lucia's loop, auto-applied."
+          },
+          {
+            "name": "Dreamlit Hearth: squad Max HP (Ether Veil)",
+            "kind": "hp_pct",
+            "values": [0.15, 0.173, 0.195, 0.218, 0.24],
+            "auto": true,
+            "note": "While the Ether Veil is active: ALL squad members' Max HP +15% (R1) - combat HP bracket; feeds Yixuan's HP -> Sheer Force conversion."
+          }
+        ]
+      },
+      "passive_note": "Lucia's signature (added 2026-07-10, zenless-optimizer datamine, wengine params [0.4, 0.25, 0.15, 45] at R1). Advanced stat HP% 30. In the DB for users who own it - Lucia's DEFAULT in this project is Unfettered Game Ball (user decision). Off-field Energy Regen +0.4/s not modeled."
+    },
+    "unfettered_game_ball": {
+      "name": "Unfettered Game Ball",
+      "base_atk": 594,
+      "advanced_stat": { "Energy Regen%": 0.50 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Attribute Counter: squad CRIT Rate",
+            "kind": "crit_rate",
+            "values": [0.12, 0.135, 0.155, 0.175, 0.20],
+            "note": "In-game text (user-provided 2026-07-10): 'Whenever the equipper's attack triggers an Attribute Counter effect, all squad members' CRIT Rate against the struck enemy increases by 12/13.5/15.5/17.5/20% for 12s. The bonuses triggered by the same type of passive effects do not stack.' SQUAD-WIDE on-enemy effect - it effectively lowers the CRIT Rate the on-field DPS needs to always crit (e.g. R5: 80% panel CR = guaranteed crits; the calculator caps total CR at 100% as usual). Same-name effects from a second copy don't stack - apply it once."
+          }
+        ]
+      },
+      "passive_note": "A-rank support engine, Lucia's DEFAULT in this project (user decision - Battle Pass engine). Added 2026-07-10 (zenless-optimizer datamine, params [0.12, 12] at R1; values confirmed against the in-game description 2026-07-10 - the datamine sheet had it equipper-only, corrected to SQUAD-wide per the real text; Lv.60 base ATK 594 = 40 x the S-rank 713/48 curve - verify in-game). Toggle it via Lucia's support engine buffs (or the on-field engine squad-buff control if she is the attacker - squad buffs reach the wearer too). Advanced stat Energy Regen 50% (0.2 x 2.5) feeds her uptime only - not a damage term."
     },
     "metanukimorphosis": {
       "name": "Metanukimorphosis",

@@ -1654,6 +1654,51 @@
         "PEN": 2
       },
       "set": "PUFFER_ELECTRO"
+    },
+    "d157": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 3,
+        "PEN": 1,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d159": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "CRIT Rate": 3,
+        "ATK": 3,
+        "ATK%": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d160": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT Rate": 1,
+        "CRIT DMG": 4,
+        "DEF": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "YUNKUI_TALES",
+      "element": "ether"
+    },
+    "d161": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "ATK%": 1,
+        "CRIT DMG": 4,
+        "PEN": 1
+      },
+      "set": "YUNKUI_TALES"
     }
   }
 }

@@ -207,7 +207,7 @@
           <option value="anomaly">Anomaly proc</option>
           <option value="disorder">Disorder burst</option>
           <option value="vortex">Vortex burst (Windswept + 2nd anomaly)</option>
-          <option value="rupture" disabled>Rupture / Sheer Force — coming soon</option>
+          <option value="rupture">Sheer damage (Rupture)</option>
         </select></div>
     </div>
     <div class="hint" id="mode-hint"></div>
@@ -305,6 +305,12 @@
         <input type="number" id="anomaly-buff" placeholder="0" step="any"></div>
       <div><label>Extra flat Anomaly Proficiency — EXTERNAL only</label>
         <input type="number" id="extra-ap" placeholder="0" step="any"></div>
+    </div>
+    <div class="row c3" id="sheer-inputs" style="display:none">
+      <div><label>Extra FLAT Sheer Force — EXTERNAL only (Lucia's squad buff is her team-buff checkbox — don't re-enter it here)</label>
+        <input type="number" id="sheer-flat" placeholder="0" step="any"></div>
+      <div><label>Extra Sheer DMG % — EXTERNAL only (dedicated bracket; kit/engine Sheer parts are modeled)</label>
+        <input type="number" id="sheer-dmg-ext" placeholder="0" step="any"></div>
     </div>
     <p class="hint">The "Extra" fields are for <b>external / unpredictable buffs
     only</b> — season buffs, boss-encounter buffs, anything not in a kit / engine
@@ -749,24 +755,35 @@ function ownEngineSquadState() {
 
 /* The engine's conditional buff control: checkbox when on/off
    (max_stacks 1, e.g. Steel Cushion's back-attack bonus), number input
-   for stacking buffs (e.g. Sharpened Stinger). Rebuilt on engine/rank
-   change, preserving the current value. */
+   for stacking buffs (e.g. Sharpened Stinger). One stack counter may
+   drive SEVERAL buff parts (Qingming Companion: Ether DMG% + Ult/EX
+   Sheer DMG%) — one control, the label lists every part. Rebuilt on
+   engine/rank change, preserving the current value. */
 function renderEngineBuff(engine, rank) {
   const wrap = $("engine-buff-wrap");
   const prev = engineBuffValue();
-  const buff = engine.conditional_buff;
+  const buffs = engine.conditional_buffs
+    || (engine.conditional_buff ? [engine.conditional_buff] : []);
+  const buff = buffs[0];
   if (!buff) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  const maxStacks = Math.max(...buffs.map(b => b.max_stacks));
   // Ramp-up buffs (auto) default to max — the anomaly range covers uptime.
-  const previous = prev || (buff.auto ? buff.max_stacks : 0);
+  const previous = prev || (buff.auto ? maxStacks : 0);
   const autoTag = buff.auto ? " (auto)" : "";
-  const per = `+${+(buff.per_stack_by_rank[rank - 1] * 100).toFixed(1)}% `
-    + `${buff.element || "DMG"}`;
+  const per = buffs.map(b => {
+    const tags = b.skill_tags ? ` on ${b.skill_tags.join("/")}` : "";
+    const bracket = b.bracket === "sheer_dmg" ? " Sheer"
+      : b.bracket === "anomaly_buff" ? " (buff bracket)" : "";
+    return `+${+(b.per_stack_by_rank[rank - 1] * 100).toFixed(1)}% `
+      + `${b.element || "DMG"}${bracket}${tags}`;
+  }).join(" & ");
+  const note = buffs.map(b => b.note).filter(Boolean).join(" | ");
   wrap.style.display = "";
-  if (buff.max_stacks === 1) {
+  if (maxStacks === 1) {
     wrap.innerHTML = `
       <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
                     color:var(--text);font-size:13px;margin-top:18px"
-             title="${buff.note.replace(/"/g, "&quot;")}">
+             title="${note.replace(/"/g, "&quot;")}">
         <input type="checkbox" id="engine-buff-stacks"
                ${previous > 0 ? "checked" : ""}>
         ${buff.name}${autoTag} — ${per}
@@ -775,9 +792,10 @@ function renderEngineBuff(engine, rank) {
     // step="any": anomaly procs snapshot buffs as a buildup-weighted
     // average, so fractional stacks are legal there (e.g. 2.35).
     wrap.innerHTML = `
-      <label>${buff.name}${autoTag} stacks (0–${buff.max_stacks}, ${per} each)</label>
+      <label title="${note.replace(/"/g, "&quot;")}">${buff.name}${autoTag}
+        stacks (0–${maxStacks}, ${per} each)</label>
       <input type="number" id="engine-buff-stacks" value="${previous || 0}"
-             min="0" max="${buff.max_stacks}" step="any">`;
+             min="0" max="${maxStacks}" step="any">`;
   }
 }
 
@@ -797,17 +815,29 @@ function engineBuffValue() {
 function calcMode() { return $("mode").value || "direct"; }
 
 function updateModeUI() {
-  const mode = calcMode();
   const agent = DB.agents[$("agent").value];
   const anomaly = DB.anomalies[agent.attribute];
 
+  // Sheer (Rupture) is only meaningful for Rupture-specialty agents —
+  // their skills scale off Sheer Force. Gate the option; fall back to
+  // direct when the selected agent can't use it.
+  const rupture = agent.specialty === "rupture";
+  const ruptureOpt = [...$("mode").options].find(o => o.value === "rupture");
+  if (ruptureOpt) ruptureOpt.disabled = !rupture;
+  if (!rupture && $("mode").value === "rupture") $("mode").value = "direct";
+
+  const mode = calcMode();
+  // Sheer damage is direct-hit-shaped: skill MV, damage type and crits all
+  // apply; the anomaly-family inputs do not.
+  const directLike = mode === "direct" || mode === "rupture";
   const show = (id, on) => { $(id).style.display = on ? "" : "none"; };
-  show("skill-wrap", mode === "direct");
-  show("skill-tag-wrap", mode === "direct");
-  show("crit-rate-wrap", mode === "direct");
-  show("crit-dmg-wrap", mode === "direct");
-  show("anomaly-inputs-1", mode !== "direct");
-  show("anomaly-inputs-2", mode !== "direct");
+  show("skill-wrap", directLike);
+  show("skill-tag-wrap", directLike);
+  show("crit-rate-wrap", directLike);
+  show("crit-dmg-wrap", directLike);
+  show("sheer-inputs", mode === "rupture");
+  show("anomaly-inputs-1", !directLike);
+  show("anomaly-inputs-2", !directLike);
   // Vivian Abloom: auto AP-scaled multiplier (mutually exclusive with the
   // manual override). Show the Abloom toggle in anomaly mode; when on, hide
   // the manual override and show the element picker.
@@ -852,7 +882,16 @@ function updateModeUI() {
 
   // Mode hint under the selector
   let hint = "";
-  if (mode === "anomaly") {
+  if (mode === "rupture") {
+    const hpConv = agent.sheer_force_hp_conversion || 0;
+    hint = `SHEER damage — base = Sheer Force × MV. SF = 30% of final ATK`
+      + (hpConv ? ` + ${+(hpConv * 100).toFixed(0)}% of final HP` : "")
+      + ` + flat SF buffs. Crits normally; IGNORES enemy DEF (PEN does`
+      + ` nothing). PROVISIONAL (datamine) until calibrated.`;
+  } else if (rupture && mode === "direct") {
+    hint = `${agent.name} is a Rupture agent — her skills deal SHEER `
+      + `damage. Pick "Sheer damage (Rupture)" for her hits.`;
+  } else if (mode === "anomaly") {
     hint = `${anomaly.name} [${agent.attribute}] — `
       + (anomaly.supported
         ? `${+(anomaly.mult * 100).toFixed(0)}% × ATK`
@@ -890,10 +929,12 @@ const KIT_KIND_LABELS = {
   disorder_mult_add: "Disorder/Vortex base mult",
   anomaly_proficiency: "Anomaly Proficiency",
   pen_ratio: "PEN Ratio",
+  sheer_force: "flat Sheer Force", hp_pct: "Max HP%",
+  sheer_dmg: "Sheer DMG (dedicated bracket)", def_red: "enemy DEF reduction",
 };
 
 //: Kit kinds whose values are plain numbers, not fractions.
-const FLAT_KINDS = new Set(["flat_atk", "anomaly_proficiency"]);
+const FLAT_KINDS = new Set(["flat_atk", "anomaly_proficiency", "sheer_force"]);
 
 const fmtBuff = (kind, v) =>
   FLAT_KINDS.has(kind) ? `+${+v.toFixed(1)}` : `+${+(v * 100).toFixed(1)}%`;
@@ -1850,8 +1891,13 @@ function collectConfig() {
     engine_key: $("engine").value,
     engine_rank: currentRank(),
     boss_name: $("boss").value,
-    skill_multiplier: mode === "direct" ? pct("skill") : 1,
-    skill_tag: mode === "direct" ? ($("skill-tag").value || null) : null,
+    skill_multiplier: (mode === "direct" || mode === "rupture")
+      ? pct("skill") : 1,
+    skill_tag: (mode === "direct" || mode === "rupture")
+      ? ($("skill-tag").value || null) : null,
+    // Sheer/Rupture inputs (the server only reads them in rupture mode).
+    sheer_force_flat: parseFloat($("sheer-flat").value) || 0,
+    external_sheer_dmg: pct("sheer-dmg-ext"),
     // Anomaly-mode inputs (the server only reads what the mode uses).
     // Blank = normal proc; a value is the Abloom's own multiplier.
     anomaly_mult_override: ($("anom-mv").value.trim() === "" ? null
@@ -1908,10 +1954,15 @@ async function runCalc() {
     renderResults(data);
     lastResults = data;
     autoCalc = true;
-    // The optimizer runs in every mode; its objective list depends on
-    // whether direct-hit or anomaly damage was just calculated.
-    syncOptimizeObjectives(data.mode);
-    $("optimize-wrap").style.display = "";
+    // The optimizer runs in the direct/anomaly families; Sheer (Rupture)
+    // support is a planned follow-up (DOCS/rupture_plan.md), so the
+    // panel hides there instead of offering a rejected request.
+    if (data.mode === "rupture") {
+      $("optimize-wrap").style.display = "none";
+    } else {
+      syncOptimizeObjectives(data.mode);
+      $("optimize-wrap").style.display = "";
+    }
   } catch (exc) {
     showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
@@ -1930,6 +1981,7 @@ const fmtNum = v => v.toLocaleString("en-US",
   { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function renderResults(r) {
+  if (r.mode === "rupture") { renderSheerResults(r); return; }
   if (r.mode && r.mode !== "direct") { renderAnomalyResults(r); return; }
   const bonuses = Object.entries(r.set_bonuses || {})
     .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
@@ -1962,6 +2014,56 @@ function renderResults(r) {
       </tbody>
     </table>
     ${averageNote(r)}
+    ${buffSummary(r)}`;
+}
+
+/* Sheer (Rupture) results: the direct-hit crit table with the Sheer
+   Force breakdown on top. No DEF zone — Sheer damage ignores enemy DEF
+   entirely (datamine + Yixuan's core text), so that line says so instead
+   of showing ×1.0000 as if it were a real zone. */
+function renderSheerResults(r) {
+  const bonuses = Object.entries(r.set_bonuses || {})
+    .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
+    .join(", ");
+  const tagBonuses = Object.entries(r.tag_dmg_bonuses || {})
+    .map(([name, v]) => `${name} DMG +${(v * 100).toFixed(0)}%`)
+    .join(", ");
+  const tagLabel = () => DB.skill_tags[$("skill-tag").value] || "untyped";
+  $("out").className = "";
+  $("out").innerHTML = `
+    <div class="stat-line"><span>Sheer Force</span>
+      <b>${fmtNum(r.sheer_force)}</b></div>
+    <p class="note" style="margin:0 0 6px">
+      ATK part ${fmtNum(r.sheer_force_atk_part)} +
+      HP part ${fmtNum(r.sheer_force_hp_part)} +
+      flat ${fmtNum(r.sheer_force_flat_part)}</p>
+    <div class="stat-line"><span>Final ATK / Max HP</span>
+      <b>${fmtNum(r.atk_final)} / ${fmtNum(r.hp_final)}</b></div>
+    <div class="stat-line"><span>CRIT Rate / DMG</span>
+      <b>${(r.crit_rate * 100).toFixed(1)}% / ${(r.crit_dmg * 100).toFixed(1)}%</b></div>
+    <div class="stat-line"><span>DMG% zone</span><b>×${r.dmg_bonus_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>Sheer DMG zone</span><b>×${r.sheer_dmg_mult.toFixed(3)}</b></div>
+    <div class="stat-line"><span>DEF zone</span><b>ignored (Sheer)</b></div>
+    <div class="stat-line"><span>RES zone</span><b>×${r.res_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>DMG taken zone</span><b>×${r.dmg_taken_mult.toFixed(2)}</b></div>
+    <div class="stat-line"><span>Stun zone (stunned)</span><b>×${r.stun_mult.toFixed(2)}</b></div>
+    ${bonuses ? `<div class="stat-line"><span>Set bonuses</span><b>${bonuses}</b></div>` : ""}
+    ${tagBonuses ? `<div class="stat-line"><span>Typed bonuses (${tagLabel()})</span><b>${tagBonuses}</b></div>` : ""}
+    <table>
+      <thead><tr><th>Scenario</th><th>Normal</th><th>Stunned</th></tr></thead>
+      <tbody>
+        <tr><td>Non-crit</td><td class="num">${fmtNum(r.non_crit)}</td>
+            <td class="num">${fmtNum(r.non_crit_stunned)}</td></tr>
+        <tr><td>Crit</td><td class="num">${fmtNum(r.crit)}</td>
+            <td class="num">${fmtNum(r.crit_stunned)}</td></tr>
+        <tr class="avg"><td>Average</td><td class="num">${fmtNum(r.average)}</td>
+            <td class="num">${fmtNum(r.average_stunned)}</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Sheer damage = Sheer Force × MV; ignores enemy DEF
+    (PEN Ratio / flat PEN do nothing); crits normally. All Sheer
+    coefficients are PROVISIONAL (datamine) until an in-game popup
+    calibration.</p>
     ${buffSummary(r)}`;
 }
 
