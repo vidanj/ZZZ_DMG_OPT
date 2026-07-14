@@ -466,6 +466,12 @@ function fillSelect(sel, entries) {   // entries: [value, label][]
   for (const [v, t] of entries) sel.appendChild(option(v, t));
 }
 
+/* Disc set [key, entry] pairs sorted alphabetically by display name —
+   every set dropdown uses this so ordering stays consistent. */
+function sortedSets(entries = Object.entries(DB.sets)) {
+  return [...entries].sort((a, b) => a[1].name.localeCompare(b[1].name));
+}
+
 function buildStaticSelects() {
   fillSelect($("boss"), DB.bosses.map(b => [b.name, b.name]));
   fillSelect($("agent"), Object.entries(DB.agents).map(
@@ -475,7 +481,7 @@ function buildStaticSelects() {
   fillSelect($("skill-tag"), [["", "Untyped / not relevant"],
     ...Object.entries(DB.skill_tags).map(([k, label]) => [k, label])]);
   fillSelect($("opt-required"), [["", "(none — any sets)"],
-    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+    ...sortedSets().map(([k, s]) => [k, s.name])]);
   rebuildLoadoutSelect();
 }
 
@@ -523,7 +529,7 @@ function buildDiscGrid() {
       [m, `${m} (${fmtStat(m, DB.disc.main_stats[String(slot)][m])})`]));
     const setSel = card.querySelector(".set");
     fillSelect(setSel, [["", "No set / not modeled"],
-      ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+      ...sortedSets().map(([k, s]) => [k, s.name])]);
     fillSelect(card.querySelector(".element"),
       [["", "(not set — matches any agent)"],
        ...elementsList().map(e => [e, e])]);
@@ -1311,7 +1317,8 @@ function renderSupportBody(slot, prev) {
   }
 
   // Squad-facing 4pc set worn by this support
-  const squadSets = Object.entries(DB.sets).filter(([, s]) => s.squad_4pc);
+  const squadSets = sortedSets(
+    Object.entries(DB.sets).filter(([, s]) => s.squad_4pc));
   if (squadSets.length) {
     const div = document.createElement("div");
     div.style.marginTop = "8px";
@@ -1523,7 +1530,7 @@ function renderInvFilters() {
   }
 
   fillSelect($("inv-set"), [["", "Any set"], ["__none", "No set"],
-    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+    ...sortedSets().map(([k, s]) => [k, s.name])]);
   const mains = invState.slot
     ? Object.keys(DB.disc.main_stats[String(invState.slot)])
     : [...new Set(Object.values(DB.disc.main_stats)
@@ -1714,7 +1721,7 @@ function renderAddForm() {
   fillSelect($("add-slot"), SLOTS.map(s => [s, `Slot ${s}`]));
   if (invState.slot) $("add-slot").value = String(invState.slot);
   fillSelect($("add-set"), [["", "No set / not modeled"],
-    ...Object.entries(DB.sets).map(([k, s]) => [k, s.name])]);
+    ...sortedSets().map(([k, s]) => [k, s.name])]);
   fillSelect($("add-element"), elementsList().map(e => [e, e]));
   renderAddMains();
 }

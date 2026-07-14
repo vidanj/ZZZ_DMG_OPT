@@ -185,6 +185,132 @@
           "note": "Ultimate DMG +20% - applies automatically when the calculated hit's damage type is Ultimate."
         }
       ]
+    },
+    "BUNNY_IN_WONDERLAND": {
+      "name": "Bunny in Wonderland",
+      "bonus_2pc": { "HP%": 0.10 },
+      "squad_4pc": {
+        "value": 0.06,
+        "max_stacks": 3,
+        "note": "DEFENSE-character wearer only (user checks the specialty, Moonlight Lullaby convention): the wearer's EX Special, or any squad member's Defensive/Evasive Assist, grants ALL squad members +6% DMG per stack (max 3) for 25s; stacks decay one at a time and the duration refreshes on gain/decay. Same-name passives don't stack."
+      },
+      "notes": "Defense squad set (added 2026-07-14, zenless-optimizer datamine). Squad-facing 4pc, assist/EX-triggered - situational uptime, so no auto (Proto Punk convention): set stacks for the ON-FIELD agent when the defender has them rolling."
+    },
+    "DAWNS_BLOOM": {
+      "name": "Dawn's Bloom",
+      "bonus_2pc": { "Basic Attack DMG%": 0.15 },
+      "bonus_4pc_dmg": [
+        {
+          "skill_tag": "basic",
+          "value": 0.35,
+          "note": "Basic Attack DMG +20% (4pc, unconditional) PLUS the 2pc's +15% folded in - the schema's 2pc stats can't be skill-gated, so the full-set total lives here."
+        },
+        {
+          "skill_tag": "basic",
+          "value": 0.20,
+          "note": "ATTACK-character part: using an EX Special / Ultimate further raises Basic Attack DMG by 20% for 25s (refreshing). RAMP-UP, auto-applied on tag match - only equip on Attack characters (assume-it-matches)."
+        }
+      ],
+      "notes": "Basic Attack set (added 2026-07-14, zenless-optimizer datamine). The 2pc 'Basic Attack DMG +15%' is skill-gated, which bonus_2pc can't express: the stat name here is tracked-only (lands in 'other', no damage effect) and the 15% is instead folded into the 4pc's basic-tag bonus. Running 2 PIECES ONLY: enter 15 as external DMG% on Basic Attack hits."
+    },
+    "NOTES_FROM_THE_CHAINED": {
+      "name": "Notes From the Chained",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "Anomaly Proficiency",
+        "per_stack": 48,
+        "max_stacks": 1,
+        "auto": true,
+        "note": "Triggering Abloom grants +48 Anomaly Proficiency for 30s (refreshing). RAMP-UP in an Abloom rotation - auto-applied."
+      },
+      "notes": "Ice Abloom anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Ice agents (assume-it-matches). The 4pc's second part - triggering Freeze grants All-Attribute Anomaly DMG and Disorder DMG +16% for 30s (refreshing) - is an anomaly-only bracket the single-4pc-slot schema can't hold: enter 16 as external DMG% on anomaly/Disorder calcs while active (Chaos Jazz convention)."
+    },
+    "CHAOTIC_METAL": {
+      "name": "Chaotic Metal",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "CRIT DMG",
+        "per_stack": 0.055,
+        "max_stacks": 6,
+        "auto": true,
+        "at_max_extra": { "stat": "CRIT DMG", "value": 0.20 },
+        "note": "Squad Corruption DMG triggers grant +5.5% CRIT DMG per stack (max 6) for 8s (refreshing). The 4pc's UNCONDITIONAL base CRIT DMG +20% is carried as at_max_extra: with auto defaulting to max stacks the full 53% applies; when overriding to partial stacks the schema drops the base (it's tied to max) - add the 20 manually there. RAMP-UP - Corruption ticks hold max in an Ether anomaly team."
+      },
+      "notes": "Ether anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - only select this set on Ether agents (assume-it-matches). RAMP-UP: Corruption ticks keep stacks near max in an Ether anomaly team."
+    },
+    "INFERNO_METAL": {
+      "name": "Inferno Metal",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "CRIT Rate",
+        "per_stack": 0.28,
+        "max_stacks": 1,
+        "auto": true,
+        "note": "Upon hitting a Burning enemy: the equipper's CRIT Rate +28% for 8s. RAMP-UP - a Burning enemy is effectively permanent in a Fire team, so auto-applied (Thunder Metal convention)."
+      },
+      "notes": "Fire attack/anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is FIRE DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Fire agents (assume-it-matches)."
+    },
+    "POLAR_METAL": {
+      "name": "Polar Metal",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc_dmg": [
+        {
+          "skill_tag": "basic",
+          "value": 0.20,
+          "note": "Basic Attack DMG +20%, unconditional."
+        },
+        {
+          "skill_tag": "dash",
+          "value": 0.20,
+          "note": "Dash Attack DMG +20%, unconditional."
+        }
+      ],
+      "notes": "Ice attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - only select this set on Ice agents (assume-it-matches). The 4pc's conditional part - squad Freeze/Shatter raises the Basic/Dash bonus by an ADDITIONAL 20% for 12s - is windowed (not ramp-up-stable) and bonus_4pc_dmg has no stack toggle: enter 20 as external DMG% on Basic/Dash hits inside the window."
+    },
+    "SHADOW_HARMONY": {
+      "name": "Shadow Harmony",
+      "bonus_2pc": { "Aftershock & Dash Attack DMG%": 0.15 },
+      "bonus_4pc": {
+        "stat": "CRIT Rate",
+        "per_stack": 0.04,
+        "max_stacks": 3,
+        "auto": true,
+        "at_max_extra": { "stat": "Combat ATK%", "value": 0.12 },
+        "note": "Aftershock/Dash hits matching the wearer's attribute grant a stack (max 3, 15s, refreshing; once per skill use): +4% CRIT Rate each. The paired +4% ATK per stack has no second per-stack slot - carried as at_max_extra Combat ATK% 12% (full ATK part at max only; at partial stacks add 4 x stacks manually). Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured. RAMP-UP for aftershock/dash agents - auto-applied."
+      },
+      "bonus_4pc_dmg": [
+        {
+          "skill_tag": "dash",
+          "value": 0.15,
+          "note": "The 2pc's Dash Attack half folded here - the schema's 2pc stats can't be skill-gated."
+        }
+      ],
+      "notes": "Aftershock/Dash set (added 2026-07-14, zenless-optimizer datamine). 2pc 'Aftershock & Dash Attack DMG +15%' is skill-gated: the stat name in bonus_2pc is tracked-only (no damage effect). The Dash half is folded into bonus_4pc_dmg (applies with 4 pieces); Aftershocks have no skill tag in constants.json - enter 15 as external DMG% on Aftershock hits (and on Dash hits when running 2 PIECES ONLY)."
+    },
+    "THE_SKY_ABLAZE": {
+      "name": "The Sky Ablaze",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "CRIT DMG",
+        "per_stack": 0.30,
+        "max_stacks": 1,
+        "auto": true,
+        "at_max_extra": { "stat": "Combat ATK%", "value": 0.10 },
+        "note": "ETHER-attribute wearer: CRIT DMG +30%, unconditional (the single stack; set 0 stacks on a non-Ether wearer). at_max_extra carries the second part - using an EX Special / Ultimate grants ATK +10% for 30s (refreshing): RAMP-UP, rides along at the auto max. Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured."
+      },
+      "notes": "Ether crit set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - only select this set on Ether agents (assume-it-matches; the 4pc CRIT DMG is also Ether-gated in-game)."
+    },
+    "WHITE_WATER_BALLAD": {
+      "name": "White Water Ballad",
+      "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_4pc": {
+        "stat": "CRIT Rate",
+        "per_stack": 0.10,
+        "max_stacks": 2,
+        "at_max_extra": { "stat": "Combat ATK%", "value": 0.10 },
+        "note": "Stack 1: within (or up to 15s after leaving) an Ether Veil, CRIT Rate +10%. Stack 2: ATTACK-character wearer activating/extending an Ether Veil, a further +10% CRIT Rate for 30s - its paired ATK +10% is carried as at_max_extra Combat ATK% (panel-multiplying by analogy, not measured). Needs a Veil-generating team - situational, so no auto."
+      },
+      "notes": "Physical attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - only select this set on Physical agents (assume-it-matches). The whole 4pc depends on the Ether Veil squad mechanic, so stacks are manual."
     }
   }
 }

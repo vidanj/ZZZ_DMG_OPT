@@ -855,6 +855,15 @@ def optimize(
         four_stats: dict[str, float] = {}
         if entry.bonus_4pc is not None and stacks:
             four_stats[entry.bonus_4pc.stat] = entry.bonus_4pc.per_stack * stacks
+            # Extra part granted only at MAX stacks (mirrors set_bonus_stats;
+            # stats without a bucket — Yunkui Tales' Sheer DMG% — drop out
+            # in _bucket_vector, as before).
+            b4 = entry.bonus_4pc
+            if b4.at_max_extra_stat is not None and stacks == b4.max_stacks:
+                four_stats[b4.at_max_extra_stat] = (
+                    four_stats.get(b4.at_max_extra_stat, 0.0)
+                    + b4.at_max_extra_value
+                )
         set_4pc[key] = _bucket_vector(four_stats)
         # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
         # skill-tag-gated ones (Puffer Electro's Ultimate +20%) and a set's
@@ -1329,6 +1338,15 @@ def optimize_anomaly(
         four_stats: dict[str, float] = {}
         if entry.bonus_4pc is not None and stacks:
             four_stats[entry.bonus_4pc.stat] = entry.bonus_4pc.per_stack * stacks
+            # Extra part granted only at MAX stacks (mirrors set_bonus_stats;
+            # stats without a bucket — Yunkui Tales' Sheer DMG% — drop out
+            # in _bucket_vector, as before).
+            b4 = entry.bonus_4pc
+            if b4.at_max_extra_stat is not None and stacks == b4.max_stacks:
+                four_stats[b4.at_max_extra_stat] = (
+                    four_stats.get(b4.at_max_extra_stat, 0.0)
+                    + b4.at_max_extra_value
+                )
         set_4pc[key] = _bucket_vector(four_stats)
         # 4pc DMG% additives that land in the ordinary bonus bracket: the
         # skill-tag-gated ones (none for anomaly — skill_tag is unset) plus
