@@ -167,6 +167,7 @@ def frontend_payload(data: AppData) -> dict:
                     "skill_tag": e.skill_tag,
                     "modes": list(e.modes) if e.modes else None,
                     "element": e.element,
+                    "at_max_stacks": e.at_max_stacks,
                     "scaling": (
                         None if e.scaling is None else {
                             "input": e.scaling.input,
@@ -204,6 +205,16 @@ def frontend_payload(data: AppData) -> dict:
                         "buff": kit_buff(m.buff),
                     }
                     for level, m in sorted(a.mindscapes.items())
+                },
+                "potential_name": a.potential_name,
+                "potential_note": a.potential_note,
+                "potentials": {
+                    str(level): {
+                        "name": p.name,
+                        "note": p.note,
+                        "buff": kit_buff(p.buff),
+                    }
+                    for level, p in sorted(a.potentials.items())
                 },
             }
             for key, a in data.agents.items()
@@ -444,6 +455,9 @@ def _build_config(body: dict) -> CalcConfig:
     mindscapes_raw = body.get("mindscapes") or {}
     if not isinstance(mindscapes_raw, dict):
         raise ValueError("'mindscapes' must be an object of level -> stacks")
+    potentials_raw = body.get("potentials") or {}
+    if not isinstance(potentials_raw, dict):
+        raise ValueError("'potentials' must be an object of level -> stacks")
 
     supports_raw = body.get("supports") or []
     if not isinstance(supports_raw, list):
@@ -482,10 +496,15 @@ def _build_config(body: dict) -> CalcConfig:
         boss_name=str(body.get("boss_name", "")),
         skill_multiplier=_number(body, "skill_multiplier"),
         skill_tag=body.get("skill_tag") or None,
+        counts_as_aftershock=bool(body.get("counts_as_aftershock")),
         core_passive_active=bool(body.get("core_passive_active")),
         mindscapes={
             int(level): int(stacks)
             for level, stacks in mindscapes_raw.items() if int(stacks)
+        },
+        potentials={
+            int(level): int(stacks)
+            for level, stacks in potentials_raw.items() if int(stacks)
         },
         additional_ability_stacks=int(body.get("additional_ability_stacks") or 0),
         scaling_inputs={
@@ -615,7 +634,8 @@ def run_calculation(data: AppData, body: dict) -> dict:
     payload["tag_dmg_bonuses"] = {
         data.disc_sets[key].name: value
         for key, value in set_tagged_dmg_bonuses(
-            config.discs, data.disc_sets, config.skill_tag
+            config.discs, data.disc_sets, config.skill_tag,
+            counts_as_aftershock=config.counts_as_aftershock,
         ).items()
     }
     return payload

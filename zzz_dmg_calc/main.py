@@ -156,7 +156,7 @@ def run() -> None:
     print("\nTarget boss:")
     boss_name = _choose("Boss", list(bosses))
 
-    # 2. Agent (v1: DUMMY only)
+    # 2. Agent
     print("\nAgent:")
     agent_key_by_label = {
         f"{a.name} [{a.attribute}]": key for key, a in agents.items()
@@ -310,6 +310,7 @@ def run() -> None:
 
     skill = 1.0
     skill_tag = None
+    counts_as_aftershock = False
     disorder_replaced = None
     disorder_elapsed = 0.0
     vortex_infused = None
@@ -338,6 +339,14 @@ def run() -> None:
         tag_by_label = {label: key for key, label in consts.skill_tags.items()}
         picked = _choose("Type", ["Untyped / not relevant", *tag_by_label])
         skill_tag = tag_by_label.get(picked)
+        # Dual damage type: some hits ALSO count as Aftershock on top of
+        # their own type (Anby S's Chain/Ultimate, Trigger's Harmonizing
+        # Shots) - then both types' gated bonuses apply to the same hit.
+        if skill_tag != "aftershock":
+            counts_as_aftershock = (
+                input("Does this hit ALSO count as Aftershock DMG? "
+                      "[y/N]: ").strip().lower() == "y"
+            )
     elif mode == "Anomaly proc":
         anomaly = anomaly_data.anomalies[agent_attr]
         print(f"\nAnomaly: {anomaly.name} [{agent_attr}]"
@@ -414,6 +423,7 @@ def run() -> None:
     core_passive_active = False
     additional_ability_stacks = 0
     mindscape_stacks: dict[int, int] = {}
+    potential_stacks: dict[int, int] = {}
     scaling_inputs: dict[str, float] = {}
     supports: list[SupportConfig] = []
     buildup_segments: list[BuildupSegment] = []
@@ -431,6 +441,7 @@ def run() -> None:
     kit_buffs = [b for b in (agent_obj.core_passive,
                              agent_obj.additional_ability) if b]
     kit_buffs += [m.buff for m in agent_obj.mindscapes.values() if m.buff]
+    kit_buffs += [p.buff for p in agent_obj.potentials.values() if p.buff]
     for kit_b in kit_buffs:
         for eff in kit_b.effects:
             if eff.scaling is not None and eff.scaling.input not in scaling_inputs:
@@ -475,6 +486,34 @@ def run() -> None:
             ))
             if stacks:
                 mindscape_stacks[level] = stacks
+
+    # Potential Awakening: one named track whose levels replace each
+    # other — activate ONLY the level this copy has unlocked.
+    for level in sorted(agent_obj.potentials):
+        potential = agent_obj.potentials[level]
+        if potential.buff is None:
+            continue
+        kit_buff = potential.buff
+        effects = ", ".join(
+            f"{e.kind} +{e.value:.1%}"
+            + (" at max stacks" if e.at_max_stacks
+               else ("/stack" if kit_buff.max_stacks > 1 else ""))
+            for e in kit_buff.effects
+        )
+        print(f"\n{agent_obj.potential_name} P{level} {potential.name} "
+              f"({effects}): {potential.note}")
+        if potential_stacks:
+            print("  (a potential level is already active — levels "
+                  "replace each other; skip unless correcting)")
+        if kit_buff.max_stacks == 1:
+            if input("Unlocked and active? [y/N]: ").strip().lower() == "y":
+                potential_stacks[level] = 1
+        else:
+            stacks = int(_ask_float(
+                f"Active stacks (0-{kit_buff.max_stacks})", 0
+            ))
+            if stacks:
+                potential_stacks[level] = stacks
 
     # Off-field supports: team buffs, signature-engine squad buffs, and
     # squad-facing 4pc sets (all conditionals, asked per support). Applied
@@ -652,9 +691,11 @@ def run() -> None:
         boss_name=boss_name,
         skill_multiplier=skill,
         skill_tag=skill_tag,
+        counts_as_aftershock=counts_as_aftershock,
         core_passive_active=core_passive_active,
         additional_ability_stacks=additional_ability_stacks,
         mindscapes=mindscape_stacks,
+        potentials=potential_stacks,
         scaling_inputs=scaling_inputs,
         supports=supports,
         discs=discs,

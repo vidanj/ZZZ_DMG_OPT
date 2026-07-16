@@ -84,8 +84,8 @@ weakness/resistance, and the stun multiplier — all loaded automatically.
 
 ### Step 2 — Agent
 
-Pick the agent. The roster includes the `DUMMY (Ellen copy) [ice]` test
-agent, **Nekomata [physical]** (the first fully-modeled agent: core
+Pick the agent. The roster includes **Ellen Joe [ice]** (formerly the
+DUMMY test agent — same game-validated stats), **Nekomata [physical]** (the first fully-modeled agent: core
 passive and damage-relevant mindscapes are asked as toggles), and the
 Phase 5 anomaly roster. The attack element is matched against the boss's
 RES automatically.
@@ -103,7 +103,7 @@ default) — one engine entry covers every rank. Modeled passive parts are
 applied automatically at the chosen rank (e.g. Steel Cushion's Physical
 DMG +20–40%, plus a y/N toggle for its back-attack bonus); anything not
 modeled is printed as a note to add manually as external buffs in Step 6
-(e.g. the DUMMY engine's Ice DMG +25% while active).
+(e.g. Deep Sea Visitor's Ice DMG +25% while active).
 
 ### Step 4 — Drive discs (slots 1–6)
 
@@ -220,7 +220,7 @@ to skip any of them** (defaults to 0):
 
 | Prompt | What to enter | Example |
 |---|---|---|
-| Extra DMG% bonuses (total) | Sum of active DMG% buffs: engine passives, set bonuses, team buffs | DUMMY engine passive active → `25` |
+| Extra DMG% bonuses (total) | Sum of active DMG% buffs: engine passives, set bonuses, team buffs | Deep Sea Visitor passive active → `25` |
 | Extra CRIT Rate from conditional buffs | CRIT Rate from stacks/triggers not on your stat sheet | engine on-hit stacks → `20` |
 | Extra CRIT DMG from conditional buffs | Skill-specific CRIT DMG boosts — core passives are the main case | Ellen's core passive on charged hits → `100` |
 | Enemy RES shred/ignore (total) | Total RES reduction applied to the boss | `20` |

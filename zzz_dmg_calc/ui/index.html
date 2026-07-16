@@ -263,7 +263,12 @@
       <div id="skill-wrap"><label>Skill multiplier % (total motion value)</label>
         <input type="number" id="skill" value="100" min="1" step="any"></div>
       <div id="skill-tag-wrap"><label>Damage type (gates typed bonuses, e.g. Ultimate DMG%)</label>
-        <select id="skill-tag"></select></div>
+        <select id="skill-tag"></select>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;
+                      font-size:12px;margin-top:4px"
+               title="Dual damage type: the hit keeps its own tag AND counts as Aftershock, so both tags' bonuses apply (Anby S's Chain/Ultimate via Voltage Surge; Trigger's Harmonizing Shots). Redundant when the type above is already Aftershock.">
+          <input type="checkbox" id="counts-aftershock"> also counts as Aftershock
+        </label></div>
       <div id="engine-buff-wrap" style="display:none"></div>
     </div>
     <div class="row c3" id="anomaly-inputs-1" style="display:none">
@@ -972,14 +977,17 @@ function buffSummary(r) {
 
 function effectLabel(effect, maxStacks) {
   const kind = KIT_KIND_LABELS[effect.kind] || effect.kind;
-  const perStack = maxStacks > 1 ? "/stack" : "";
+  // at-max-stacks effects fire once at full stacks, never per stack
+  // (e.g. Ellen's Potential Ice RES ignore at 10 Rising Storm stacks).
+  const perStack = effect.at_max_stacks ? " (only at MAX stacks)"
+    : (maxStacks > 1 ? "/stack" : "");
   // Mode/element gates (e.g. Velina's Vortex-only RES ignore)
   const gates = [
     ...(effect.modes || []),
     ...(effect.element ? [effect.element] : []),
   ];
   const gate = gates.length ? ` [${gates.join("/")}]` : "";
-  if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})${gate}`;
+  if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})${effect.at_max_stacks ? perStack : ""}${gate}`;
   if (FLAT_KINDS.has(effect.kind)) return `${kind} +${effect.value}${perStack}${gate}`;
   const tag = effect.skill_tag ? ` on ${DB.skill_tags[effect.skill_tag] || effect.skill_tag}` : "";
   return `${kind} +${+(effect.value * 100).toFixed(1)}%${perStack}${tag}${gate}`;
@@ -1043,9 +1051,20 @@ function renderKit() {
     if (m.buff) rows.push({ attr: `data-kit="m" data-level="${level}"`,
                             buff: m.buff, label: `M${level} — ${m.name}` });
   }
+  // Potential Awakening levels — mindscape-like, but the levels REPLACE
+  // each other: activate only the level this copy has unlocked.
+  for (const [level, p] of Object.entries(agent.potentials || {})) {
+    if (p.buff) rows.push({ attr: `data-kit="p" data-level="${level}"`,
+                            buff: p.buff,
+                            label: `${agent.potential_name || "Potential"} P${level} — ${p.name}`,
+                            hint: ` <span class="note">(activate at most ONE potential level)</span>` });
+  }
   const skipped = Object.entries(agent.mindscapes || {})
     .filter(([, m]) => !m.buff)
     .map(([lv, m]) => `M${lv} ${m.name}: ${m.note}`);
+  if (agent.potential_name && !Object.keys(agent.potentials || {}).length) {
+    skipped.push(`${agent.potential_name}: ${agent.potential_note}`);
+  }
 
   $("kit-card").style.display = rows.length || skipped.length ? "" : "none";
 
@@ -1092,9 +1111,10 @@ function renderKit() {
 }
 
 /* Read the kit controls:
-   { core: 0|1, aa: stacks, mind: {level: stacks}, scaling: {name: value} }. */
+   { core: 0|1, aa: stacks, mind: {level: stacks}, pot: {level: stacks},
+     scaling: {name: value} }. */
 function kitState() {
-  const state = { core: 0, aa: 0, mind: {}, scaling: {} };
+  const state = { core: 0, aa: 0, mind: {}, pot: {}, scaling: {} };
   for (const inp of $("kit-controls").querySelectorAll("input")) {
     if (inp.dataset.kitscaling !== undefined) {
       state.scaling[inp.dataset.kitscaling] = parseFloat(inp.value) || 0;
@@ -1104,6 +1124,7 @@ function kitState() {
                                           : (parseInt(inp.value, 10) || 0);
     if (inp.dataset.kit === "core") state.core = value;
     else if (inp.dataset.kit === "aa") state.aa = value;
+    else if (inp.dataset.kit === "p") state.pot[inp.dataset.level] = value;
     else state.mind[inp.dataset.level] = value;
   }
   return state;
@@ -1119,6 +1140,7 @@ function applyKit(state) {
     }
     const saved = inp.dataset.kit === "core" ? state.core
       : inp.dataset.kit === "aa" ? state.aa
+      : inp.dataset.kit === "p" ? (state.pot || {})[inp.dataset.level]
       : (state.mind || {})[inp.dataset.level];
     if (saved == null) continue;
     if (inp.type === "checkbox") inp.checked = saved > 0;
@@ -1874,6 +1896,9 @@ function collectConfig() {
   const mindscapes = {};
   for (const [level, stacks] of Object.entries(kit.mind))
     if (stacks) mindscapes[level] = stacks;
+  const potentials = {};
+  for (const [level, stacks] of Object.entries(kit.pot))
+    if (stacks) potentials[level] = stacks;
 
   const supports = [];
   for (const slot of document.querySelectorAll(".support")) {
@@ -1902,6 +1927,8 @@ function collectConfig() {
       ? pct("skill") : 1,
     skill_tag: (mode === "direct" || mode === "rupture")
       ? ($("skill-tag").value || null) : null,
+    counts_as_aftershock: (mode === "direct" || mode === "rupture")
+      && $("counts-aftershock").checked,
     // Sheer/Rupture inputs (the server only reads them in rupture mode).
     sheer_force_flat: parseFloat($("sheer-flat").value) || 0,
     external_sheer_dmg: pct("sheer-dmg-ext"),
@@ -1922,6 +1949,7 @@ function collectConfig() {
     core_passive_active: kit.core > 0,
     additional_ability_stacks: kit.aa,
     mindscapes,
+    potentials,
     scaling_inputs: kit.scaling,
     supports,
     discs,

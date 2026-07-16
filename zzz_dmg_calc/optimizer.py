@@ -721,7 +721,7 @@ def optimize(
     base_buckets = _bucket_vector(engine.advanced_stat)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
-    base_crit_dmg = consts.base_crit_dmg
+    base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
@@ -746,7 +746,8 @@ def optimize(
         + sum(_engine_passive_bonuses(engine, agent.attribute, rank))
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
                              agent.attribute, rank,
-                             skill_tag=config.skill_tag)
+                             skill_tag=config.skill_tag,
+                             counts_as_aftershock=config.counts_as_aftershock)
         + sum(kit["dmg_bonus"])
     )
     level_coef = consts.level_coefficient(agent.level)
@@ -872,7 +873,10 @@ def optimize(
         # ``kit`` above excludes it (discs=[]).
         tag_skill = sum(
             b.value for b in entry.bonus_4pc_dmg
-            if config.skill_tag is not None and b.skill_tag == config.skill_tag
+            if (config.skill_tag is not None
+                and b.skill_tag == config.skill_tag)
+            or (config.counts_as_aftershock
+                and b.skill_tag == "aftershock")
         )
         auto = 0.0
         if entry.auto_4pc_dmg and (
@@ -1161,7 +1165,7 @@ def optimize_anomaly(
     base_buckets = _bucket_vector(engine.advanced_stat)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
-    base_crit_dmg = consts.base_crit_dmg
+    base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
@@ -1354,7 +1358,10 @@ def optimize_anomaly(
         # for some sets. Folded per combo, mirroring _kit_contributions.
         tag_skill = sum(
             b.value for b in entry.bonus_4pc_dmg
-            if config.skill_tag is not None and b.skill_tag == config.skill_tag
+            if (config.skill_tag is not None
+                and b.skill_tag == config.skill_tag)
+            or (config.counts_as_aftershock
+                and b.skill_tag == "aftershock")
         )
         auto = 0.0
         if entry.auto_4pc_dmg and (

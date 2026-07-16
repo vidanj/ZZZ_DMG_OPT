@@ -1,17 +1,149 @@
 {
   "_meta": {
-    "description": "W-Engine database (Lv. 60, R1 — refinement effects are never auto-applied). v1 ships only the DUMMY engine (a copy of Deep Sea Visitor); more engines are added here as a data-only change.",
+    "description": "W-Engine database (Lv. 60; refinement rank is a runtime input). The v1 DUMMY engine became the real deep_sea_visitor on 2026-07-14 (same stats; its Ice DMG passive stays note-only so the game-validated DUMMY regression baselines remain exact). More engines are added as a data-only change.",
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
     "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket) or 'sheer_dmg' (the dedicated Sheer DMG bracket), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
   },
   "engines": {
-    "dummy_engine": {
-      "name": "DUMMY Engine (Deep Sea Visitor copy, R1)",
+    "deep_sea_visitor": {
+      "name": "Deep Sea Visitor (R1)",
       "base_atk": 713,
       "advanced_stat": { "CRIT Rate": 0.24 },
-      "passive_note": "R1 passive (Ice DMG +25%, conditional CRIT Rate buffs) is NOT auto-applied; enter it as external buffs when active."
+      "passive_note": "Ellen's signature (the former dummy_engine renamed 2026-07-14 - same stats, so every DUMMY-era game validation still holds). Lord of Seas R1: Ice DMG +25% (to +50% R5); Basic hit: CRIT Rate +10% for 8s; Ice-dealing Dash hit: a further +10% for 15s. NOT auto-applied (kept manual so the validated baselines stay exact): enter Ice DMG% as external DMG bonus and the CRIT parts as external CRIT Rate when active. Datamine wengine params [0.25, 0.1, 8, 0.1, 15] at R1."
+    },
+    "severed_innocence": {
+      "name": "Severed Innocence",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT DMG": 0.48 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Tranquil Blossom (3 stacks): Electric DMG",
+          "element": "electric",
+          "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "At all 3 Tranquil Blossom stacks: the equipper's Electric DMG +20% (R1). Anby S maintains 3 stacks trivially (Basic/Special/Aftershock hits grant them) - RAMP-UP, auto-applied. Enter 1 (= at 3 stacks) or 0."
+        }
+      },
+      "passive_note": "Anby S's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 1, 0.1, 3, 30, 3, 0.2] at R1). Advanced stat CRIT DMG 48% (0.192 x 2.5 at Lv. 60). CRIT DMG parts NOT auto-applied (no crit bracket in the engine conditional system): base +30% (R1) / +48% (R5) unconditional, plus +10% (R1) / +16% (R5) per Tranquil Blossom stack (max 3, effectively always full) - enter the total as external CRIT DMG (R1 full stacks: 30 + 30 = 60; R5: 48 + 48 = 96). The Electric +20% at 3 stacks IS modeled (auto conditional buff)."
+    },
+    "spectral_gaze": {
+      "name": "Spectral Gaze",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Wind Seeker: enemy DEF reduction",
+            "kind": "def_red",
+            "values": [0.25, 0.2875, 0.325, 0.3625, 0.40],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "When the equipper's Aftershock deals Electric DMG: the target's DEF -25% (R1) to -40% (R5) for 5s - near-permanent in Trigger's off-field loop, so RAMP-UP, auto-applied. Enemy debuff: benefits the whole squad's direct/anomaly hits (Sheer damage ignores DEF anyway). Only one instance per squad."
+          }
+        ]
+      },
+      "passive_note": "Trigger's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.25, 5, 1, 3, 0.04, 12, 0.08] at R1). Advanced stat CRIT Rate 24% (feeds her ability's CRIT->Daze conversion - buildup only). The Spirit Lock Impact stacks (+4%/stack x3, +8% at full, off-field) affect Daze buildup only - not modeled. The DEF shred IS modeled (squad buff, auto)."
+    },
+    "cordis_germina": {
+      "name": "Cordis Germina",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.15, 0.17, 0.19, 0.21, 0.23],
+        "conditional_buff": {
+          "name": "Sprouting Core: Electric DMG",
+          "element": "electric",
+          "per_stack_by_rank": [0.125, 0.145, 0.165, 0.185, 0.20],
+          "max_stacks": 2,
+          "auto": true,
+          "note": "Basic / EX Special hits grant a stack (40s each, once per skill): Electric DMG +12.5% (R1) per stack, max 2 (+25% R1 / +40% R5) - trivially maintained by Seed, RAMP-UP, auto-applied at max."
+        }
+      },
+      "passive_note": "Seed's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.15, 1, 0.125, 2, 40, 2, 0.2] at R1). Advanced stat CRIT Rate 24%; the passive's unconditional CRIT Rate +15% (R1) to +23% (R5) is auto-applied via passive_crit_by_rank. NOT modeled: at 2 stacks her Basic and Ultimate DMG ignore 20% (R1) to 32% (R5) of enemy DEF (no equipper-side DEF-ignore bracket in the engine system yet) - PROVISIONAL: account for it externally when comparing builds (roughly +10-14% damage vs a Lv. 60 boss at 20%)."
+    },
+    "sol_exuvia": {
+      "name": "Sol Exuvia",
+      "base_atk": 713,
+      "advanced_stat": { "ATK%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.20, 0.20, 0.20, 0.20, 0.20]
+      },
+      "passive_note": "Pyrois' signature, free with the Season 3 story (added 2026-07-15, zenless-optimizer datamine, wengine params [0.2, 0.16, 45] at R1). Advanced stat ATK% 30 (0.12 x 2.5 at Lv. 60); the passive's CRIT Rate +20% is unconditional AND rank-independent - auto-applied via passive_crit_by_rank. NOT modeled: the Eclipse effect (granted on entering combat, refreshed by his Ultimates, 45s - effectively permanent on Pyrois): his DMG ignores 16% (R1) to 22% (R5) of ETHER RES - enter as external RES shred (no equipper-side engine RES bracket yet)."
+    },
+    "the_vault": {
+      "name": "The Vault",
+      "base_atk": 624,
+      "advanced_stat": { "Energy Regen%": 0.50 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Money-Lover: target DMG taken",
+            "kind": "dmg_bonus",
+            "values": [0.15, 0.175, 0.20, 0.22, 0.24],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "When the equipper deals Ether DMG with an EX Special / Chain / Ultimate: ALL units' DMG against the target +15% (R1) to +24% (R5) for 2s - Nicole re-applies it continuously through her EX spam, effectively up in her buff windows (same window as her core debuff), so auto-applied. Only one instance per squad. Modeled in the ordinary DMG% bracket (datamine common_dmg_)."
+          }
+        ]
+      },
+      "passive_note": "Nicole's signature (A-RANK support engine, added 2026-07-15, zenless-optimizer datamine, wengine params [0.15, 0.5, 2] at R1; atk_base 42 -> Lv. 60 base 624, Energy Regen 20% x 2.5 = 50%). A-rank engines are commonly owned at R5. The equipper Energy Regen +0.5/s part is resource-only."
+    },
+    "hellfire_gears": {
+      "name": "Hellfire Gears",
+      "base_atk": 684,
+      "advanced_stat": { "Impact%": 0.18 },
+      "passive_note": "Koleda's signature, assigned as Nangong Yu's DEFAULT engine (user choice 2026-07-15; zenless-optimizer datamine, wengine params [0.6, 0.1, 10, 2] at R1; atk_base 46 -> Lv. 60 base 684, Impact% 7.2 x 2.5 = 18). Passive 'Passionate Construction' has NO damage-formula effect: off-field Energy Regen +0.6/s (R1) to +1.2/s (R5) is resource-only, and the EX Special Impact +10%/stack x2 (R1; 20% R5) affects Daze buildup only - nothing to model or enter."
+    },
+    "the_restrained": {
+      "name": "The Restrained",
+      "base_atk": 684,
+      "advanced_stat": { "Impact%": 0.18 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Binding Chains: Basic Attack DMG",
+          "element": null,
+          "skill_tags": ["basic"],
+          "per_stack_by_rank": [0.06, 0.075, 0.09, 0.105, 0.12],
+          "max_stacks": 5,
+          "note": "On-hit stacks (one per skill use, 8s each, tracked separately): the equipper's BASIC ATTACK DMG +6% per stack at R1 (max +30%; +60% at R5). Applies only when the calculated hit is a Basic Attack. The matching Daze half affects buildup only."
+        }
+      },
+      "passive_note": "Lycaon's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [0.06, 8, 5] at R1; atk_base 46 -> Lv. 60 base 684, Impact% 7.2 x 2.5 = 18). Impact% affects Daze buildup only - tracked, not damage. Only the Basic-DMG half of Binding Chains is damage-relevant (modeled as the conditional buff)."
+    },
+    "kaboom_the_cannon": {
+      "name": "Kaboom the Cannon",
+      "base_atk": 624,
+      "advanced_stat": { "Energy Regen%": 0.50 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Stampede Accident: squad ATK%",
+            "kind": "atk_pct",
+            "values": [0.025, 0.028, 0.032, 0.036, 0.04],
+            "max_stacks": 4,
+            "auto": true,
+            "note": "When any friendly unit hits an enemy: ALL friendly units' ATK +2.5% (R1) per stack for 8s, max 4 stacks (+10% R1 / +16% R5; each unit incl. Bangboo provides one stack, durations separate). Trivially maintained in any rotation - RAMP-UP, auto-applied at max stacks. Joins the combat ATK% bracket."
+          }
+        ]
+      },
+      "passive_note": "Lucy's default (A-RANK support engine, added 2026-07-14, zenless-optimizer datamine, wengine params [0.025, 8, 4, 1] at R1; atk_base 42 -> Lv. 60 base 624, Energy Regen 20% x 2.5 = 50%). Energy Regen is resource-only, tracked but not damage. A-rank engines are commonly owned at R5 (values modeled R1-R5). Only one instance of the squad buff can exist per squad."
     },
     "steel_cushion": {
       "name": "Steel Cushion",
@@ -103,6 +235,65 @@
       "advanced_stat": { "CRIT Rate": 0.24 },
       "passive_note": "R1 passive (CRIT DMG +50%; Heartstring stacks ignore part of enemy Fire RES) is NOT auto-applied; enter as external CRIT DMG / RES shred when active."
     },
+    "elegant_vanity": {
+      "name": "Elegant Vanity",
+      "base_atk": 713,
+      "advanced_stat": { "ATK%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Untold Beauty: squad DMG",
+            "kind": "dmg_bonus",
+            "values": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "When the equipper consumes 25+ Energy: ALL squad members' DMG +10% (R1) per stack, max 2 stacks (+20% at R1), 20s, refreshed on repeat - Astra's Tremolos consume 25 Energy each, so RAMP-UP, effectively always at max: auto-applied at 2 stacks."
+          }
+        ]
+      },
+      "passive_note": "Astra Yao's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [5, 5, 25, 0.10, 2, 20] at R1). Advanced stat ATK% 30 (0.12 x 2.5 at Lv. 60) - raises her Tremolo flat-ATK buff via her panel ATK. The 5-Energy-on-switch-in part (once/5s) is resource only - not modeled. Only one instance of the squad buff can exist per squad."
+    },
+    "blazing_laurel": {
+      "name": "Blazing Laurel",
+      "base_atk": 713,
+      "advanced_stat": { "Impact%": 0.18 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Wilt: Ice/Fire CRIT DMG",
+            "kind": "crit_dmg",
+            "values": [0.015, 0.0172, 0.0195, 0.0217, 0.024],
+            "max_stacks": 20,
+            "note": "The equipper's Basic Attack hits apply Wilt (max 20 stacks, 30s): any squad member's ICE and FIRE damage gains +1.5% CRIT DMG per stack (R1; +30% at max stacks). ONLY Ice/Fire DMG - the squad-buff system has no element gate, so check this only when the on-field attacker deals Ice or Fire damage (Lighter teams normally do). Enter the realistic stack count (Lighter's Morale Burst combos stack it fast)."
+          }
+        ]
+      },
+      "passive_note": "Lighter's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [0.25, 8, 30, 20, 0.015] at R1). Advanced stat Impact% 18 (0.072 x 2.5 at Lv. 60) - Impact affects Daze buildup only, tracked but not damage. The Impact +25% for 8s on Quick/Perfect Assist is buildup only - not modeled. Only one instance of the Wilt buff can exist per squad."
+    },
+    "chief_sidekick": {
+      "name": "Chief Sidekick",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "The Genius's Follower: squad DMG",
+            "kind": "dmg_bonus",
+            "values": [0.125, 0.144, 0.163, 0.181, 0.20],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "When the equipper deals Fire DMG with an EX Special Attack: ALL Agents' DMG +12.5% (R1) per stack, max 2 stacks (+25% at R1), 30s, refreshed on repeat (once per skill) - Norma's EX/turrets fire constantly, so RAMP-UP, effectively always at max: auto-applied at 2 stacks."
+          }
+        ]
+      },
+      "passive_note": "Norma's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [30, 0.15, 0.4, 0.125, 30, 2] at R1). Advanced stat CRIT Rate 24% (0.096 x 2.5 at Lv. 60) - feeds her core CRIT->CRIT DMG conversion. NOT auto-applied: the equipper's own DMG ignores 15% (R1) - 24% (R5) of the target's FIRE RES - enter as external RES shred when NORMA is the attacker dealing Fire damage. Impact +30 flat and off-field Energy Regen +0.4/s affect buildup/resources only. Only one instance of the squad buff can exist per squad."
+    },
     "timeweaver": {
       "name": "Timeweaver",
       "base_atk": 713,
@@ -136,7 +327,7 @@
     },
     "weeping_cradle": {
       "name": "Weeping Cradle",
-      "base_atk": 713,
+      "base_atk": 684,
       "advanced_stat": { "PEN Ratio": 0.24 },
       "refinement": {
         "rank": 1,
@@ -152,7 +343,7 @@
           }
         ]
       },
-      "passive_note": "Rina's signature (added 2026-07-04, zenless-optimizer datamine, wengine params [0.6, 0.1, 3, 0.017, 0.5, 0.102] at R1). Advanced stat PEN Ratio 24% (0.096 x 2.5 at Lv.60). Off-field Energy Regen +0.6/s not modeled. The target-DMG-taken debuff is squad-facing (applies to the on-field DPS's damage) - toggled via the support's engine buffs."
+      "passive_note": "Rina's signature (added 2026-07-04, zenless-optimizer datamine, wengine params [0.6, 0.1, 3, 0.017, 0.5, 0.102] at R1; base ATK corrected 713 -> 684 on 2026-07-14: datamine atk_base 46, same curve as Steel Cushion's verified 684 - only matters if Rina herself attacks). Advanced stat PEN Ratio 24% (0.096 x 2.5 at Lv.60). Off-field Energy Regen +0.6/s not modeled. The target-DMG-taken debuff is squad-facing (applies to the on-field DPS's damage) - toggled via the support's engine buffs."
     },
     "joyau_dore": {
       "name": "Joyau Dore",
@@ -297,6 +488,67 @@
         ]
       },
       "passive_note": "Yuzuha's signature (added 2026-07-03: Game8 + zenless-optimizer datamine, params [30, 40, 60, 40] at R1). The self Anomaly Mastery +30..48 (40s, on her Physical EX Special/Ultimate) is NOT auto-applied - AM only matters through HER AM-scaled Additional Ability: include it in the 'anomaly_mastery' input you enter for that team buff. Advanced stat Energy Regen +60% at Lv. 60."
+    },
+    "tusks_of_fury": {
+      "name": "Tusks of Fury",
+      "base_atk": 713,
+      "advanced_stat": { "Impact%": 0.18 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "squad_buffs": [
+          {
+            "name": "Invincible Rider: squad DMG",
+            "kind": "dmg_bonus",
+            "values": [0.18, 0.225, 0.27, 0.315, 0.36],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "When ANY squad member triggers an Interrupt or Perfect Dodge: ALL squad members' DMG +18% (R1) to +36% (R5) for 20s. With Caesar's parry/block playstyle (Perfect Block, Retaliation, Defensive Assist all count as Interrupts) this is near-permanent - RAMP-UP, auto-applied. Same-name passives do not stack (one per squad). The matching Daze dealt +12%..24% is Daze BUILDUP only - not modeled."
+          }
+        ]
+      },
+      "passive_note": "Caesar's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 0.18, 0.12, 20] at R1; atk_base 48 -> Lv. 60 base 713, Impact% 7.2 x 2.5 = 18). Impact% affects Daze buildup and Caesar's shield size (300..1400% of base Impact) - tracked, not damage. The Shield-value +30% (R1) to +60% (R5) part is defense-only, note-only. Only the squad DMG% half of Invincible Rider is damage-relevant (modeled as the squad buff, auto)."
+    },
+    "box_cutter": {
+      "name": "Box Cutter",
+      "base_atk": 624,
+      "advanced_stat": { "Impact%": 0.15 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Watch Your Fingers: Physical DMG",
+          "element": "physical",
+          "per_stack_by_rank": [0.15, 0.173, 0.195, 0.218, 0.24],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "Upon launching an Aftershock: the equipper's Physical DMG +15% (R1) to +24% (R5) for 10s. Pulchra's Nightmare Shadow specials ARE Aftershocks, so this is near-permanent in her loop - RAMP-UP, auto-applied. Buffs ALL her Physical hits during the window (element-gated, no skill-tag gate). The matching Daze +10%..16% is Daze BUILDUP only - not modeled."
+        }
+      },
+      "passive_note": "Pulchra's signature, A-RANK (added 2026-07-15, zenless-optimizer datamine, wengine params [0.15, 0.1, 10] at R1; atk_base 42 -> Lv. 60 base 624, Impact% 6 x 2.5 = 15). Impact% affects Daze buildup only - tracked, not damage. Only the Physical DMG% half of Watch Your Fingers is damage-relevant (modeled as the conditional buff)."
+    },
+    "starlight_rider_faceplate": {
+      "name": "Starlight Rider Faceplate",
+      "base_atk": 713,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+        "conditional_buffs": [
+          {
+            "name": "Knight's Morale: Physical Sheer DMG",
+            "element": "physical",
+            "bracket": "sheer_dmg",
+            "modes": ["sheer"],
+            "per_stack_by_rank": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Per stack (granted on launching a Special Attack, 30s, refreshed): the equipper's Physical Sheer DMG +10% (R1) to +16% (R5), max 2 stacks. Starlight Billy's loop is built on Drive Suppression / Cool Wheelie specials - effectively always at max, RAMP-UP, auto-applied at 2. Dedicated Sheer DMG bracket, element-gated to Physical (all of his damage)."
+          }
+        ]
+      },
+      "passive_note": "Starlight Billy's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.2, 0.1, 2, 30] at R1; atk_base 48 -> Lv. 60 base 713, HP% 12 x 2.5 = 30). HP% feeds his HP -> Sheer Force conversion (0.1 SF per Max HP) - very valuable on him. The always-on CRIT Rate +20% (R1) to +32% (R5) is modeled as passive_crit (crit-capable modes). PROVISIONAL until Sheer calibration."
     }
   }
 }

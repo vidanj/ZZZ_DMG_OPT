@@ -13,7 +13,7 @@ Usage::
     from zzz_dmg_calc.engines import load_engines
 
     engines = load_engines()
-    engine = engines["dummy_engine"]
+    engine = engines["deep_sea_visitor"]
 """
 
 from __future__ import annotations

@@ -564,13 +564,17 @@ def set_tagged_dmg_bonuses(
     sets: dict[str, DiscSet],
     skill_tag: str | None,
     valid_tags: set[str] | frozenset[str] | None = None,
+    counts_as_aftershock: bool = False,
 ) -> dict[str, float]:
     """Skill-type-conditional DMG% granted by equipped 4-piece sets.
 
     Returns:
         set key -> total DMG% (fraction) for every set with >= 4 equipped
         pieces whose typed bonuses match the hit's ``skill_tag``.
-        ``skill_tag=None`` (untyped hit) matches nothing.
+        ``skill_tag=None`` (untyped hit) matches nothing. A hit that also
+        ``counts_as_aftershock`` (dual damage type — Anby S's Chain/Ult,
+        Trigger's Harmonizing Shots) additionally matches bonuses tagged
+        ``"aftershock"``.
 
     Raises:
         DiscError: unknown set key on a disc, or — when ``valid_tags`` is
@@ -599,7 +603,9 @@ def set_tagged_dmg_bonuses(
                     f"Set '{key}': typed DMG bonus names unknown skill tag "
                     f"'{bonus.skill_tag}'; valid tags: {sorted(valid_tags)}"
                 )
-            if skill_tag is not None and bonus.skill_tag == skill_tag:
+            if ((skill_tag is not None and bonus.skill_tag == skill_tag)
+                    or (counts_as_aftershock
+                        and bonus.skill_tag == "aftershock")):
                 bonuses[key] = bonuses.get(key, 0.0) + bonus.value
     return bonuses
 

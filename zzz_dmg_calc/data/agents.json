@@ -1,16 +1,17 @@
 {
   "_meta": {
-    "description": "Preset agent list: DUMMY (Ellen copy, game-validated) plus the Phase 5 anomaly roster. Phase 5 agents' stats are stored as published (see sources.md Phase 5 caveat: some tables may already include core bonuses - panel-check before trusting; Evelyn's ATK was corrected to raw 779 = 854 - 75).",
+    "description": "Preset agent list. The v1 DUMMY became the real Ellen Joe on 2026-07-14 (same key-for-key stats, game-validated; kit + Potential added). Optional 'potential' block (Potential Awakening, mindscape-like): {name, note, levels {'1'..'6'}} - levels REPLACE each other (activate at most one); effects may carry 'at_max_stacks': true to fire only at the buff's full stack count, unmultiplied. Roster includes the Phase 5 anomaly teams. Phase 5 agents' stats are stored as published (see sources.md Phase 5 caveat: some tables may already include core bonuses - panel-check before trusting; Evelyn's stats were datamine-corrected 2026-07-14: raw base ATK 854 at Lv. 60 (134 + 59 x 8.1654 growth + 239 promotion - the earlier 779 wrongly assumed the published 854 included the +75 core flat), AM 92, AP 90). AFTERSHOCK (added 2026-07-15): a skill-type tag ('aftershock' in constants.json skill_tags) for the Aftershock mechanic (Anby S / Trigger). The datamine gives many Aftershock hits TWO types (Trigger's Harmonizing Shot = Basic + Aftershock; Anby S's Chain/Ultimate also count as Aftershock via her ability) - DUAL-TYPE SUPPORT: a hit keeps its own skill tag AND can be flagged 'counts_as_aftershock' (UI checkbox / CLI prompt), so BOTH tags' gated bonuses apply to the same hit (e.g. Anby S's Ultimate takes Ultimate DMG% and Aftershock DMG% together). Pure Aftershock hits (White Thunder, Thunder Smite) just use the 'aftershock' tag. core_skill_bonuses may also carry 'crit_dmg' (Seed +28.8%), added to base CRIT DMG exactly like core crit_rate adds to base CRIT Rate.",
     "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
     "verified": "2026-07-02",
     "game_patch": "3.0",
     "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency, pen_ratio, sheer_force, hp_pct, sheer_dmg, def_red; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. RUPTURE (Phase 5 Rupture): 'core_skill_bonuses.base_hp' is FLAT base HP (scales with HP%, like base_atk with ATK%); 'sheer_force_hp_conversion' is the agent's HP -> Sheer Force rate (Yixuan 0.10, absent/0 for everyone else); 'sheer_force' effects add flat Sheer Force, 'hp_pct' joins the combat Max-HP% bracket, 'sheer_dmg' joins the dedicated Sheer DMG bracket, 'def_red' reduces enemy DEF (multiplicative with PEN Ratio; irrelevant to Sheer damage, which ignores DEF). Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
   },
   "agents": {
-    "dummy": {
-      "name": "DUMMY (Ellen copy)",
+    "ellen": {
+      "name": "Ellen Joe",
       "attribute": "ice",
       "specialty": "attack",
+      "faction": "victoria_housekeeping",
       "level": 60,
       "base_hp": 7673,
       "base_atk": 863,
@@ -22,7 +23,237 @@
         "base_atk": 75,
         "crit_rate": 0.144
       },
-      "default_engine": "dummy_engine"
+      "core_passive": {
+        "name": "Sharp-Toothed: empowered-hit CRIT DMG",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "crit_dmg", "value": 1.00, "skill_tag": "basic" },
+          { "kind": "crit_dmg", "value": 1.00, "skill_tag": "dash" },
+          { "kind": "crit_dmg", "value": 1.00, "skill_tag": "chain" },
+          { "kind": "crit_dmg", "value": 1.00, "skill_tag": "ultimate" }
+        ],
+        "note": "Core, max rank F: +100% CRIT DMG on her EMPOWERED hits - Charged Scissors (Dash Attack: Arctic Ambush), Flash Freeze Trimming / Icy Blade / Glacial Blade Wave basics (NOT the plain Saw Teeth basic chain), Chain Attacks and Ultimates. Check it only when the calculated hit is one of these (her standard loop hits all of them). Datamine coreParams [0.5..1.0]; sheet: crit_dmg_ per damage type."
+      },
+      "additional_ability": {
+        "name": "Rising Storm",
+        "max_stacks": 10,
+        "condition": { "teammate_specialty_any_of": ["stun"] },
+        "effects": [ { "kind": "dmg_bonus", "value": 0.03, "element": "ice" } ],
+        "note": "Needs a Stun squadmate OR one sharing her Attribute (ice) or Faction (Victoria Housekeeping - Lycaon satisfies all three; condition data only checks specialty, tick it for the others too). When she deals Ice DMG: subsequent Ice DMG +3% per stack for 10s, max 10 stacks (+30%) - ramps fast in her loop. Her Potential (Permafrost Zone) rides these SAME stacks. Datamine abilityParams [0.03, 10, 10]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Glacial Omen",
+          "max_stacks": 6,
+          "effects": [ { "kind": "crit_rate", "value": 0.02 } ],
+          "note": "Each Flash Freeze Charge consumed grants +2% CRIT Rate for 15s, up to 6 stacks (+12%, durations tracked separately). The doubled charge gains (3/6 per scissors hit) are resource only. Datamine mindscapeParams[0] [3, 6, 0.02, 15, 6]."
+        },
+        "2": {
+          "name": "Arctic Ocean Predator",
+          "max_stacks": 3,
+          "effects": [ { "kind": "crit_dmg", "value": 0.20, "skill_tag": "ex_special" } ],
+          "note": "Per Flash Freeze Charge HELD when using an EX Special: that attack's CRIT DMG +20%, max +60% (enter charges held, 0-3). The basic-3rd-hit -> EX combo link is QoL. Datamine mindscapeParams[1] [0.2, 0.6]."
+        },
+        "3": {
+          "name": "Overtime-Intolerant",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Endless Hoarfrost",
+          "note": "6 Flash Freeze Charges + Quick Charge + 4 Energy when a squad member Freezes/Stuns an enemy - resource only, not modeled."
+        },
+        "5": {
+          "name": "Adequate Sleep",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "The Feast Begins",
+          "max_stacks": 1,
+          "effects": [ { "kind": "pen_ratio", "value": 0.20 } ],
+          "note": "EX Special / Chain Attack / Quick Charge grants +20% PEN Ratio for 6s - effectively up through her burst. SECOND PART IS MOTION VALUE: at 3 Feast stacks, the next Charged Scissors dash consumes them for +250% DMG on that hit - enter the higher multiplier manually (x3.5 on that dash's MV). Datamine mindscapeParams[5] [0.2, 6, 1, 3, 3, 2.5]."
+        }
+      },
+      "potential": {
+        "name": "Potential Awakening: Permafrost Zone",
+        "note": "Upgrades her Additional Ability (Rising Storm): per-stack CRIT DMG + Ice RES ignore at 10 stacks. Levels replace each other - activate ONLY the level this copy has unlocked, at the SAME stack count as Rising Storm. Datamine potentialParams [[0,0.016..0.048],[0,10..],[0,0.033..0.1]].",
+        "levels": {
+          "1": {
+            "name": "Permafrost Zone Lv. 1",
+            "max_stacks": 10,
+            "effects": [
+              { "kind": "crit_dmg", "value": 0.016 },
+              { "kind": "res_shred", "value": 0.033, "element": "ice", "at_max_stacks": true }
+            ],
+            "note": "Rising Storm also grants +1.6% CRIT DMG per stack; at 10 stacks her attacks ignore 3.3% of the target's Ice RES. Enter the SAME stack count as Rising Storm."
+          },
+          "2": {
+            "name": "Permafrost Zone Lv. 2",
+            "max_stacks": 10,
+            "effects": [
+              { "kind": "crit_dmg", "value": 0.024 },
+              { "kind": "res_shred", "value": 0.05, "element": "ice", "at_max_stacks": true }
+            ],
+            "note": "Rising Storm also grants +2.4% CRIT DMG per stack; at 10 stacks her attacks ignore 5% of the target's Ice RES. Enter the SAME stack count as Rising Storm."
+          },
+          "3": {
+            "name": "Permafrost Zone Lv. 3",
+            "max_stacks": 10,
+            "effects": [
+              { "kind": "crit_dmg", "value": 0.032 },
+              { "kind": "res_shred", "value": 0.067, "element": "ice", "at_max_stacks": true }
+            ],
+            "note": "Rising Storm also grants +3.2% CRIT DMG per stack; at 10 stacks her attacks ignore 6.7% of the target's Ice RES. Enter the SAME stack count as Rising Storm."
+          },
+          "4": {
+            "name": "Permafrost Zone Lv. 4",
+            "max_stacks": 10,
+            "effects": [
+              { "kind": "crit_dmg", "value": 0.04 },
+              { "kind": "res_shred", "value": 0.083, "element": "ice", "at_max_stacks": true }
+            ],
+            "note": "Rising Storm also grants +4% CRIT DMG per stack; at 10 stacks her attacks ignore 8.3% of the target's Ice RES. Enter the SAME stack count as Rising Storm."
+          },
+          "5": {
+            "name": "Permafrost Zone Lv. 5",
+            "max_stacks": 10,
+            "effects": [
+              { "kind": "crit_dmg", "value": 0.048 },
+              { "kind": "res_shred", "value": 0.10, "element": "ice", "at_max_stacks": true }
+            ],
+            "note": "Rising Storm also grants +4.8% CRIT DMG per stack; at 10 stacks her attacks ignore 10% of the target's Ice RES. Enter the SAME stack count as Rising Storm."
+          }
+        }
+      },
+      "default_engine": "deep_sea_visitor",
+      "_note": "Ice attack DPS - the former DUMMY entry made real (2026-07-14): stats UNCHANGED and datamine-confirmed exactly (Lv. 60: HP 7673.70, ATK 863.21, DEF 606.60 - floored to the stored 7673/863/606; AM 94, AP 93, Impact 93; max core ATK+75, CRIT Rate+14.4%) - every earlier DUMMY game validation still applies to the base math. Faction: Victoria Housekeeping (shares it with Lycaon and Rina; shares ice with Lycaon). Kit added from the zenless-optimizer datamine; kit magnitudes PROVISIONAL until in-game calibration. FIRST AGENT WITH A MODELED POTENTIAL (Permafrost Zone, levels 1-5): the levels replace each other - the calculation rejects more than one active level; per-stack parts ride her Rising Storm stacks, the Ice RES ignore fires only at 10 stacks ('at_max_stacks' effects). No team-facing buffs: no team_buffs."
+    },
+    "lycaon": {
+      "name": "Von Lycaon",
+      "attribute": "ice",
+      "specialty": "stun",
+      "faction": "victoria_housekeeping",
+      "level": 60,
+      "base_hp": 8416,
+      "base_atk": 653,
+      "base_def": 606,
+      "impact": 119,
+      "anomaly_mastery": 91,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "mindscapes": {
+        "1": {
+          "name": "Full Moon Momentum",
+          "note": "EX Special Daze +12% (+10% more when fully charged, once/8s) - affects Daze buildup only, not modeled. Datamine mindscapeParams[0] [0.12, 8, 0.1]."
+        },
+        "2": {
+          "name": "Energy Feedback",
+          "note": "5 Energy on Stunning an enemy / triggering a squad Chain Attack (once/1s) - resource only, not modeled."
+        },
+        "3": {
+          "name": "Attendant Training",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Graceful Demeanor",
+          "note": "Shield = 7.5% of his Max HP when attacked mid-Basic/Special (once/15s) - defensive only, not modeled."
+        },
+        "5": {
+          "name": "Alpha Nature",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Ruthless Hunter",
+          "max_stacks": 5,
+          "effects": [ { "kind": "dmg_taken", "value": 0.10 } ],
+          "note": "SELF-ONLY: his charged-attack hits make the target take +10% DMG FROM LYCAON per stack (max 5, 12s, one stack per skill use) - only applies when HE is the attacker (this bracket entry never reaches teammates: it is a mindscape, not a team buff). Datamine mindscapeParams[5] [0.1, 5, 12]."
+        }
+      },
+      "potential": {
+        "name": "Potential Awakening: Glacial Rush",
+        "note": "Levels 1-5: while Encircle Prey is active, his off-field Basic / Dash / Dodge Counter hits raise his Impact by 5% / 7.5% / 10% / 12.5% / 15% - Impact affects Daze BUILDUP only, never proc damage, so no level is modeled (project convention; same treatment as his core's Daze +80% and Lighter's core Impact). Datamine potentialParams [[0, 0.05, 0.075, 0.1, 0.125, 0.15]]."
+      },
+      "team_buffs": [
+        {
+          "name": "Metallic Paws: Ice RES shred",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.25, "element": "ice" } ],
+          "note": "Core passive, max rank F: his EX Special (Thrill of the Hunt) / Assist Follow-Up hits reduce the target's Ice RES by 25% for 30s - constant in his loop. Enemy debuff: applies to every squad member's ICE damage (Ellen's whole kit). Datamine coreParams [0.25]."
+        },
+        {
+          "name": "Metallic Paws: non-Ice vulnerability",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_taken", "value": 0.30 } ],
+          "note": "Same core hits also make the target take +30% DMG from OTHER (non-Ice) attributes for 30s. The effect system has no 'every element EXCEPT ice' gate, so this is stored ungated: check it ONLY when the on-field attacker deals NON-Ice damage (never together with an Ice DPS; the Ice half is the RES shred above). Datamine coreParams [0.3]. Bracket PROVISIONAL (DMG-taken bracket assumed)."
+        },
+        {
+          "name": "Elegant Predator: stunned vulnerability",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [ { "kind": "daze_bonus", "value": 0.35 } ],
+          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing his Attribute (ice) or Faction (Victoria Housekeeping - Ellen/Rina qualify; condition data only checks specialty, tick it for the others too). When he hits a Stunned enemy: its Stun DMG Multiplier +35% - affects the whole squad's Stunned columns. Datamine abilityParams [0.35]."
+        }
+      ],
+      "default_engine": "the_restrained",
+      "_note": "Ice stunner (added 2026-07-14, zenless-optimizer datamine: Lv. 60 HP 8416.29, ATK 653.59, DEF 606.60 -> stored 8416/653/606; Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119, it affects buildup only anyway). Ellen's classic partner (shares ice + Victoria Housekeeping). His value: the core Ice RES -25% + non-Ice +30% DMG-taken debuffs and the +35% stunned multiplier - all modeled as team_buffs (enemy debuffs benefit his own attacks too; there is no separate attacker-role copy). Core Daze +80% on charged hits and his Encircle Prey off-field attack mechanics affect buildup/off-field damage only. His Potential (Glacial Rush) is Impact-only -> documented, not modeled. M6 is his only modeled mindscape (self vulnerability stacks). Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "lucy": {
+      "name": "Lucy (Luciana de Montefio)",
+      "attribute": "fire",
+      "specialty": "support",
+      "faction": "sons_of_calydon",
+      "level": 60,
+      "base_hp": 8025,
+      "base_atk": 583,
+      "base_def": 612,
+      "impact": 86,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "mindscapes": {
+        "1": {
+          "name": "Drill Formations",
+          "note": "2 Energy when a boar launches Spinning Swing (once/15s per boar) - resource only, not modeled."
+        },
+        "2": {
+          "name": "Little Boar Captain",
+          "note": "Her Chain Attack / Ultimate also grant Cheer On! - uptime QoL (the buff is effectively always up anyway), not modeled."
+        },
+        "3": {
+          "name": "Ironfist Overseer",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Chaos Ball Game",
+          "note": "Team-facing: allies in Cheer On! gain +10% CRIT DMG - modeled as the 'M4: Cheer On CRIT DMG' team buff (apply it there even when she attacks herself)."
+        },
+        "5": {
+          "name": "Wildland Princess",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Fierce Fangs of Fire",
+          "note": "When a Cheer On! squadmate lands an EX Special: a boar drops for 300% of the BOAR's ATK as Fire DMG (boars inherit Lucy's ATK) and extends Cheer On! by 5s (max 3 times, 30s cap) - OFF-FIELD DAMAGE (own calculate() run with Lucy as attacker, multiplier 3.0), extension is uptime QoL. Datamine mindscapeParams[5] [3, 5, 3, 30]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Cheer On!: squad flat ATK",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "base": 88, "per_step": 1, "per_value": 0.226, "cap": 600 } }
+          ],
+          "note": "Her signature buff (Special skill): after her EX Special, boar explosions grant ALL squad members + Bangboo flat ATK = {13% + 0.8% x Special Lv} of LUCY's initial ATK + {40 + 4 x Special Lv}, cap 600. Stored at Special Lv. 12: 22.6% + 88 (cap reached at ~2,265 panel ATK); 10-15s, constantly refreshed - effectively always up. Enter HER panel ATK as 'initial_atk'. Flat ATK added after the panel bracket (Zhao analogy, validation #4). Datamine: teamBuff combat.atk = min(600, (0.13+0.008xLv) x initial_atk + 40+4xLv)."
+        },
+        {
+          "name": "M4: Cheer On CRIT DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_dmg", "value": 0.10 } ],
+          "note": "Requires Lucy at Mindscape 4 (Chaos Ball Game). While Cheer On! is active: allies' CRIT DMG +10% - check together with the Cheer On! buff. Datamine mindscapeParams[3] [0.1] (teamBuff crit_dmg_)."
+        }
+      ],
+      "default_engine": "kaboom_the_cannon",
+      "_note": "A-RANK fire support (added 2026-07-14, zenless-optimizer datamine: Lv. 60 HP 8025.97, ATK 583.96, DEF 612.60 -> stored 8025/583/612; Impact 86, AM 94, AP 93; max core ATK+75, Energy Regen +0.36 - ER not modeled). Sons of Calydon (shares the faction with Lighter/Piper - satisfies their shared-faction conditions; Lighter's Elation also wants an Attack teammate). Her value: the Cheer On! squad flat ATK (scales with HER panel ATK, cap 600) + M4 CRIT DMG rider. CORE PASSIVE (Crimson Mane Guard: 3 guard boars inheriting her ATK/Impact/AP, x2 Cheer On for themselves) and ADDITIONAL ABILITY (Batter Up!: boars inherit her CRIT - needs a Rupture squadmate or shared attribute/faction) only affect the BOARS' OWN attacks - OFF-FIELD DAMAGE, deferred to that feature; no modeled core_passive/additional_ability. No Potential in the datamine. Not yet panel-checked in-game; PROVISIONAL until calibration."
     },
     "nekomata": {
       "name": "Nekomata (Nekomiya Mana)",
@@ -437,15 +668,835 @@
       "name": "Evelyn Chevalier",
       "attribute": "fire",
       "specialty": "attack",
+      "faction": "stars_of_lyra",
       "level": 60,
       "base_hp": 7788,
-      "base_atk": 779,
+      "base_atk": 854,
+      "base_def": 612,
+      "impact": 93,
+      "anomaly_mastery": 92,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "core_passive": {
+        "name": "Entangle: Binding Seal CRIT Rate",
+        "max_stacks": 1,
+        "effects": [ { "kind": "crit_rate", "value": 0.25 } ],
+        "note": "Core, max rank F: upon entering Binding Seal her CRIT Rate +25%; retained 10s after leaving the state - effectively always up in her Garrote loop. Datamine coreParams [0.125..0.25], 10s."
+      },
+      "additional_ability": {
+        "name": "Ambush Point",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["stun", "support"] },
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "chain" },
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ultimate" }
+        ],
+        "note": "Needs a Stun or Support squadmate (Lighter/Astra qualify). Her Chain Attack and Ultimate DMG +30% (applies when the calculated hit is a Chain/Ultimate). SECOND PART IS MOTION VALUE: when her CRIT Rate >= 80%, the DMG multiplier of Chain: Lunalux - Snare (829.3%) and both Ultimates (1988.5%) rises to 125% of the original - enter the x1.25 multiplier manually (project convention: MV increases are never modeled). Datamine abilityParams [0.3, 0.8, 1.25]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Dreamweave",
+          "max_stacks": 1,
+          "effects": [ { "kind": "def_red", "value": 0.12 } ],
+          "note": "SELF-ONLY: when Evelyn attacks Bound enemies (Binding Seal targets are Bound at M1) she ignores 12% of their DEF (datamine: ownBuff defIgn_, multiplies enemy DEF in the DEF zone before PEN Ratio). The 1,500 Decibels on entry and the Bound spread are resource/QoL - not modeled. Datamine mindscapeParams[0] [1500, 180, 0.12, 10]."
+        },
+        "2": {
+          "name": "Dance of Fire",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.15 } ],
+          "note": "Her ATK +15%, unconditional (panel ATK% bracket, datamine ownBuff combat.atk_). The Burning Embers refund (once/25s) and Interrupt Level parts are resource/QoL - not modeled. Datamine mindscapeParams[1] [0.15, 25]."
+        },
+        "3": {
+          "name": "Metamorphosis",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Fate's Melody",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_dmg", "value": 0.40 } ],
+          "note": "Activating a Chain Attack or Ultimate grants a shield = 10% of her Max HP; while the shield exists her CRIT DMG +40% - effectively up through her burst window. Datamine mindscapeParams[3] [0.1, 0.4]."
+        },
+        "5": {
+          "name": "Crimson Threads Like the Dawn",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Bond of Light and Shadow",
+          "note": "Chain/Ultimate grants Shadowstring Edge (20s): her Basic / Dash / Special / EX Special hits on the primary target each fire a Lunalux Garrote follow-up of 375% ATK Fire DMG, counted as CHAIN ATTACK DMG, up to 16 times - EXTRA HITS: run each as its own calc with skill multiplier 3.75 and damage type Chain Attack (her chain-tag buffs apply). Datamine mindscapeParams[5] [20, 3.75, 16]."
+        }
+      },
+      "default_engine": "heartstring_nocturne",
+      "_note": "Fire attack DPS (kit completed 2026-07-14, zenless-optimizer datamine: stats corrected to raw HP 626+59x84.9779+2149=7788, ATK 134+59x8.1654+239=854 (the old 779 wrongly subtracted the core +75 from the raw 854), DEF 612, Impact 93, AM 92, AP 90; max core ATK+75, CRIT Rate+14.4%). Faction: Stars of Lyra (shares it with Astra Yao - satisfies shared-faction team conditions). NO team-facing buffs: her whole kit is self-only, so she has no team_buffs (support role is stat-irrelevant). Her Binding Seal / Garrote states are her normal loop - the core CRIT toggle is effectively always on when she attacks. M3/M5 are motion values; M6 is extra-hit damage (see its note). Kit magnitudes PROVISIONAL until in-game calibration."
+    },
+    "astra": {
+      "name": "Astra Yao",
+      "attribute": "ether",
+      "specialty": "support",
+      "faction": "stars_of_lyra",
+      "level": 60,
+      "base_hp": 8609,
+      "base_atk": 640,
+      "base_def": 600,
+      "impact": 83,
+      "anomaly_mastery": 93,
+      "anomaly_proficiency": 92,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "core_passive": {
+        "name": "Graceful Andante: Tremolo ATK (self)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "flat_atk",
+            "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.35, "cap": 1200 } }
+        ],
+        "note": "Self part of the Tremolo buff when SHE is the attacker: flat ATK = 35% of her initial ATK (max core F), cap 1,200 (full at ~3,429 panel ATK), 20-30s - effectively always up in her loop. Same effect as her 'Graceful Andante' team buff: never apply both at once. Enter HER panel ATK as 'initial_atk'."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "12-Tone Equal Temperament",
+          "note": "Team-facing: her hits shred the target's All-Attribute RES 6%/stack (max 3, 30s) - modeled as the 'M1: enemy RES shred' team buff (apply it there even when she attacks herself). The 1,000 Decibels on entry and Song of Protection invulnerability are resource/defensive - not modeled."
+        },
+        "2": {
+          "name": "Art of Greed",
+          "note": "Team-facing: the Core Passive ATK buff is raised by a further 19% (cap +400) - modeled as the 'M2: Tremolo ATK boost' team buff (check it together with the core buff, same input; applies to her own Tremolo ATK too). The extra Tremolo + 3 Tone Clusters follow-up (once/3s) is off-field damage - deferred to that feature."
+        },
+        "3": {
+          "name": "Interwoven Staff Notation",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention). (Raises her Special skill level, which raises the Idyllic Cadenza squad DMG/CRIT DMG buff - covered in that buff's note.)"
+        },
+        "4": {
+          "name": "\"Hair Upon Your Nape\"",
+          "note": "Quick-Assist rider by incoming specialty (Attack: next Quick Assist heavy attack deals extra DMG = 300% of ASTRA's ATK; Anomaly: +50% Anomaly Buildup; Stun: +50% Daze) - the Attack part is OFF-FIELD DAMAGE (own calculate() run with Astra as attacker, multiplier 3.0), the others are buildup only. Not modeled as stat buffs. Datamine mindscapeParams[3] [15, 1, 3, 3, 0.5, 0.5]."
+        },
+        "5": {
+          "name": "Proxy and Silk String",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "We Are the World",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_rate", "value": 0.80, "skill_tag": "ex_special" },
+            { "kind": "crit_rate", "value": 0.80, "skill_tag": "special" }
+          ],
+          "note": "SELF-ONLY (off-field damage feature): during Idyllic Cadenza her Tremolo (EX Special tag) and Tone Clusters (Special tag) gain +80% CRIT Rate, and their DMG multiplier rises to 200% of the original - the x2 is MOTION VALUE: enter the doubled multiplier manually. The auto Capriccio 3rd-hit on Precise Assist (+80% CRIT Rate, once/10s) is a separate extra hit. Datamine mindscapeParams[5] [2, 0.8, 0.8, 10]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Idyllic Cadenza: squad DMG + CRIT DMG",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.20 },
+            { "kind": "crit_dmg", "value": 0.25 }
+          ],
+          "note": "After entering the Idyllic Cadenza state (her EX Special / Chain / Ultimate all enter it - effectively always up): ALL squad members' DMG +{8% + 1% x Special Lv} and CRIT DMG +{7% + 1.5% x Special Lv}. Stored at Special Lv. 12: DMG +20%, CRIT DMG +25% (Lv. 16 with M3+M5: +24% / +31% - adjust externally if needed). Datamine: teamBuff common_dmg_ / crit_dmg_, formulas 0.08+Lv x0.01 and 0.07+Lv x0.015."
+        },
+        {
+          "name": "Graceful Andante (Tremolo): squad flat ATK",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.35, "cap": 1200 } }
+          ],
+          "note": "Core passive, max rank F. During Idyllic Cadenza, when a squad member switches in (Quick Assist / Chain / Defensive / Evasive Assist) and Astra releases a Tremolo: that character (and Astra) gains flat ATK = 35% of ASTRA's initial ATK, cap 1,200 (full at ~3,429 panel ATK), 20-30s - effectively always up. Enter HER panel ATK as 'initial_atk'. Flat ATK added after the panel bracket (Zhao analogy, validation #4). Datamine coreParams [0.22..0.35], cap 1200. Same effect as her attacker-role core_passive: never apply both at once."
+        },
+        {
+          "name": "M1: enemy All-Attribute RES shred",
+          "max_stacks": 3,
+          "effects": [ { "kind": "res_shred", "value": 0.06 } ],
+          "note": "Requires Astra at Mindscape 1 (12-Tone Equal Temperament). Her attack hits reduce the target's All-Attribute RES by 6% per stack, up to 3 stacks (-18%), 30s, refreshed on repeat - easy to keep at max in her loop. Enemy debuff: applies to every squad member's damage. Datamine mindscapeParams[0] [0.06, 3, 30, ...]."
+        },
+        {
+          "name": "M2: Tremolo ATK boost (x1.19)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.0665, "cap": 400 } }
+          ],
+          "note": "Requires Astra at Mindscape 2 (Art of Greed). The Core Passive ATK buff is raised by a further 19% (cap raised by 400 to 1,600 total) - modeled as the EXTRA part (0.19 x 35% = +6.65% of her initial ATK, cap +400): check TOGETHER with the Graceful Andante buff, same 'initial_atk' input. Datamine mindscapeParams[1] [0.19, 400, ...] and sheet: min(1200+400, initial_atk x 0.35 x 1.19)."
+        }
+      ],
+      "default_engine": "elegant_vanity",
+      "_note": "Ether support (added 2026-07-14, zenless-optimizer datamine: HP 692+59x93.9358+2375=8609, ATK 103+59x5.9961+184=640, DEF 600, Impact 83, AM 93, AP 92; max core ATK+75, Energy Regen +0.36 - ER not modeled). Faction: Stars of Lyra (shares it with Evelyn). Her value: the squad DMG+20%/CRIT DMG+25% Idyllic Cadenza aura + the flat-ATK Tremolo buff (scales with HER panel ATK) + M1 RES shred. ADDITIONAL ABILITY 'Moonlit Frenzy' (needs an Attack/Anomaly/Rupture squadmate): extra Tremolo + 3 Tone Clusters follow-ups on Precise Assist / Finale - pure OFF-FIELD DAMAGE (no stat buff), deferred to that feature (own calculate() run: Tremolo 46% + growth, EX Special tag; Tone Cluster 24% + growth, Special tag). M4 likewise off-field/buildup. Her Ultimate heals (2,950 HP at Lv. 12) - not damage-relevant. Team buff values at Special Lv. 12. Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "lighter": {
+      "name": "Lighter",
+      "attribute": "fire",
+      "specialty": "stun",
+      "faction": "sons_of_calydon",
+      "level": 60,
+      "base_hp": 8253,
+      "base_atk": 722,
+      "base_def": 612,
+      "impact": 119,
+      "anomaly_mastery": 91,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "additional_ability": {
+        "name": "Fighting Spirit: Elation (Ice/Fire DMG)",
+        "max_stacks": 20,
+        "condition": { "teammate_specialty_any_of": ["attack"] },
+        "effects": [
+          { "kind": "dmg_bonus", "element": "ice",
+            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
+          { "kind": "dmg_bonus", "element": "fire",
+            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } }
+        ],
+        "note": "Needs an Attack squadmate OR another Sons of Calydon member (condition data only checks specialty - tick it for faction too). During Morale Burst, his Basic 5th-hit grants the squad Elation stacks (max 20, 30s, refreshed by any Chain Attack): each stack +1.25% Ice DMG and Fire DMG, +0.25% more per 10 Impact above 170, total cap +75% (per-stack cap 3.75%). Enter HIS panel Impact as 'impact' (base 119 + core +18 + engine). Applies to his own hits too - same effect as his 'Fighting Spirit' team buff: never apply both at once. Datamine abilityParams [20, 30, 0.0125, 170, 10, 0.0025, 0.75]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "The Champion",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "basic" } ],
+          "note": "Self part: the more powerful Finishing Move fired when his Morale runs out mid-combo deals +30% DMG (applies when the calculated hit is that Basic finisher). The Collapse upgrade (stun +5s, extra Ice/Fire RES -10%) is team-facing - modeled as the 'M1: Collapse extra Ice/Fire RES shred' team buff. Datamine mindscapeParams[0] [5, 0.1, 0.3]."
+        },
+        "2": {
+          "name": "Red Scarf",
+          "note": "Both parts team-facing: Collapse targets' Stun DMG Multiplier +25% ('M2: Collapse stunned vulnerability' team buff) and Elation raised to 120% of its value ('M2: Elation boost' team buff - check together with Fighting Spirit). Apply them there even when he attacks himself. Datamine mindscapeParams[1] [0.25, 1.2]."
+        },
+        "3": {
+          "name": "Mercenary Leader",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Sunglasses",
+          "note": "Off-field Energy Regen +10% for the on-field character and 4 Energy on Morale Burst (once/18s) - resource only, not modeled."
+        },
+        "5": {
+          "name": "Decision Maker",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Survivor",
+          "note": "Blazing Impact: his heavy strikes trigger an extra hit of 250% ATK Fire DMG (once/8s per enemy); +5% multiplier per Impact point above 170, cap +500% (at 270 Impact: 750%) - EXTRA-HIT DAMAGE: run separately with skill multiplier 2.5 + 0.05 x (Impact - 170), max 7.5. Morale recovery x2 is resource. Datamine mindscapeParams[5] [2, 2.5, 8, 170, 0.05, 5]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Morale Burst: Ice/Fire RES shred",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.15, "element": "ice" },
+            { "kind": "res_shred", "value": 0.15, "element": "fire" }
+          ],
+          "note": "Core passive: during Morale Burst, his startup light punches / jab combos reduce the target's Ice RES and Fire RES by 15% for 30s. Enemy debuff - applies to every squad member's Ice/Fire damage (including his own). Datamine coreParams ice_fire_resRed_ 0.15."
+        },
+        {
+          "name": "Fighting Spirit: squad Ice/Fire DMG (Elation)",
+          "max_stacks": 20,
+          "condition": { "teammate_specialty_any_of": ["attack"] },
+          "effects": [
+            { "kind": "dmg_bonus", "element": "ice",
+              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
+            { "kind": "dmg_bonus", "element": "fire",
+              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } }
+          ],
+          "note": "His Additional Ability as a support (needs an Attack squadmate or another Sons of Calydon member): Elation stacks buff the whole squad's Ice and Fire DMG (+1.25%/stack, Impact-scaled up to +3.75%/stack, total cap +75% at 20 stacks). Enter LIGHTER's panel Impact as 'impact'. Same effect as his attacker-role additional ability: never apply both at once."
+        },
+        {
+          "name": "M1: Collapse extra Ice/Fire RES shred",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.10, "element": "ice" },
+            { "kind": "res_shred", "value": 0.10, "element": "fire" }
+          ],
+          "note": "Requires Lighter at Mindscape 1 (The Champion). Collapse targets' Ice/Fire RES reduced by a further 10% (and stun extended 5s instead of 3s) - check TOGETHER with the Morale Burst shred (total -25%). Datamine mindscapeParams[0] [5, 0.1, 0.3]."
+        },
+        {
+          "name": "M2: Collapse stunned vulnerability",
+          "max_stacks": 1,
+          "effects": [ { "kind": "daze_bonus", "value": 0.25 } ],
+          "note": "Requires Lighter at Mindscape 2 (Red Scarf). Applying Collapse raises the target's Stun DMG Multiplier by 25% - affects the Stunned columns for the whole squad. Datamine mindscapeParams[1] [0.25, 1.2] (enemyDebuff stun_)."
+        },
+        {
+          "name": "M2: Elation boost (x1.2)",
+          "max_stacks": 20,
+          "effects": [
+            { "kind": "dmg_bonus", "element": "ice",
+              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075 } },
+            { "kind": "dmg_bonus", "element": "fire",
+              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075 } }
+          ],
+          "note": "Requires Lighter at Mindscape 2 (Red Scarf). The Elation Ice/Fire DMG buff is raised to 120% of its value (total cap 75% -> 90%) - modeled as the EXTRA 20% per stack: check TOGETHER with the Fighting Spirit buff at the SAME stack count and 'impact' input."
+        }
+      ],
+      "default_engine": "blazing_laurel",
+      "_note": "Fire stunner (added 2026-07-14, zenless-optimizer datamine: HP 677+59x91.8185+2159=8253, ATK 109+59x6.3891+237=722, DEF 612, Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119: enter panel Impact incl. it for the Elation 'impact' input). His value: the Morale Burst Ice/Fire RES shred + squad Elation Ice/Fire DMG (Impact-scaled) + M1/M2 upgrades - built for Fire (Evelyn) and Ice teams. Core Impact +2%/10 Morale consumed (max +20%) affects Daze buildup only - not modeled. His own attacker role (fire direct hits) works via the same effects (they are enemy debuffs / squad buffs that include him). M6 Blazing Impact is extra-hit damage (see note). Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "norma": {
+      "name": "Norma",
+      "attribute": "fire",
+      "specialty": "stun",
+      "faction": "roscaelifer",
+      "level": 60,
+      "base_hp": 7799,
+      "base_atk": 687,
+      "base_def": 582,
+      "impact": 106,
+      "anomaly_mastery": 99,
+      "anomaly_proficiency": 98,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "core_passive": {
+        "name": "Precise Guidance: CRIT->CRIT DMG + SF->ATK",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "crit_dmg",
+            "scaling": { "input": "initial_crit_rate", "threshold": 0.50, "per_step": 0.01, "per_value": 0.017, "cap": 0.85 } },
+          { "kind": "flat_atk",
+            "scaling": { "input": "sheer_force", "per_step": 1, "per_value": 1.25, "cap": 1200 } }
+        ],
+        "note": "SELF-ONLY, always active on her stat sheet (max core F): (1) each 1% initial CRIT Rate above 50% grants +1.7% CRIT DMG, cap +85% (full at 100% CR) - enter her panel CRIT Rate as 'initial_crit_rate' (fraction, e.g. 0.78); (2) ATK +1.25 per point of her Sheer Force, cap +1,200 (full at 960 SF) - enter her panel Sheer Force as 'sheer_force' (she deals NORMAL damage; SF only converts to ATK). The Daze +0.8%/1% CR part affects buildup only - not modeled. Datamine coreParams rows [0.5/0.01/0.017/0.85] and [1.25/1200]."
+      },
+      "additional_ability": {
+        "name": "Advantage in Numbers: En-Nah Barrage ATK (self)",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+        "effects": [ { "kind": "flat_atk", "value": 870 } ],
+        "note": "Needs an Attack or Rupture squadmate OR another Roscaelifer member (condition data only checks specialty - tick it for faction too, e.g. Velina). Self part: while her En-Nah Barrage state is active (32s after her EX Special - effectively always up) her ATK +870 flat at Lv. 60 (44 + 14/level, cap 870). The Tech Divide stacks and the squad DMG +20% are team-facing - modeled as her team_buffs (they apply to her own attacks too): never apply both at once. Datamine abilityParams [1, 0.03, 10, 0.5, 2, 44, 14, 870, 0.2]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Visionary Extremism",
+          "note": "Team-facing: Armor-Piercing / High-Explosive Warhead hits reduce the target's All-Attribute RES by 15% for 15s - modeled as the 'M1: Warhead RES shred' team buff (apply it there even when she attacks herself). The turret missile-bay duration +4s (8->12s) is uptime only."
+        },
+        "2": {
+          "name": "Axiom of Universal Unity",
+          "note": "Team-facing: Tech Divide raised to 6%/stack - modeled as the 'M2: Tech Divide boost' team buff (check together with the base Tech Divide buff). The 25 Energy on Hat Trick (once/20s) is resource only. Datamine mindscapeParams[1] [0.06, 25, 20]."
+        },
+        "3": {
+          "name": "Natural-Born Villain Paradox",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Bangboo Superiority Theory",
+          "note": "200 Decibels for Norma and the chosen Agent when she consumes Preheated Chamber to trigger a Chain Attack - resource only, not modeled."
+        },
+        "5": {
+          "name": "En-Nah Big Bang",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "The Primary Cause of Genius",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ex_special" } ],
+          "note": "High-Explosive Warhead DMG +30% - applies ONLY when the calculated hit is a High-Explosive Warhead (her EX Special / turret shots vs a STUNNED target; her other EX hits don't qualify). The Armor-Piercing Daze +30% affects buildup only. The missile barrage after any squad member stuns (200% ATK Fire DMG per missile, every 0.75s for 6s, Ultimate-tagged, once/30s) is OFF-FIELD/EXTRA-HIT damage - run each missile separately with skill multiplier 2.0 and damage type Ultimate. Datamine mindscapeParams[5] [6, 0.75, 2, 30, 0.3, 0.3]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Tech Divide: stunned vulnerability",
+          "max_stacks": 10,
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+          "effects": [ { "kind": "daze_bonus", "value": 0.03 } ],
+          "note": "Additional Ability (needs an Attack/Rupture squadmate or another Roscaelifer member). Norma's / her creations' / Combat Bangboo hits apply Tech Divide (1 stack per 0.5s, max 10): each stack raises the target's Stun DMG Multiplier by 3% (max +30%). Stacks persist until the stun ends - enter the realistic count at burst time (10 for a full loop). Stun duration +2s is QoL. Datamine abilityParams [1, 0.03, 10, 0.5, 2, ...]."
+        },
+        {
+          "name": "En-Nah Barrage: squad DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.20 } ],
+          "note": "Additional Ability (same condition). While her En-Nah Barrage state is active (32s after her EX Special, extendable - effectively always up in rotation): ALL squad members' DMG +20%. Datamine abilityParams [..., 0.2]."
+        },
+        {
+          "name": "M1: Warhead All-Attribute RES shred",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15 } ],
+          "note": "Requires Norma at Mindscape 1 (Visionary Extremism). Armor-Piercing / High-Explosive Warhead hits (her EX Special and turrets - constant in her loop) reduce the target's All-Attribute RES by 15% for 15s - applies to every squad member's damage. Datamine mindscapeParams[0] [12, 0.15, 15]."
+        },
+        {
+          "name": "M2: Tech Divide boost (+3%/stack)",
+          "max_stacks": 10,
+          "effects": [ { "kind": "daze_bonus", "value": 0.03 } ],
+          "note": "Requires Norma at Mindscape 2 (Axiom of Universal Unity). Tech Divide is raised to 6%/stack - modeled as the EXTRA +3%/stack: check TOGETHER with the Tech Divide buff at the SAME stack count (max total +60%). Datamine mindscapeParams[1] [0.06, ...]."
+        }
+      ],
+      "default_engine": "chief_sidekick",
+      "_note": "Fire stunner with a crit-DPS core (Team: Velina/Roscaelifer, added 2026-07-14, zenless-optimizer datamine: HP 627+59x85.1001+2152=7799, ATK 110+59x6.4646+196=687, DEF 582, Impact 106, AM 99, AP 98; max core ATK+75, CRIT Rate+14.4%). Faction stored as 'roscaelifer' to match Velina (datamine: RoscaeliferExternalStrategyDepartment) - they satisfy each other's shared-faction conditions. She deals NORMAL (non-Sheer) damage; her Sheer Force only converts to flat ATK via the core (enter panel SF). Her value: Tech Divide stun-multiplier stacks (+30%, +60% at M2) + En-Nah Barrage squad DMG +20% + M1 RES shred; her own attacker role (fire direct hits) uses the core CRIT DMG conversion. Her turrets/creations are off-field damage (deferred). frzyc formula sheet still a stub (TODO upstream) - kit modeled from the datamine text + params; PROVISIONAL until in-game calibration."
+    },
+    "anby_s": {
+      "name": "Soldier 0 - Anby (Anby S)",
+      "attribute": "electric",
+      "specialty": "attack",
+      "faction": "new_eridu_defense_force",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 854,
       "base_def": 612,
       "impact": 93,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
-      "default_engine": "heartstring_nocturne"
+      "core_passive": {
+        "name": "Voltage Gap: Silver Star (self)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.25 },
+          { "kind": "crit_dmg", "skill_tag": "aftershock",
+            "scaling": { "input": "initial_crit_dmg", "per_step": 0.01, "per_value": 0.0035 } }
+        ],
+        "note": "Core, max rank F, vs enemies marked with her Silver Star (her focus target - effectively always marked): (1) her DMG +25%; (2) Aftershocks gain extra CRIT DMG = 35% (30% + 5% rank-F bonus) of HER total CRIT DMG - enter her panel CRIT DMG as 'initial_crit_dmg' (fraction, e.g. 1.44) and tag the hit 'aftershock'. The CRIT DMG part is an enemy mark that also serves teammates' Aftershocks - same effect as her 'Silver Star' team buff: never apply both at once. Datamine coreParams [[0.125..0.25],[0.15..0.30],[5],[0.05]]; sheet: teamBuff FINAL crit_dmg x0.35 of her initial+combat CRIT DMG."
+      },
+      "additional_ability": {
+        "name": "Voltage Surge",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["stun", "support"] },
+        "effects": [
+          { "kind": "crit_rate", "value": 0.10 },
+          { "kind": "dmg_bonus", "value": 0.25, "skill_tag": "aftershock" }
+        ],
+        "note": "Needs a Stun or Support squadmate (Trigger qualifies). Her CRIT Rate +10%; while SHE is the active character, all squad Aftershocks deal +25% DMG to Silver Star targets (the +25% applies to hits tagged 'aftershock'). TAGGING RULE: her Chain Attack and Ultimate are TREATED AS AFTERSHOCK DMG on top of their own type - keep their own tag (chain/ultimate) and tick 'also counts as Aftershock', so Ultimate DMG% and Aftershock DMG% both land. Her Potential (Electropulse) upgrades the +25% - check the matching level TOGETHER with this. Datamine abilityParams [0.1, 0.25]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Static Charge",
+          "note": "Her EX Special triggers White Thunder's additional DMG 3 times without consuming stacks - EXTRA HITS (White Thunder instances are Aftershock-tagged; run them separately with their MV), not a stat buff."
+        },
+        "2": {
+          "name": "Fail-Safe Protocol",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_rate", "value": 0.12 } ],
+          "note": "Her CRIT Rate +12%, unconditional. The Thunder's Cry stacks (Ultimate grants 6; Azure Flash consumes them instead of White Thunder) are resource mechanics - not modeled. Datamine mindscapeParams[1] [0.12, 6, 6, 1, 1, 3]."
+        },
+        "3": {
+          "name": "Past Glory",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Silver Reverb",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.12, "element": "electric" } ],
+          "note": "SELF-ONLY: when hitting a Silver Star-marked enemy, SHE ignores 12% of its Electric RES. Datamine mindscapeParams[3] [0.12]."
+        },
+        "5": {
+          "name": "Director's Cut",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Prequel Protagonist",
+          "note": "Every 6 White Thunder additional-DMG triggers: an electromagnetic vortex deals 1,000% of her ATK as Electric DMG, counted as AFTERSHOCK DMG - EXTRA HIT: run separately with skill multiplier 10.0 and tag 'aftershock'. Datamine mindscapeParams[5] [6, 10]."
+        }
+      },
+      "potential": {
+        "name": "Awakened Potential: Electropulse",
+        "note": "Upgrades Voltage Surge: the squad Aftershock DMG bonus vs Silver Star targets rises from 25% to 34/38/42/46/50% by level. Modeled as the EXTRA part per level - check your level TOGETHER with the Voltage Surge toggle. Datamine potentialParams [[0, 0.34, 0.38, 0.42, 0.46, 0.5]].",
+        "levels": {
+          "1": {
+            "name": "Electropulse Lv. 1",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.09, "skill_tag": "aftershock" } ],
+            "note": "Voltage Surge's Aftershock DMG bonus 25% -> 34% (+9% extra). Check together with Voltage Surge; activate only your unlocked level."
+          },
+          "2": {
+            "name": "Electropulse Lv. 2",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.13, "skill_tag": "aftershock" } ],
+            "note": "Voltage Surge's Aftershock DMG bonus 25% -> 38% (+13% extra). Check together with Voltage Surge; activate only your unlocked level."
+          },
+          "3": {
+            "name": "Electropulse Lv. 3",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.17, "skill_tag": "aftershock" } ],
+            "note": "Voltage Surge's Aftershock DMG bonus 25% -> 42% (+17% extra). Check together with Voltage Surge; activate only your unlocked level."
+          },
+          "4": {
+            "name": "Electropulse Lv. 4",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.21, "skill_tag": "aftershock" } ],
+            "note": "Voltage Surge's Aftershock DMG bonus 25% -> 46% (+21% extra). Check together with Voltage Surge; activate only your unlocked level."
+          },
+          "5": {
+            "name": "Electropulse Lv. 5",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.25, "skill_tag": "aftershock" } ],
+            "note": "Voltage Surge's Aftershock DMG bonus 25% -> 50% (+25% extra). Check together with Voltage Surge; activate only your unlocked level."
+          }
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Silver Star: Aftershock CRIT DMG (CD-scaled)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_dmg", "skill_tag": "aftershock",
+              "scaling": { "input": "initial_crit_dmg", "per_step": 0.01, "per_value": 0.0035 } }
+          ],
+          "note": "Core passive as a support: Silver Star-marked enemies take extra CRIT DMG from ALL allies' Aftershocks = 35% of ANBY S's CRIT DMG. Enter HER panel CRIT DMG as 'initial_crit_dmg' (fraction, e.g. 1.44 -> +50.4%). Applies to hits tagged 'aftershock' (e.g. Trigger's Harmonizing Shots). Same effect as her attacker-role core passive: never apply both at once."
+        },
+        {
+          "name": "Voltage Surge: squad Aftershock DMG (Anby S ACTIVE)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["stun", "support"] },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.25, "skill_tag": "aftershock" } ],
+          "note": "Her Additional Ability's squad half: +25% Aftershock DMG vs Silver Star targets - ONLY WHILE ANBY S IS THE ACTIVE CHARACTER, so as an off-field support this is normally OFF (check it only when measuring a teammate's Aftershock that lands during her field time). Same effect as her attacker-role ability: never apply both at once."
+        },
+        {
+          "name": "Potential: Voltage Surge boost (enter level 1-5)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "skill_tag": "aftershock",
+              "scaling": { "input": "potential_level", "base": 0.05, "per_step": 1, "per_value": 0.04, "cap": 0.25 } }
+          ],
+          "note": "Support-role mirror of her Awakened Potential (Electropulse): enter her potential LEVEL (1-5) as 'potential_level' -> +9/13/17/21/25% extra Aftershock DMG. Check TOGETHER with the Voltage Surge team buff (same active-character caveat); leave unchecked at level 0 (the formula would wrongly give +5%)."
+        }
+      ],
+      "default_engine": "severed_innocence",
+      "_note": "Electric attack DPS, AFTERSHOCK ARCHETYPE (Team 7, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7673.70, ATK 854.76, DEF 612.60 -> stored 7673/854/612; Impact 93, AM 94, AP 93; max core ATK+75, CRIT Rate+14.4%). Faction: New Eridu Defense Force (shared with Trigger and Seed - satisfies shared-faction conditions). Her White Thunder additional-DMG instances and her Special: Thunder Smite are pure Aftershock hits (use the 'aftershock' tag); her Chain/Ultimate COUNT AS Aftershock via Voltage Surge ON TOP of their own type (keep chain/ultimate as the tag and tick 'also counts as Aftershock' - both types' bonuses apply). Kit magnitudes PROVISIONAL until in-game calibration. Her Potential exists in both roles: first-class 'potential' levels for the attacker role, and the level-scaled 'Potential: Voltage Surge boost' team buff for the support role - never apply both at once."
+    },
+    "trigger": {
+      "name": "Trigger",
+      "attribute": "electric",
+      "specialty": "stun",
+      "faction": "new_eridu_defense_force",
+      "level": 60,
+      "base_hp": 7923,
+      "base_atk": 675,
+      "base_def": 600,
+      "impact": 113,
+      "anomaly_mastery": 96,
+      "anomaly_proficiency": 95,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "mindscapes": {
+        "1": {
+          "name": "Sharpened Senses",
+          "note": "Team-facing: the core Stun DMG Multiplier debuff +20% extra - modeled as the 'M1: Soul-Searching Gaze boost' team buff (apply it there even when she attacks herself). The Purge cap/gain parts are resource only. Datamine mindscapeParams[0] [0.2, 2, 0.25, 125]."
+        },
+        "2": {
+          "name": "\"Ether Vision\"",
+          "note": "Team-facing: Hunter's Gaze stacks (1 per Aftershock, 2 per Sniper-Stance Finishing Move) grant ALL squad members +6% CRIT DMG per stack, max 4 - modeled as the 'M2: Hunter's Gaze squad CRIT DMG' team buff. Datamine mindscapeParams[1] [1, 2, 0.06, 4, 10]."
+        },
+        "3": {
+          "name": "\"Homecoming\"",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Concealment",
+          "note": "During Coordinated Support: a squadmate's Harmonizing Shot triggers Disconnect - an extra hit of 200% of TRIGGER's ATK (+120% Impact Daze) - OFF-FIELD DAMAGE: run separately with skill multiplier 2.0 (tag 'aftershock'). Datamine mindscapeParams[3] [2, 1.2]."
+        },
+        "5": {
+          "name": "Locked In",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Beyond the River of the Dead",
+          "note": "Armor Break Rounds (5 on entry, +1 per 25 Purge, max 5): Sniper-Stance hits consume one for an extra 1,200% ATK Electric hit whose DMG is raised a further +50% - EXTRA HITS: run separately with skill multiplier 12.0 x 1.5 = 18.0 (own +50% already folded; once per 0.2s). Datamine mindscapeParams[5] [5, 25, 1, 5, 1, 12, 0.5, 0.2]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Soul-Searching Gaze: Aftershock stun-mult debuff",
+          "max_stacks": 1,
+          "effects": [ { "kind": "daze_bonus", "value": 0.35 } ],
+          "note": "Core passive, max rank F: her Aftershock hits raise the target's Stun DMG Multiplier by 35% for 5s (near-permanent in her off-field loop) - benefits the whole squad's Stunned columns. QUIRK: the game applies it EVEN WHEN THE TARGET ISN'T STUNNED - the stunned columns model the stunned case; for the unstunned case use the stun-multiplier override at 135% (100 + 35) to see her effect outside stun windows. Datamine coreParams [[0.2..0.35],[5]]."
+        },
+        {
+          "name": "M1: Soul-Searching Gaze boost",
+          "max_stacks": 1,
+          "effects": [ { "kind": "daze_bonus", "value": 0.20 } ],
+          "note": "Requires Trigger at Mindscape 1 (Sharpened Senses). The core debuff is raised by a further +20% (total +55%) - check TOGETHER with Soul-Searching Gaze; the unstunned quirk applies to this part too (override 155%)."
+        },
+        {
+          "name": "M2: Hunter's Gaze squad CRIT DMG",
+          "max_stacks": 4,
+          "effects": [ { "kind": "crit_dmg", "value": 0.06 } ],
+          "note": "Requires Trigger at Mindscape 2 (Ether Vision). Her Aftershocks (1 stack) / Sniper-Stance Finishing Moves (2 stacks) grant ALL squad members +6% CRIT DMG per stack, max 4 (+24%), 10s refreshed - easy to keep near max in her loop."
+        }
+      ],
+      "default_engine": "spectral_gaze",
+      "_note": "Electric off-field stunner, AFTERSHOCK ARCHETYPE (Team 7, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7923.18, ATK 675.75, DEF 600.59 -> stored 7923/675/600; Impact 113, AM 96, AP 95; max core ATK+75, Impact+18 not folded - buildup only). New Eridu Defense Force (Anby S / Seed). Her Harmonizing Shot / Tartarus basics ARE Aftershocks (datamine: Basic + Aftershock dual type - tag them 'basic' and tick 'also counts as Aftershock', or just 'aftershock' when no basic-gated buffs are in play); they fire while OTHERS are on-field (Coordinated Support). Her value: the near-permanent +35% (+20% M1) stun-multiplier debuff and M2 squad CRIT DMG. ADDITIONAL ABILITY (Silver Lantern's Gaze - needs an Attack or same-attribute squadmate): CRIT Rate over 40% converts to Aftershock DAZE (+1.5%/1%, cap +75%) - Daze BUILDUP only, never proc damage, so NOT modeled (project convention). M4/M6 are extra-hit damage (see notes). Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "seed": {
+      "name": "Seed",
+      "attribute": "electric",
+      "specialty": "attack",
+      "faction": "new_eridu_defense_force",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 854,
+      "base_def": 612,
+      "impact": 93,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75, "crit_dmg": 0.288 },
+      "core_passive": {
+        "name": "Flower Chain Protocol: Onslaught + Besiege (self)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "flat_atk", "value": 1000 },
+          { "kind": "crit_dmg", "value": 0.30 },
+          { "kind": "dmg_bonus", "value": 0.25 }
+        ],
+        "note": "Core, max rank F, bundled self buffs (assumes her standard duo rotation): ONSLAUGHT (when her Vanguard - the highest-ATK Attack teammate - uses an EX Special, or on entering the field with a Vanguard): her ATK +1,000 flat and CRIT DMG +30% for 40s, refreshed; BESIEGE (while Onslaught AND the Vanguard's Direct Strike are both up): DMG +25%. Both effectively permanent in rotation. The Vanguard-side buffs are her team_buffs - different target, so BOTH roles can be active in a real team. Datamine coreParams [[100..1000],[0.15..0.30]] x2 + [0.125..0.25]."
+      },
+      "additional_ability": {
+        "name": "Surprise Strike",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["attack"] },
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "basic" },
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ultimate" },
+          { "kind": "res_shred", "value": 0.25, "element": "electric", "skill_tag": "basic" },
+          { "kind": "res_shred", "value": 0.25, "element": "electric", "skill_tag": "ultimate" }
+        ],
+        "note": "Needs another Attack squadmate. Her Basic Attack: Falling Petals - Slaughter / Downfall and Ultimate: Clockwork Garden - Bloom! deal +30% DMG and ignore 25% of enemy Electric RES - applies when the calculated hit is one of THOSE basics (not her plain basic chain) or the Ultimate. The 2-Energy-to-Vanguard part is resource only. Datamine abilityParams [2, 1, 0.3, 0.25]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "\"Hibernation Period\"",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_dmg", "value": 0.30, "skill_tag": "basic" } ],
+          "note": "Basic Attack: Falling Petals - Downfall gains +30% CRIT DMG (applies when the calculated hit is Downfall; her other basics don't qualify). The Steel Charge cost reductions and entry/Ultimate charge gains are resource only. Datamine mindscapeParams[0] [100, 100, 100, 40, 20, 0.3]."
+        },
+        "2": {
+          "name": "\"Light Absorption Technique\"",
+          "max_stacks": 1,
+          "effects": [ { "kind": "def_red", "value": 0.20 } ],
+          "note": "SELF part: while her Besiege is active, her DMG ignores 20% of enemy DEF (multiplies enemy DEF in the DEF zone). The Vanguard's copy is the 'M2: Vanguard DEF ignore' team buff. RIDER not modeled: each 5 Energy consumed by EX Special: Raining Iron Petals gives the FOLLOWING Slaughter +5% DMG (up to 120 Energy = +120% on that one hit) - enter as external DMG% when measuring that specific follow-up. Datamine mindscapeParams[1] [0.2, 60, 120, 5, 0.05]."
+        },
+        "3": {
+          "name": "\"A Story of Sprouting\"",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "\"Fragrant Tune\"",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "ultimate" } ],
+          "note": "While her Besiege is active: Ultimate DMG +20% (applies when the calculated hit is an Ultimate). The Decibel Generation +10% is resource only. Datamine mindscapeParams[3] [0.1, 0.2]."
+        },
+        "5": {
+          "name": "\"Time to Bloom\"",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "\"Theory of the Heart\"",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_dmg", "value": 0.50 } ],
+          "note": "Her CRIT DMG +50%, unconditional. The 3 extra laser beams on Slaughter (165% ATK each, once/3s) are EXTRA HITS - run separately with skill multiplier 1.65 each. Datamine mindscapeParams[5] [0.5, 3, 1.65, 3]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Direct Strike: Vanguard ATK + CRIT DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["attack"] },
+          "effects": [
+            { "kind": "flat_atk", "value": 1000 },
+            { "kind": "crit_dmg", "value": 0.30 }
+          ],
+          "note": "Core passive, max rank F. When SEED uses an EX Special (or on entering the field): her VANGUARD (the highest-initial-ATK Attack teammate) gains ATK +1,000 flat and CRIT DMG +30% for 40s, refreshed - effectively permanent in the duo rotation. Apply on the on-field agent ONLY IF they are her Vanguard. Flat ATK added after the panel bracket (Zhao analogy). Datamine coreParams direct_strike [100..1000]/[0.15..0.30]."
+        },
+        {
+          "name": "Besiege: Vanguard DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["attack"] },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.25 } ],
+          "note": "While the Vanguard's Direct Strike AND Seed's Onslaught are both active (standard rotation): the Vanguard's DMG +25%. Check TOGETHER with Direct Strike. Datamine coreParams [0.125..0.25]."
+        },
+        {
+          "name": "M2: Vanguard DEF ignore (Besiege)",
+          "max_stacks": 1,
+          "effects": [ { "kind": "def_red", "value": 0.20 } ],
+          "note": "Requires Seed at Mindscape 2 (Light Absorption Technique). While Besiege is active on the Vanguard: their DMG ignores 20% of enemy DEF. Check together with the Besiege buff. Same effect as her M2 self part: they apply to DIFFERENT characters, so both can be active in a real team. Datamine mindscapeParams[1] [0.2, ...]."
+        }
+      ],
+      "default_engine": "cordis_germina",
+      "_note": "Electric attack DPS / duo enabler (Team 7, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7673.70, ATK 854.76, DEF 612.60 -> stored 7673/854/612; Impact 93, AM 94, AP 93; max core ATK+75, CRIT DMG+28.8% - FIRST agent with a core CRIT DMG boost, new 'crit_dmg' core_skill_bonuses kind). New Eridu Defense Force (Anby S / Trigger). NO Aftershocks of her own (Severed Innocence's 3-stack bonus is unreachable for her). Her core is a two-way duo: SHE gets Onslaught+Besiege (core_passive), her VANGUARD (highest-ATK Attack teammate) gets Direct Strike+Besiege (team_buffs) - both halves can be active simultaneously (different targets). Steel Charge is resource-only. Her M2 Slaughter ramp is a per-hit rider (external DMG%). Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "pyrois": {
+      "name": "Pyrois",
+      "attribute": "ether",
+      "specialty": "attack",
+      "faction": "phaethon",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 849,
+      "base_def": 612,
+      "impact": 94,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "core_passive": {
+        "name": "Radiant Chariot: Sunflare + Mirage",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.40 },
+          { "kind": "crit_dmg", "value": 0.40, "skill_tag": "ultimate" }
+        ],
+        "note": "Core, max rank F, his two stat-buff Ultimate branches bundled: SUNFLARE (Lower Branch - Triumphant Return, 200s - effectively permanent once cast): DMG +40%; MIRAGE (Upper Branch - Total Annihilation, 21s): his Ultimate deals +40% CRIT DMG vs STUNNED enemies - the crit part is Ultimate-tag-gated and belongs to the STUNNED columns (ignore it when reading the unstunned columns of an Ultimate hit). The other two branches are EXTRA HITS: Left (Unbound Swordstorm): heavy attacks vs Contamination deal 900% ATK additional DMG (run separately, multiplier 9.0); Right (Eternal Imprisonment): TWO DAMAGE INSTANCES - (1) the Ultimate's own hit (skillParams 997% base +90.7%/skill level, ~1,994.7% at Lv. 12; Ultimate-tagged: takes Ultimate DMG% and Mirage's CRIT DMG) and (2) the TOTALIZE proc vs Stunned targets, 2,250% ATK 'additional DMG' = a SEPARATE instance: run it with multiplier 22.5 and damage type UNTYPED (its text lacks the 'considered X DMG' clause the datamine uses when additional hits inherit a type - cf. Norma M6 'considered Ultimate DMG' - so Ultimate-gated buffs and Mirage do NOT apply; his untagged buffs like Sunflare/ability do). Both instances resolve while the target still counts as Stunned (read the STUNNED column), then the stun ends. TOTALIZE NOTE (researched 2026-07-15): unlike HUGO's stun-time-scaled Totalize (an MV increase on ONE instance), Pyrois' is a FLAT separate hit - his datamine has no per-second rows (core rank row [11.25..22.5] only), community-confirmed (Prydwen/Icy Veins). Solar Prominence is resource-only. Datamine coreParams (0.4 Sunflare DMG; Mirage crit [0.2..0.4]; 9 / 22.5 MV rows)."
+      },
+      "additional_ability": {
+        "name": "Glorious Legion",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["stun", "support"] },
+        "effects": [ { "kind": "crit_dmg", "value": 0.40 } ],
+        "note": "Needs a Stun or Support squadmate (Nangong Yu / Nicole qualify). His CRIT DMG +40%, unconditional in combat. The 300 Decibels per Chain Attack is resource-only. Datamine abilityParams [0.4, 300]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Shadows of Twilight Past",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_rate", "value": 0.08 } ],
+          "note": "CRIT Rate +8%, unconditional. The 1,000 Decibels on entry is resource-only. Datamine mindscapeParams[0] [1000, 180, 0.08]."
+        },
+        "2": {
+          "name": "Blazing Cavalry",
+          "note": "1,500 Decibels on Ultimate: Triumphant Return (once/180s) and Decibel cap +1,000 - resource only, not modeled."
+        },
+        "3": {
+          "name": "Chains of Fate",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Balefire Horizon",
+          "note": "MINDSCAPE EFFECT HIDDEN in the current datamine (not yet revealed) - re-check after a data update."
+        },
+        "5": {
+          "name": "Youthful Guardian",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Morning Star at Dawn",
+          "note": "MINDSCAPE EFFECT HIDDEN in the current datamine (not yet revealed) - re-check after a data update."
+        }
+      },
+      "default_engine": "sol_exuvia",
+      "_note": "Ether attack DPS, the story-reward S-rank (Team 8, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7673.70, ATK 849.05, DEF 612.60 -> stored 7673/849/612; Impact 94, AM 94, AP 93; max core ATK+75, CRIT Rate+14.4%). FACTION: Phaethon (unique - no faction partners; shares ether with Nicole/Nangong Yu for their shared-attribute conditions). Unique four-branch Ultimate kit: only Sunflare (+40% DMG) and Mirage (Ult CRIT vs stunned) are stat buffs; Left/Right branches are extra-hit damage (see core note). NO team-facing buffs: no team_buffs. M4/M6 are hidden in the datamine. Kit magnitudes PROVISIONAL until in-game calibration."
+    },
+    "nicole": {
+      "name": "Nicole Demara",
+      "attribute": "ether",
+      "specialty": "support",
+      "faction": "cunning_hares",
+      "level": 60,
+      "base_hp": 8145,
+      "base_atk": 574,
+      "base_def": 622,
+      "impact": 88,
+      "anomaly_mastery": 90,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75 },
+      "mindscapes": {
+        "1": {
+          "name": "Supercharged Bomb",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.16, "skill_tag": "ex_special" } ],
+          "note": "SELF-ONLY: her EX Special DMG +16% (applies when SHE is the attacker and the hit is an EX Special). The Anomaly Buildup +16% and energy-field duration parts affect buildup/uptime only. Datamine mindscapeParams[0] [0.16, 0.1, 0.15]."
+        },
+        "2": {
+          "name": "Charging Device",
+          "note": "5 Energy when her core debuff triggers (once/15s) - resource only, not modeled."
+        },
+        "3": {
+          "name": "A Hare's Cunning",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Field Expansion",
+          "note": "Energy field diameter +3m - QoL only, not modeled."
+        },
+        "5": {
+          "name": "Industry Star",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Corrupting Energy Field",
+          "note": "Team-facing: her energy-field hits grant ALL units +1.5% CRIT Rate vs that enemy per stack (max 10) - modeled as the 'M6: squad CRIT Rate' team buff (apply it there even when she attacks herself)."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Mechanical Case: enemy DEF reduction",
+          "max_stacks": 1,
+          "effects": [ { "kind": "def_red", "value": 0.40 } ],
+          "note": "Core passive, max rank F: her enhanced bullets / Energy Field hits reduce the target's DEF by 40% for 3.5s - short but constantly re-applied in her loop (toggle for the buffed window). Multiplies enemy DEF before PEN Ratio in the DEF zone; matters for direct/anomaly attackers only (Sheer ignores DEF). Datamine coreParams [0.2..0.4]."
+        },
+        {
+          "name": "Hare of Many Burrows: squad Ether DMG",
+          "max_stacks": 1,
+          "condition": { "teammate_shares_attribute_or_faction": true },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.25, "element": "ether" } ],
+          "note": "Additional Ability - needs a squadmate sharing her Attribute (ether - Pyrois/Nangong Yu/Vivian qualify) or Faction (Cunning Hares - Nekomata). While her core debuff is on the target: ALL units' Ether DMG +25% for 3.5s (same window as the DEF shred - check together). Datamine abilityParams [0.25, 3.5]."
+        },
+        {
+          "name": "M6: squad CRIT Rate (energy-field stacks)",
+          "max_stacks": 10,
+          "effects": [ { "kind": "crit_rate", "value": 0.015 } ],
+          "note": "Requires Nicole at Mindscape 6 (Corrupting Energy Field). Her energy-field ticks grant ALL units +1.5% CRIT Rate vs that enemy per stack, max 10 (+15%), 12s each - ramps fast while her field sits on the boss. Datamine mindscapeParams[5] [0.015, 10, 12]."
+        }
+      ],
+      "default_engine": "the_vault",
+      "_note": "A-RANK ether support, the classic DEF-shredder (Team 8, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8145.84, ATK 574.17, DEF 622.62 -> stored 8145/574/622; Impact 88, AM 90, AP 93; max core ATK+75, Energy Regen +0.36 - ER not modeled). Cunning Hares (shares the faction with Nekomata; shares ether with Pyrois/Nangong Yu/Vivian/Astra). Her value: the -40% DEF core debuff + squad Ether DMG +25% (same 3.5s window) + M6 squad CRIT Rate stacks. Verified against the completed frzyc formula sheet (enemyDebuff defRed_ / teamBuff ether dmg_ / teamBuff crit_). Her attacker role: M1 EX Special +16% plus the enemy debuffs (they include her). Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "nangong": {
+      "name": "Nangong Yu",
+      "attribute": "ether",
+      "specialty": "stun",
+      "faction": "angels_of_delusion",
+      "level": 60,
+      "base_hp": 8373,
+      "base_atk": 671,
+      "base_def": 622,
+      "impact": 120,
+      "anomaly_mastery": 90,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36, "anomaly_proficiency": 120 },
+      "mindscapes": {
+        "1": {
+          "name": "Lazy Spotlight",
+          "note": "Team-facing: her EX Special / charged-basic hits shred the target's All-Attribute RES by 18% for 40s - modeled as the 'M1: enemy RES shred' team buff (apply it there even when she attacks herself). The full Downbeat on entry is resource-only. Datamine mindscapeParams[0] [0.18, 40, 180]."
+        },
+        "2": {
+          "name": "Painless Tears",
+          "note": "Three parts: (1) Vibrato's per-stack Abloom ratio +10% more (35 points/stack instead of 25 - raise the recipe override accordingly); (2) Misstep's Stun DMG Multiplier +30% more - modeled as the 'M2: Misstep boost' team buff; (3) the active character's Chain heavy hits on Stunned+anomalous enemies trigger Polarity Disorder at 25% of a full Disorder (calc recipe, once per stun period). Datamine mindscapeParams[1] [0.1, 0.3, 0.25]."
+        },
+        "3": {
+          "name": "Chips on the Scales",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Accomplice's Dance Step",
+          "max_stacks": 1,
+          "effects": [ { "kind": "anomaly_proficiency", "value": 40 } ],
+          "note": "Anomaly Proficiency +40 (flat, unconditional - feeds her Vibrato Ablooms and any anomaly she snapshots). The Anomaly Buildup +35% on her charged basic affects buildup only. Datamine mindscapeParams[3] [40, 0.35]."
+        },
+        "5": {
+          "name": "Center Stage",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "An Angel's Delusion",
+          "note": "Vibrato: Modified - the UNSTUNNED variant (stacks build outside stun; cleared when the enemy becomes Stunned): Abloom at 800/400/1,000/70/100/40% of the original anomaly DMG (ether/electric/fire/physical/ice/wind) + 25 points per stack (the usual 4 stacks: +100) - same calc recipe as the core Vibrato with these ratios. Her Daze +50% affects buildup only. Datamine mindscapeParams[5] [0.5, 1, 1, 2, 4, 8, 4, 10, 0.7, 1, 0.4, 0.25]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Prodigious Idol: squad DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.25 } ],
+          "note": "Core passive, max rank F: when her charged Basic (Adorable Explosive Impact) or EX Special hits: ALL squad members' DMG +25% for 30s, refreshed - effectively always up in rotation. (Her own Anomaly Buildup +35% / Daze +20% parts affect buildup only.) Datamine coreParams [0.25] / [0.35] / [0.2]."
+        },
+        {
+          "name": "Misstep: stunned vulnerability",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [ { "kind": "daze_bonus", "value": 0.30 } ],
+          "note": "Additional Ability (needs an Anomaly squadmate or another Angels of Delusion member, e.g. Aria - condition data only checks specialty, tick it for faction too). Her basic 3rd hit / Ultimate applies Misstep: Stun DMG Multiplier +30% (and stun +3s), once per stun period. The squad Anomaly Buildup +30/60% parts affect buildup only. Datamine abilityParams [..., 0.3, 3]."
+        },
+        {
+          "name": "M1: enemy RES shred",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.18 } ],
+          "note": "Requires Nangong Yu at Mindscape 1 (Lazy Spotlight). Her EX Special / charged-basic hits reduce the target's All-Attribute RES by 18% for 40s - effectively always up; applies to every squad member's damage."
+        },
+        {
+          "name": "M2: Misstep boost",
+          "max_stacks": 1,
+          "effects": [ { "kind": "daze_bonus", "value": 0.30 } ],
+          "note": "Requires Nangong Yu at Mindscape 2 (Painless Tears). Misstep's Stun DMG Multiplier is raised by a further +30% (total +60%) - check TOGETHER with the Misstep buff."
+        }
+      ],
+      "default_engine": "hellfire_gears",
+      "_note": "Ether stunner / Abloom enabler (Team 8, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8373.87, ATK 671.50, DEF 622.62 -> stored 8373/671/622; Impact 120, AM 90, AP 93). CORE STAT BOOSTS: ATK+75, AM+36 (coreStats) PLUS the core passive's always-on AP+120 (rank F, datamine coreParams [60..120]) - folded into core_skill_bonuses.anomaly_proficiency since it is unconditional; M4 adds +40 more as a toggle. The AM->Impact conversion (+1 Impact per initial AM point above 110) affects Daze buildup only. DEFAULT ENGINE: Hellfire Gears (USER CHOICE 2026-07-15 - her signature engine is deliberately NOT in the DB; add it later if owned). VIBRATO ABLOOM (her signature mechanic, Vivian-style CALC RECIPE): during stun, squad Ablooms/Disorders/anomaly applications build Vibrato on the enemy (max 4; cleared at max while the enemy is anomalous, once per stun) -> she triggers an Abloom = a RATIO of the ORIGINAL anomaly's per-proc DMG. Base ratios by element: ether 720 / electric 360 / fire 900 / physical 63 / ice 90 / wind 36 (%), +25 points per Vibrato stack (at the usual 4 stacks: ether 820, fire 1000, ...; M2: +35 points/stack). RECIPE: run Anomaly mode as the anomaly's element with the multiplier OVERRIDE = anomaly_base_mult x (ratio/100) - same pattern as Vivian's Abloom. Her POLARITY DISORDER (ability, Dance Prowess: 2 stacks on squad stun): 25% of a full Disorder per trigger (vs Yanagi's 15%) - same recipe as Yanagi's (Disorder mode, take 25% per trigger; does NOT clear the anomaly; also triggers with Aria per the ability text). M6 is the unstunned Vibrato variant (see its note). Not yet panel-checked; PROVISIONAL until calibration (frzyc formula sheet still a stub)."
     },
     "yanagi": {
       "name": "Tsukishiro Yanagi",
@@ -1034,6 +2085,301 @@
       ],
       "default_engine": "joyau_dore",
       "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = a SEPARATE wind-anomaly instance (its own popup) at its OWN multiplier (cyclones 145%/255%, Ultimate 680%): the stated % IS the anomaly multiplier, NOT a scale on the 12.5 Windswept base - calculate as wind Anomaly mode with the multiplier OVERRIDE (145/255/680). CONFIRMED in-game 2026-07-04 (calibration #5). VORTEX ROLE (added 2026-07-04): a physical/other-element Vortex is dealt as the INFUSED anomaly and scales off the infused-anomaly carrier's stats (e.g. Piper) - set that agent as the on-field attacker; Velina's Windswept/Vortex AMPLIFIERS then apply via her 'team_buffs' (her ability +10%, M1 20% RES ignore, M2 +15%, Windbite +150%). Her attacker-role kit (core_passive / additional_ability / mindscapes) and her team_buffs are the SAME effects for the two roles - never apply both at once. Joyau Dore's squad AP (+60 at 2 stacks) reaches Velina herself (squad buffs apply to the wearer too, since 2026-07-04) - toggle it via the on-field engine squad-buff control. Its squad-facing Vortex/Windswept DMG stacks are NOT yet modeled as a squad buff (squad_buffs lack the anomaly_buff bracket) - enter those as external Anomaly-buff % for now. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
+    },
+    "caesar": {
+      "name": "Caesar King",
+      "attribute": "physical",
+      "specialty": "defense",
+      "faction": "sons_of_calydon",
+      "level": 60,
+      "base_hp": 9526,
+      "base_atk": 636,
+      "base_def": 753,
+      "impact": 105,
+      "anomaly_mastery": 87,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": {
+        "base_atk": 75
+      },
+      "core_passive": {
+        "name": "Barrier of Resilience: Radiant Aegis ATK",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "flat_atk", "value": 1000 }
+        ],
+        "note": "Core, max rank F: activating EX Special: Parry Counter, Chain Attack, Ultimate, or a Retaliation-triggered Overpowered Shield Bash grants the squad the Radiant Aegis shield (1,400% base Impact + 1,400 - defense only) for 60s; the shield is held by the ACTIVE character and its bearer gains +1,000 flat ATK (lingers 5s after the shield breaks). ATTACKER ROLE: this toggle is Caesar's own +1,000 ATK while she is on field holding the shield. Same effect as the 'Radiant Aegis: shield-bearer ATK' team buff - NEVER apply both at once. At M2 also check the M2 mindscape (+500 more). Datamine coreParams atk [40..1000], shield [3%..14% x100 / 200..1400], 60s, 5s linger."
+      },
+      "additional_ability": {
+        "name": "Battle Spirit",
+        "max_stacks": 1,
+        "condition": {
+          "teammate_specialty_any_of": ["stun", "defense"]
+        },
+        "effects": [
+          { "kind": "dmg_taken", "value": 0.25 }
+        ],
+        "note": "Real condition: another squad member who can activate a DEFENSIVE ASSIST or who shares her Faction (Sons of Calydon - Lighter/Lucy/Pulchra/Burnice); the condition data only checks Stun/Defense specialty, tick it for the others too. When Caesar triggers Perfect Block, Retaliation, Defensive Assist, or Basic Attack: Dead End: enemies within 7m take +25% DMG from ALL squad members for 30s (enemy debuff). ATTACKER ROLE: applies to her own hits too. Same effect as the 'Battle Spirit' team buff - NEVER apply both at once. Datamine abilityParams [0.25, 30]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Spearhead Advance",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.15 }
+          ],
+          "note": "While Radiant Aegis is active: enemies within 5m of the shield bearer suffer -15% All-Attribute RES. Applies to Caesar's own hits AND the squad's - in support role use the 'M1: Radiant Aegis RES shred' team buff instead; NEVER apply both at once. The instant-shield-on-entry part (once per 300s) is uptime QoL. Datamine mindscapeParams[0] [300, 0.15]."
+        },
+        "2": {
+          "name": "Legacy of the Far Lands",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk", "value": 500 }
+          ],
+          "note": "The Radiant Aegis ATK boost is raised to 150% of its original value (1,000 -> 1,500): modeled as the EXTRA +500 - check TOGETHER with the core-passive toggle (attacker role) or the team-buff pair (support role); never mix roles. Her +10% Energy Generation Rate while the shield is up is resource-only. Datamine mindscapeParams[1] [0.1, 1.5]."
+        },
+        "3": {
+          "name": "Absolute Trust",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Aries the Battering-Ram",
+          "note": "+3 Assist Points on Chain Attack/Ultimate; below 20 Energy, Overpowered Shield Bash can be cast with 1 Assist Point (once per 5s) - resource/QoL only, not modeled. Datamine mindscapeParams[3] [3, 20, 1, 5]."
+        },
+        "5": {
+          "name": "Romantic Conquest",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Overlord's Will",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_rate", "value": 1.0, "skill_tag": "ex_special" },
+            { "kind": "crit_rate", "value": 1.0, "skill_tag": "assist_followup" },
+            { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "ex_special" },
+            { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "assist_followup" },
+            { "kind": "crit_rate", "value": 0.30 },
+            { "kind": "crit_dmg", "value": 0.60 }
+          ],
+          "note": "SELF-ONLY, three parts: (1) EX Special: Overpowered Shield Bash and Assist Follow-Up: Aiding Blade are GUARANTEED crits with +50% DMG - the tagged effects; only check them when the calculated hit is one of those two skills (NOT Parry Counter, which is also ex_special-tagged). (2) After using either skill: CRIT Rate +30% / CRIT DMG +60% for 15s on ALL her hits - the untagged effects (CRIT Rate caps at 100%). (3) The 'additional 50% DMG to the primary target' is an EXTRA HIT: run it separately at half the skill's multiplier. Datamine mindscapeParams[5] [0.5, 0.5, 0.3, 0.6, 15]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Radiant Aegis: shield-bearer ATK",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk", "value": 1000 }
+          ],
+          "note": "Core passive, max rank F: the Radiant Aegis shield is held by the ACTIVE character, granting its bearer +1,000 flat ATK (60s shield, buff lingers 5s after it expires) - effectively a squad ATK buff for whoever is attacking, near-permanent (refreshed by her EX Special/Chain/Ultimate/Retaliation). Apply it even when Caesar attacks herself - never together with her attacker-role core-passive toggle. Datamine coreParams atk [40..1000]."
+        },
+        {
+          "name": "M2: Radiant Aegis ATK boost (x1.5)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "flat_atk", "value": 500 }
+          ],
+          "note": "Requires Caesar at Mindscape 2 (Legacy of the Far Lands). The shield bearer's ATK boost is raised to 150% (1,000 -> 1,500) - modeled as the EXTRA +500: check TOGETHER with the Radiant Aegis buff."
+        },
+        {
+          "name": "Battle Spirit: squad DMG-taken debuff",
+          "max_stacks": 1,
+          "condition": {
+            "teammate_specialty_any_of": ["stun", "defense"]
+          },
+          "effects": [
+            { "kind": "dmg_taken", "value": 0.25 }
+          ],
+          "note": "Additional Ability - real condition: a squadmate who can DEFENSIVE ASSIST or shares her Faction (Sons of Calydon); the condition data only checks Stun/Defense specialty, tick it for the others too. Her Perfect Block / Retaliation / Defensive Assist / Dead End applies a 7m debuff: enemies take +25% DMG from ALL squad members for 30s - near-permanent with her parry loop. Datamine abilityParams [0.25, 30]."
+        },
+        {
+          "name": "M1: Radiant Aegis RES shred",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.15 }
+          ],
+          "note": "Requires Caesar at Mindscape 1 (Spearhead Advance). While Radiant Aegis is active, enemies within 5m of the shield bearer suffer -15% All-Attribute RES (any element). Check together with the Radiant Aegis uptime."
+        }
+      ],
+      "default_engine": "tusks_of_fury",
+      "_note": "Physical DEFENSE support / parry tank (Team 9, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 9526.23, ATK 636.69, DEF 753.86 -> stored 9526/636/753; Impact 105, AM 87, AP 90; max core ATK+75, Impact+18 not folded - buildup/shield only). Sons of Calydon (Lighter/Lucy/Pulchra/Burnice). Her value: the near-permanent +1,000 (M2: +1,500) flat-ATK Radiant Aegis on whoever is attacking, the +25% squad DMG-taken debuff, and M1 -15% All-Attribute RES. Her attacker-role kit (core_passive / additional_ability / M1 / M2) and her team_buffs are the SAME effects for the two roles - never apply both at once. Ultimate vs SHIELDED enemies +40..75% Daze and Stance Switch Impact +8..20% are Daze BUILDUP only - not modeled (project convention). Shield VALUES (1,400% Impact + 1,400 at F; Tusks of Fury +30..60%) are defense-only - not modeled. Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "billy_s": {
+      "name": "Starlight - Billy",
+      "attribute": "physical",
+      "specialty": "rupture",
+      "faction": "cunning_hares",
+      "level": 60,
+      "base_hp": 8497,
+      "base_atk": 784,
+      "base_def": 445,
+      "impact": 95,
+      "anomaly_mastery": 90,
+      "anomaly_proficiency": 89,
+      "core_skill_bonuses": {
+        "base_atk": 75,
+        "crit_rate": 0.144
+      },
+      "sheer_force_hp_conversion": 0.1,
+      "core_passive": {
+        "name": "Knight's Resolve: Drive Suppression CRIT DMG",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "crit_dmg", "value": 0.90 }
+        ],
+        "note": "Core, max rank F: each use of Special Attack: Drive Suppression grants +90% CRIT DMG for 45s (refreshed) - his loop starts from Drive Suppression, so effectively always on. UNCONDITIONAL toggle for any hit inside the window. His HP -> Sheer Force conversion (0.1 SF per Max HP point) and the Rupture 30% ATK conversion are separate always-on fields, not this toggle; ALL his Physical DMG is Sheer DMG (use the Sheer calc mode). The 60 Adrenaline on entry, Determination resource, HP costs/heals, and the 50% DMG reduction below 25% HP are resource/defense QoL. Datamine coreParams crit_dmg [0.45..0.9]."
+      },
+      "additional_ability": {
+        "name": "Blazing Starlight",
+        "max_stacks": 2,
+        "condition": {
+          "teammate_specialty_any_of": ["stun", "defense", "support"]
+        },
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "chain" },
+          { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "ultimate" },
+          { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "ex_special" },
+          { "kind": "dmg_bonus", "value": 0.20, "skill_tag": "basic" }
+        ],
+        "note": "Needs a Stun, Defense, or Support squadmate. Starlight stacks (max 2, 45s, 1 per skill use; granted by Cool Wheelie hits, the 4th Knight's Technique hit, Chain Attacks, Ultimates): each stack +20% DMG to Chain Attacks, Ultimates, EX Special Attacks, and Basic Attack: Full-Throttle Starlight. The 'basic' tag counts ONLY for Full-Throttle Starlight (NOT the Knight's Technique basic chain). Easy to keep at 2 stacks in his loop. Datamine abilityParams [1, 45, 2, 0.2]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Heroic Entrance",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.18 }
+          ],
+          "note": "Hitting an enemy with an EX Special Attack makes his DMG ignore 18% Physical RES for 45s (refreshed) - near-permanent in his loop, applies to ALL his hits inside the window. The extra +60 Adrenaline on entry is resource-only. Datamine mindscapeParams[0] [60, 0.18, 45]."
+        },
+        "2": {
+          "name": "Wasteland Automaton",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "basic" },
+            { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "ex_special" },
+            { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "ultimate" }
+          ],
+          "note": "+50% DMG to exactly THREE skills: Basic Attack: Full-Throttle Starlight ('basic' tag), EX Special Attack: Cool Wheelie ('ex_special' tag - NOT High-Traction Wheels or Rocking Footwork), and Ultimate: Starlight Knight Flying Kick - only check the toggle when the calculated hit is one of those. The Turbocharged follow-up (Drive Suppression consuming it chains into a Cool Wheelie with +50% CRIT DMG on THAT instance) is a one-instance buff: add +50% external CRIT DMG when measuring that specific hit. Datamine mindscapeParams[1] [0.5, 0.5, 1]."
+        },
+        "3": {
+          "name": "Knight's Chivalry",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Flames of Justice",
+          "max_stacks": 2,
+          "effects": [
+            { "kind": "crit_dmg", "value": 0.08 }
+          ],
+          "note": "Each Drive Suppression use grants +8% CRIT DMG, max 2 stacks, 45s refreshed - stacks on top of the core passive's +90%; at 2 stacks the pair totals +106%. The off-field HP regen below 35% is defense QoL. Datamine mindscapeParams[3] [0.08, 2, 45, 0.35, 0.35]."
+        },
+        "5": {
+          "name": "Radiant Armaments",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Starlight Knight",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "sheer_dmg", "value": 0.18, "skill_tag": "ultimate", "modes": ["sheer"] },
+            { "kind": "sheer_dmg", "value": 0.18, "skill_tag": "basic", "modes": ["sheer"] }
+          ],
+          "note": "Ultimate: Starlight Knight Flying Kick and Basic Attack: Full-Throttle Starlight Sheer DMG +18% (dedicated Sheer DMG bracket; 'basic' = Full-Throttle only). Brilliant Starlight stacks (max 6; from the 4th Knight's Technique hit / Cool Wheelie / Knight's Swagger): using the Ultimate or Full-Throttle consumes up to 2, each adding an EXTRA final-hit instance of 100% Sheer Force as Physical DMG - run each separately in Sheer mode with skill multiplier 1.0. Datamine mindscapeParams[5] [0.18, 1, 6, 1, 2, 1]."
+        }
+      },
+      "default_engine": "starlight_rider_faceplate",
+      "_note": "Physical RUPTURE (Sheer) DPS (Team 9, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8497.14, ATK 784.91, DEF 445.99 -> stored 8497/784/445; Impact 95, AM 90, AP 89; max core ATK+75, CRIT Rate+14.4%). Cunning Hares (Nicole/Nekomata/Billy). SHEER AGENT like Yixuan: Sheer Force = 30% ATK (global rupture rate) + 0.1 x Max HP (his conversion field); ALL his Physical DMG is Sheer DMG - ignore enemy DEF, use the Sheer calc mode with Sheer Force as the multiplier base. HP is his premium stat (feeds SF via the conversion; Starlight Rider Faceplate's HP% 30% doubles down). NO team buffs - pure DPS; his Additional Ability is a self buff. Sheet upstream is a TODO stub except the HP->SF conversion - kit magnitudes decoded from the loc text (exact per-rank tables). Not yet panel-checked in-game; PROVISIONAL until Sheer calibration."
+    },
+    "pulchra": {
+      "name": "Pulchra Fellini",
+      "attribute": "physical",
+      "specialty": "stun",
+      "faction": "sons_of_calydon",
+      "level": 60,
+      "base_hp": 7612,
+      "base_atk": 590,
+      "base_def": 606,
+      "impact": 118,
+      "anomaly_mastery": 92,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": {
+        "base_atk": 75
+      },
+      "additional_ability": {
+        "name": "Business Partner (Binding Trap)",
+        "max_stacks": 1,
+        "condition": {
+          "teammate_specialty_any_of": ["attack", "rupture"]
+        },
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "aftershock" }
+        ],
+        "note": "Real condition: an Attack or Rupture squadmate OR one sharing her Faction (Sons of Calydon); the condition data only checks specialty, tick it for the others too. Her Nightmare Shadow / Flashstep specials, Assist Follow-Up, Chain Attack, or Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30%. ATTACKER ROLE: her own Nightmare Shadow IS an Aftershock, so it benefits (tag 'special' + tick 'also counts as Aftershock'). Same effect as the 'Binding Trap' team buff - NEVER apply both at once. At M6 use the M6 all-type variant INSTEAD. Datamine abilityParams [15, 0.3]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Self-Interest",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_rate", "value": 0.10 }
+          ],
+          "note": "SELF-ONLY: +10% CRIT Rate on her hits against enemies affected by Binding Trap (requires the Additional Ability active and the debuff applied). Datamine mindscapeParams[0] [0.1]."
+        },
+        "2": {
+          "name": "Opportunistic",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "atk_pct", "value": 0.10 }
+          ],
+          "note": "SELF-ONLY: +10% ATK while in the Hunter's Gait state (6s after her EX Special / Assist Follow-Up / Chain / Ultimate; paused off field). Datamine mindscapeParams[1] [0.1]."
+        },
+        "3": {
+          "name": "Territorial",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Joy of the Hunt",
+          "note": "EX Special: Rending Claw - Flashstep costs 5 less Energy - resource only, not modeled. Datamine mindscapeParams[3] [5]."
+        },
+        "5": {
+          "name": "Tail Game",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Behind the Mask",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.15, "skill_tag": "special" }
+          ],
+          "note": "SELF part: Special Attack: Rending Claw - Nightmare Shadow's DMG +15% ('special' tag - only that skill; its +2 extra repeats are additional instances, run separately). TEAM part: Binding Trap now buffs ALL damage types, not just Aftershock - use the 'M6: Binding Trap all-type DMG' team buff INSTEAD of the base aftershock-only one; never both. Datamine mindscapeParams[5] [0.15, 2]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Binding Trap: squad Aftershock DMG",
+          "max_stacks": 1,
+          "condition": {
+            "teammate_specialty_any_of": ["attack", "rupture"]
+          },
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "aftershock" }
+          ],
+          "note": "Additional Ability - real condition: an Attack or Rupture squadmate OR same Faction (Sons of Calydon); the condition data only checks specialty, tick it for the others too. Her Nightmare Shadow / Flashstep / Assist Follow-Up / Chain / Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30% - applies to hits tagged 'aftershock' OR with 'also counts as Aftershock' ticked (Trigger's Harmonizing Shots, Anby S's Aftershocks, Pulchra's own Nightmare Shadow). Apply it even when Pulchra attacks herself. At Pulchra M6 use the M6 variant INSTEAD. Datamine abilityParams [15, 0.3]."
+        },
+        {
+          "name": "M6: Binding Trap all-type DMG",
+          "max_stacks": 1,
+          "condition": {
+            "teammate_specialty_any_of": ["attack", "rupture"]
+          },
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.30 }
+          ],
+          "note": "Requires Pulchra at Mindscape 6 (Behind the Mask). Binding Trap now buffs ALL damage types: +30% DMG vs the trapped target for every squad hit, no Aftershock gate. REPLACES the aftershock-only Binding Trap buff - never check both."
+        }
+      ],
+      "default_engine": "box_cutter",
+      "_note": "Physical A-RANK STUNNER / Aftershock enabler (Team 9, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7612.79, ATK 590.83, DEF 606.60 -> stored 7612/590/606; Impact 118, AM 92, AP 90; max core ATK+75, Impact+18 not folded - buildup only). Sons of Calydon (Caesar/Lighter/Lucy/Burnice). DUAL-TYPE SPECIAL: her Special Attack: Rending Claw - Nightmare Shadow is natively Special + Aftershock (datamine: damageType1 'special', damageType2 'aftershock') - tag it 'special' and tick 'also counts as Aftershock' so it takes both Special-gated and Aftershock-gated buffs (incl. her own Binding Trap and Box Cutter's trigger). Her value: the Binding Trap +30% squad Aftershock DMG debuff for Trigger / Anby S / Sons of Calydon teams. NO core_passive block: her Core (Hunter's Instinct - EX Special/Assist Follow-Up/Chain/Ultimate enters Hunter's Gait 6s, Daze SHE DEALS +30% at rank F, datamine coreParams dazeInc [0.15..0.3]) is Daze BUILDUP only, never a damage term - not modeled (unlike Trigger's core, which debuffs the target's Stun DMG Multiplier); Hunter's Gait still matters as the gate for M2. Her attacker-role Additional Ability and the 'Binding Trap' team buff are the SAME effect - never apply both at once. Not yet panel-checked in-game; PROVISIONAL until calibration."
     }
   }
 }

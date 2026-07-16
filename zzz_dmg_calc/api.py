@@ -111,7 +111,7 @@ class CalcConfig:
     """Everything the calculation needs, gathered by the front end.
 
     Attributes:
-        agent_key: Key into the preset agent list (v1: ``"dummy"``).
+        agent_key: Key into the preset agent list (e.g. ``"ellen"``).
         engine_key: Key into the engine database; ``None`` uses the agent's
             ``default_engine``.
         boss_name: Boss name as listed in the boss database.
@@ -125,6 +125,14 @@ class CalcConfig:
             skill-type-conditional bonuses — e.g. Puffer Electro 4pc's
             Ultimate DMG +20% applies only to ``"ultimate"`` hits.
             ``None`` = untyped: no tagged bonus applies. Direct hits only.
+        counts_as_aftershock: The hit ALSO counts as Aftershock DMG on
+            top of its own ``skill_tag`` (dual damage type — datamine
+            ``damageType2``): Anby S's Chain Attack / Ultimate (her
+            ability treats them as Aftershocks) and Trigger's Harmonizing
+            Shots (Basic + Aftershock). Both the hit's own tag AND
+            ``"aftershock"``-gated bonuses then apply — e.g. Anby S's
+            Ultimate takes Ultimate DMG% and Aftershock DMG% together.
+            Redundant (harmless) when ``skill_tag`` is ``"aftershock"``.
         engine_rank: Refinement rank override (1..engine.max_rank);
             ``None`` uses the engine's data-file default. Scales the
             engine's modeled passive parts (always-on DMG% and the
@@ -136,6 +144,13 @@ class CalcConfig:
             MODELED mindscapes (e.g. ``{1: 1, 6: 3}``). On/off effects
             (max_stacks 1) use stacks 1/0. Unmodeled or unknown levels
             are rejected. Direct hits only.
+        potentials: Potential Awakening level -> active stacks, same shape
+            as ``mindscapes``. A potential's levels REPLACE each other
+            (the user owns exactly one level), so AT MOST ONE level may be
+            active — more than one is rejected. Per-stack effects use the
+            same stack count as the kit buff they augment (e.g. Ellen's
+            potential rides her Rising Storm stacks); ``at_max_stacks``
+            effects fire only at full stacks.
         additional_ability_stacks: Active stacks of the on-field agent's
             Additional Ability (e.g. Nekomata's Catwalk, 0-2). The team
             condition is the user's responsibility (the UI pre-checks it);
@@ -267,10 +282,12 @@ class CalcConfig:
     boss_name: str
     skill_multiplier: float
     skill_tag: str | None = None
+    counts_as_aftershock: bool = False
     engine_key: str | None = None
     engine_rank: int | None = None
     core_passive_active: bool = False
     mindscapes: dict[int, int] = field(default_factory=dict)
+    potentials: dict[int, int] = field(default_factory=dict)
     additional_ability_stacks: int = 0
     scaling_inputs: dict[str, float] = field(default_factory=dict)
     supports: list[SupportConfig] = field(default_factory=list)
@@ -444,10 +461,24 @@ def _resolve_engine_rank(engine: Engine, override: int | None) -> int:
     return override
 
 
+def _tag_matches(gate_tag: str, hit_tag: str | None,
+                 counts_as_aftershock: bool = False) -> bool:
+    """True when a skill-tag gate matches the calculated hit.
+
+    A hit carries its selected ``hit_tag`` plus ``"aftershock"`` when it
+    also counts as one (dual damage type, datamine ``damageType2`` —
+    Anby S's Chain/Ultimate, Trigger's Harmonizing Shots), so gates on
+    EITHER type apply to the same hit.
+    """
+    return gate_tag == hit_tag or (
+        counts_as_aftershock and gate_tag == "aftershock"
+    )
+
+
 def _engine_buff_bonuses(
     engine: Engine, stacks: float, dealt_element: str, rank: int,
     mode: str = "direct", bracket: str = "dmg_bonus",
-    skill_tag: str | None = None,
+    skill_tag: str | None = None, counts_as_aftershock: bool = False,
 ) -> list[dict]:
     """Contributions of the engine's conditional buff parts at ``stacks``.
 
@@ -495,7 +526,9 @@ def _engine_buff_bonuses(
             continue
         if buff.modes is not None and mode not in buff.modes:
             continue
-        if buff.skill_tags is not None and skill_tag not in buff.skill_tags:
+        if buff.skill_tags is not None and not any(
+                _tag_matches(t, skill_tag, counts_as_aftershock)
+                for t in buff.skill_tags):
             continue
         element_gate_waived = (
             buff.modes is not None and mode in ("disorder", "vortex")
@@ -512,7 +545,7 @@ def _engine_buff_bonuses(
 def _engine_buff_bonus(
     engine: Engine, stacks: float, dealt_element: str, rank: int,
     mode: str = "direct", bracket: str = "dmg_bonus",
-    skill_tag: str | None = None,
+    skill_tag: str | None = None, counts_as_aftershock: bool = False,
 ) -> float:
     """Summed contribution of the engine's conditional buff parts.
 
@@ -524,6 +557,7 @@ def _engine_buff_bonus(
         for part in _engine_buff_bonuses(
             engine, stacks, dealt_element, rank,
             mode=mode, bracket=bracket, skill_tag=skill_tag,
+            counts_as_aftershock=counts_as_aftershock,
         )
     )
 
@@ -585,9 +619,12 @@ def _kit_contributions(
     def apply(buff, stacks: float, scaling_inputs: dict | None = None,
               owner: str = "") -> None:
         for effect in buff.effects:
-            # Skill-tag-gated effects apply only to matching hits
-            # (e.g. Catwalk buffs EX Specials only).
-            if effect.skill_tag is not None and effect.skill_tag != config.skill_tag:
+            # Skill-tag-gated effects apply only to matching hits (e.g.
+            # Catwalk buffs EX Specials only); a hit that also counts as
+            # Aftershock matches aftershock gates on top of its own tag.
+            if effect.skill_tag is not None and not _tag_matches(
+                    effect.skill_tag, config.skill_tag,
+                    config.counts_as_aftershock):
                 continue
             # Mode gate (anomaly_buff / disorder_mult_add carriers etc.).
             if effect.modes is not None and mode not in effect.modes:
@@ -620,7 +657,15 @@ def _kit_contributions(
                 value = effect.scaling.resolve(float(x))
             else:
                 value = effect.value
-            amount = value * stacks
+            if effect.at_max_stacks:
+                # Fires only at FULL stacks, at its plain value (the kit
+                # analog of the disc sets' at_max_extra — e.g. Ellen's
+                # Potential Ice RES ignore at 10 Rising Storm stacks).
+                if stacks < buff.max_stacks:
+                    continue
+                amount = value
+            else:
+                amount = value * stacks
             if effect.kind in _LIST_KINDS:
                 totals[effect.kind].append(amount)
             else:
@@ -698,6 +743,37 @@ def _kit_contributions(
                      f"Mindscape {level} ({mindscape.name})")
         if stacks:
             apply(mindscape.buff, stacks, config.scaling_inputs)
+
+    # Potential Awakening: the levels of one track replace each other, so
+    # at most ONE may be active (the user's unlocked level).
+    active_potentials = [
+        (int(level_raw), stacks)
+        for level_raw, stacks in config.potentials.items() if stacks
+    ]
+    if len(active_potentials) > 1:
+        raise CalcError(
+            f"Agent '{agent.name}': at most one Potential level may be "
+            f"active (its levels replace each other), got levels "
+            f"{sorted(level for level, _ in active_potentials)}"
+        )
+    for level_raw, stacks in config.potentials.items():
+        level = int(level_raw)
+        potential = agent.potentials.get(level)
+        if potential is None:
+            raise CalcError(
+                f"Agent '{agent.name}' has no potential level {level} in "
+                f"the data"
+            )
+        if potential.buff is None:
+            raise CalcError(
+                f"Potential level {level} ({potential.name}) has no "
+                f"modeled damage effect: {potential.note}"
+            )
+        check_stacks(stacks, potential.buff.max_stacks,
+                     f"Potential level {level} ({potential.name})")
+        if stacks:
+            apply(potential.buff, stacks, config.scaling_inputs,
+                  owner=f"{agent.potential_name} P{level}: ")
 
     # --- On-field agent's equipped-set AUTO 4pc DMG% (effectively-always-on
     # 4pc parts that ramp up in a rotation, e.g. Wuthering Salon's +18% on
@@ -901,6 +977,7 @@ def calculate(
     for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, agent.attribute, rank,
         mode="direct", skill_tag=config.skill_tag,
+        counts_as_aftershock=config.counts_as_aftershock,
     ):
         bonus_entries.append(part["value"])
         buff_items.append({
@@ -913,6 +990,7 @@ def calculate(
     tagged = set_tagged_dmg_bonuses(
         config.discs, disc_sets, config.skill_tag,
         valid_tags=frozenset(consts.skill_tags),
+        counts_as_aftershock=config.counts_as_aftershock,
     )
     bonus_entries.extend(tagged.values())
     bonus = formulas.dmg_bonus_mult(bonus_entries)
@@ -1538,6 +1616,7 @@ def calculate_sheer(
     for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, agent.attribute, rank,
         mode="sheer", skill_tag=config.skill_tag,
+        counts_as_aftershock=config.counts_as_aftershock,
     ):
         bonus_entries.append(part["value"])
         buff_items.append({
@@ -1548,6 +1627,7 @@ def calculate_sheer(
     tagged = set_tagged_dmg_bonuses(
         config.discs, disc_sets, config.skill_tag,
         valid_tags=frozenset(consts.skill_tags),
+        counts_as_aftershock=config.counts_as_aftershock,
     )
     bonus_entries.extend(tagged.values())
     bonus = formulas.dmg_bonus_mult(bonus_entries)
@@ -1560,6 +1640,7 @@ def calculate_sheer(
     for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, agent.attribute, rank,
         mode="sheer", bracket="sheer_dmg", skill_tag=config.skill_tag,
+        counts_as_aftershock=config.counts_as_aftershock,
     ):
         sheer_entries.append(part["value"])
         buff_items.append({

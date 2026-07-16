@@ -1,6 +1,6 @@
 """Agent loading and full build stat aggregation.
 
-Loads the preset agent list from ``data/agents.json`` (v1: only the DUMMY
+Loads the preset agent list from ``data/agents.json`` (v1 shipped only the DUMMY
 agent — Ellen's values, per Decision #1) and aggregates a complete build:
 
     agent base stats (incl. max core skill bonuses)
@@ -117,6 +117,12 @@ class KitEffect:
     EXPLICITLY lists a disorder/vortex mode skips the element check there
     (those bursts deal another element on the kit owner's behalf); an
     effect without ``modes`` stays element-checked in every mode.
+
+    ``at_max_stacks`` marks an effect that fires only when the buff is at
+    FULL stacks, at its plain value (never multiplied by the stack count)
+    — the kit analog of the disc sets' ``at_max_extra`` (e.g. Ellen's
+    Potential: the Ice RES ignore applies only at 10 Rising Storm stacks,
+    while the sibling CRIT DMG effect is per-stack).
     """
 
     kind: str
@@ -125,6 +131,7 @@ class KitEffect:
     scaling: EffectScaling | None = None
     modes: tuple[str, ...] | None = None
     element: str | None = None
+    at_max_stacks: bool = False
 
 
 @dataclass(frozen=True)
@@ -155,6 +162,11 @@ class Mindscape:
     ``buff`` is ``None`` for levels with no damage-relevant effect (energy,
     motion values, QoL) — they stay in the data so the kit is complete, but
     the calculation ignores them (see ``note`` for why).
+
+    Also reused for POTENTIAL AWAKENING levels (P1-P6): a potential is one
+    named upgrade track whose levels REPLACE each other (the user owns
+    exactly one level), so each level is stored as its own entry and the
+    calculation activates at most one — see :class:`Agent.potentials`.
     """
 
     level: int
@@ -192,6 +204,10 @@ class Agent:
     core_bonus_anomaly_mastery: float
     default_engine: str
     core_bonus_hp: float = 0.0
+    # Core stat boost kinds beyond the classic ATK/CRIT Rate pairs: Seed's
+    # core grants CRIT DMG (+28.8% at max rank) — added to the base CRIT
+    # DMG exactly like core CRIT Rate adds to base CRIT Rate.
+    core_bonus_crit_dmg: float = 0.0
     sheer_force_hp_conversion: float = 0.0
     specialty: str = ""          # attack / stun / anomaly / support / defense / rupture
     faction: str | None = None
@@ -199,6 +215,13 @@ class Agent:
     additional_ability: KitBuff | None = None
     mindscapes: dict[int, Mindscape] = field(default_factory=dict)
     team_buffs: tuple[KitBuff, ...] = ()
+    # Potential Awakening (2.x system, mindscape-like): one named track
+    # whose levels replace each other — the user activates at most ONE
+    # level (their unlocked one). Levels without damage-relevant effects
+    # are documentation-only, exactly like mindscapes.
+    potential_name: str = ""
+    potential_note: str = ""
+    potentials: dict[int, Mindscape] = field(default_factory=dict)
 
     def total_base_atk(self) -> float:
         """Agent-side base ATK bucket: own base + flat core skill ATK."""
@@ -342,9 +365,15 @@ def _parse_kit_buff(raw, where: str) -> KitBuff:
                 f"{where}: effect 'element' must be one of {list(ELEMENTS)}, "
                 f"got {element!r}"
             )
+        at_max = item.get("at_max_stacks", False)
+        if not isinstance(at_max, bool):
+            raise AgentError(
+                f"{where}: effect 'at_max_stacks' must be a boolean"
+            )
         effects.append(KitEffect(kind=kind, value=float(value),
                                  skill_tag=skill_tag, scaling=scaling,
-                                 modes=modes, element=element))
+                                 modes=modes, element=element,
+                                 at_max_stacks=at_max))
     condition = raw.get("condition")
     if condition is not None and not isinstance(condition, dict):
         raise AgentError(f"{where}: 'condition' must be an object")
@@ -396,6 +425,62 @@ def _parse_mindscapes(raw, agent_key: str) -> dict[int, Mindscape]:
             note=str(entry.get("note", "")),
         )
     return mindscapes
+
+
+def _parse_potential(raw, agent_key: str) -> tuple[str, str, dict[int, Mindscape]]:
+    """Validate the optional 'potential' block.
+
+    Shape: ``{"name": ..., "note": ..., "levels": {"1": {...}, ...}}`` —
+    each level entry follows the mindscape shape (a level with an
+    'effects' list is modeled; one without is documentation-only).
+    Returns ``(name, note, levels)``.
+    """
+    if raw is None:
+        return "", "", {}
+    if not isinstance(raw, dict):
+        raise AgentError(f"Agent '{agent_key}': 'potential' must be an object")
+    name = raw.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise AgentError(
+            f"Agent '{agent_key}': 'potential' is missing a valid 'name'"
+        )
+    levels_raw = raw.get("levels")
+    levels: dict[int, Mindscape] = {}
+    if levels_raw is not None:
+        if not isinstance(levels_raw, dict):
+            raise AgentError(
+                f"Agent '{agent_key}': potential 'levels' must be an object"
+            )
+        for level_str, entry in levels_raw.items():
+            if level_str not in {"1", "2", "3", "4", "5", "6"}:
+                raise AgentError(
+                    f"Agent '{agent_key}': potential level must be '1'..'6', "
+                    f"got {level_str!r}"
+                )
+            level = int(level_str)
+            if not isinstance(entry, dict):
+                raise AgentError(
+                    f"Agent '{agent_key}': potential level {level} must be "
+                    f"an object"
+                )
+            entry_name = entry.get("name")
+            if not isinstance(entry_name, str) or not entry_name.strip():
+                raise AgentError(
+                    f"Agent '{agent_key}': potential level {level} is "
+                    f"missing a 'name'"
+                )
+            buff = None
+            if entry.get("effects") is not None:
+                buff = _parse_kit_buff(
+                    entry, f"Agent '{agent_key}' potential level {level}"
+                )
+            levels[level] = Mindscape(
+                level=level,
+                name=entry_name,
+                buff=buff,
+                note=str(entry.get("note", "")),
+            )
+    return name, str(raw.get("note", "")), levels
 
 
 def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
@@ -461,6 +546,9 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
                 entry["additional_ability"], f"Agent '{key}' additional_ability"
             )
         mindscapes = _parse_mindscapes(entry.get("mindscapes"), key)
+        potential_name, potential_note, potentials = _parse_potential(
+            entry.get("potential"), key
+        )
 
         team_buffs_raw = entry.get("team_buffs", [])
         if not isinstance(team_buffs_raw, list):
@@ -493,6 +581,7 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             base_anomaly_proficiency=number(entry, "anomaly_proficiency", key),
             core_bonus_atk=float(core.get("base_atk", 0.0)),
             core_bonus_crit_rate=float(core.get("crit_rate", 0.0)),
+            core_bonus_crit_dmg=float(core.get("crit_dmg", 0.0)),
             core_bonus_anomaly_proficiency=float(
                 core.get("anomaly_proficiency", 0.0)
             ),
@@ -506,6 +595,9 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             additional_ability=additional_ability,
             mindscapes=mindscapes,
             team_buffs=team_buffs,
+            potential_name=potential_name,
+            potential_note=potential_note,
+            potentials=potentials,
         )
     return agents
 
@@ -601,7 +693,7 @@ def aggregate_build(
     build = BuildStats(
         atk=0.0,
         crit_rate=consts.base_crit_rate + agent.core_bonus_crit_rate,
-        crit_dmg=consts.base_crit_dmg,
+        crit_dmg=consts.base_crit_dmg + agent.core_bonus_crit_dmg,
         pen_ratio=0.0,
         pen_flat=0.0,
         anomaly_proficiency=(
