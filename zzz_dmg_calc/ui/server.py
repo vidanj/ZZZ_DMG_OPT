@@ -57,7 +57,9 @@ try:
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
-    from ..optimizer import OptimizeOptions, optimize, optimize_anomaly
+    from ..optimizer import (
+        OptimizeOptions, optimize, optimize_anomaly, optimize_sheer,
+    )
 except ImportError:
     # Executed directly as a script (``py server.py``): no parent package,
     # so relative imports fail. Same fallback as main.py.
@@ -79,7 +81,7 @@ except ImportError:
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
     from zzz_dmg_calc.optimizer import (
-        OptimizeOptions, optimize, optimize_anomaly,
+        OptimizeOptions, optimize, optimize_anomaly, optimize_sheer,
     )
 
 
@@ -112,16 +114,18 @@ def load_app_data() -> AppData:
     """Load every data file; raises the loader's error if one is invalid."""
     disc_data = load_disc_data()
     user_discs = load_user_discs(disc_data)
+    agents = load_agents()
     return AppData(
         consts=load_constants(),
         disc_data=disc_data,
         bosses=load_bosses(),
-        agents=load_agents(),
+        agents=agents,
         engines=load_engines(),
         disc_sets=load_disc_sets(),
         anomalies=load_anomalies(),
         user_discs=user_discs,
-        loadouts=load_loadouts(disc_data, user_discs=user_discs),
+        loadouts=load_loadouts(disc_data, user_discs=user_discs,
+                               valid_agents=set(agents)),
     )
 
 
@@ -142,11 +146,20 @@ def user_discs_payload(data: AppData) -> dict:
 
 
 def loadouts_payload(data: AppData) -> dict:
-    """Loadouts with their discs fully resolved (references included)."""
+    """Loadouts with their discs fully resolved (references included).
+
+    Each disc carries its inventory ``id`` (None for inline discs) and the
+    loadout its owning ``agent``, so the page can mark discs reserved by
+    other characters' builds.
+    """
     return {
         name: {
             "description": l.description,
-            "discs": [_disc_json(d) for d in l.discs],
+            "agent": l.agent,
+            "discs": [
+                dict(_disc_json(d), id=disc_id)
+                for d, disc_id in zip(l.discs, l.disc_ids)
+            ],
         }
         for name, l in data.loadouts.items()
     }
@@ -647,12 +660,17 @@ def run_optimization(data: AppData, body: dict) -> dict:
     The body is the same payload as ``/calculate`` plus an ``optimize``
     object: ``{objective, set_assumption, locked_slots, top_n, min_stats,
     required_4pc}``. Direct mode runs
-    :func:`~zzz_dmg_calc.optimizer.optimize`; anomaly / Disorder / Vortex
-    modes run :func:`~zzz_dmg_calc.optimizer.optimize_anomaly` (its
-    objectives and default differ — full-duration anomaly damage). The
-    response serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`;
-    each build carries its discs (with inventory ids), the 4-piece stacks
-    it was evaluated at (for Apply), and its full verified results table.
+    :func:`~zzz_dmg_calc.optimizer.optimize`; rupture mode runs
+    :func:`~zzz_dmg_calc.optimizer.optimize_sheer` (same crit objectives,
+    Sheer-specific constraint stats); anomaly / Disorder / Vortex modes
+    run :func:`~zzz_dmg_calc.optimizer.optimize_anomaly` (its objectives
+    and default differ — full-duration anomaly damage). The candidate
+    pool excludes discs reserved by another agent's loadout (the
+    requesting agent's own loadouts don't exclude anything); the response
+    reports the excluded count as ``discs_excluded``. The response
+    serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`; each
+    build carries its discs (with inventory ids), the 4-piece stacks it
+    was evaluated at (for Apply), and its full verified results table.
 
     Raises:
         ValueError: invalid body/options, an invalid baseline config, or
@@ -660,12 +678,6 @@ def run_optimization(data: AppData, body: dict) -> dict:
             messages.
     """
     mode = _body_mode(body)
-    if mode == "rupture":
-        raise ValueError(
-            "The optimizer doesn't cover Sheer (Rupture) damage yet — "
-            "that's a planned follow-up (DOCS/rupture_plan.md). Calculate "
-            "works; use it to compare builds manually meanwhile."
-        )
     config = _build_config(body)
     opt_raw = body.get("optimize") or {}
     if not isinstance(opt_raw, dict):
@@ -676,8 +688,9 @@ def run_optimization(data: AppData, body: dict) -> dict:
     min_stats_raw = opt_raw.get("min_stats") or {}
     if not isinstance(min_stats_raw, dict):
         raise ValueError("'min_stats' must be an object of stat -> minimum")
-    # Anomaly modes default to full-duration damage; direct to average.
-    default_objective = "average" if mode == "direct" else "full"
+    # Anomaly modes default to full-duration damage; the crit-table modes
+    # (direct hits and Sheer, which crits the same way) default to average.
+    default_objective = "average" if mode in ("direct", "rupture") else "full"
     options = OptimizeOptions(
         objective=str(opt_raw.get("objective") or default_objective),
         set_assumption=str(opt_raw.get("set_assumption") or "max"),
@@ -688,18 +701,38 @@ def run_optimization(data: AppData, body: dict) -> dict:
         required_4pc=opt_raw.get("required_4pc") or None,
     )
 
+    # Discs reserved by another agent's loadout are off-limits: the
+    # candidate pool keeps only unreserved discs and the requesting
+    # agent's own.
+    reserved_ids = {
+        disc_id
+        for l in data.loadouts.values()
+        if l.agent and l.agent != config.agent_key
+        for disc_id in l.disc_ids if disc_id
+    }
+    pool = {
+        disc_id: disc for disc_id, disc in data.user_discs.items()
+        if disc_id not in reserved_ids
+    }
+
     if mode == "direct":
         result = optimize(
             config, options, consts=data.consts, disc_data=data.disc_data,
             bosses=data.bosses, agents=data.agents, engines=data.engines,
-            disc_sets=data.disc_sets, user_discs=data.user_discs,
+            disc_sets=data.disc_sets, user_discs=pool,
+        )
+    elif mode == "rupture":
+        result = optimize_sheer(
+            config, options, consts=data.consts, disc_data=data.disc_data,
+            bosses=data.bosses, agents=data.agents, engines=data.engines,
+            disc_sets=data.disc_sets, user_discs=pool,
         )
     else:
         result = optimize_anomaly(
             config, options, consts=data.consts, disc_data=data.disc_data,
             bosses=data.bosses, agents=data.agents, engines=data.engines,
             disc_sets=data.disc_sets, anomaly_data=data.anomalies,
-            user_discs=data.user_discs,
+            user_discs=pool,
         )
 
     def build_option(option) -> dict:
@@ -733,6 +766,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
             str(slot): n for slot, n in result.candidates_per_slot.items()
         },
         "discs_pruned": result.discs_pruned,
+        "discs_excluded": len(data.user_discs) - len(pool),
     }
 
 
@@ -756,7 +790,8 @@ class UIRequestHandler(BaseHTTPRequestHandler):
         cls.app_data = replace(
             cls.app_data,
             user_discs=user_discs,
-            loadouts=load_loadouts(disc_data, user_discs=user_discs),
+            loadouts=load_loadouts(disc_data, user_discs=user_discs,
+                                   valid_agents=set(cls.app_data.agents)),
         )
 
     def _send_json(self, payload: dict, status: int = 200) -> None:
@@ -844,12 +879,17 @@ class UIRequestHandler(BaseHTTPRequestHandler):
         """Save the given discs as a loadout of inventory references.
 
         Each disc is first saved to the inventory (deduped), then the
-        loadout is written referencing the resulting ids. A name collision
-        without ``overwrite`` returns 400 with ``"exists": true`` so the
-        page can ask the user to confirm.
+        loadout is written referencing the resulting ids. ``agent_key``
+        records whose build it is (its discs become reserved for that
+        agent; see :func:`~zzz_dmg_calc.discs.save_loadout`). A name
+        collision without ``overwrite`` returns 400 with ``"exists":
+        true`` so the page can ask the user to confirm.
         """
         name = str(body.get("name", "")).strip()
         overwrite = bool(body.get("overwrite"))
+        agent = str(body.get("agent_key") or "").strip() or None
+        if agent is not None and agent not in self.app_data.agents:
+            raise ValueError(f"Unknown agent '{agent}'")
         discs = [_parse_disc(entry) for entry in body.get("discs", [])]
         if not discs:
             raise ValueError("A loadout needs at least one equipped disc")
@@ -865,7 +905,7 @@ class UIRequestHandler(BaseHTTPRequestHandler):
             ]
             save_loadout(
                 name, str(body.get("description", "")), disc_ids,
-                self.app_data.disc_data, overwrite=overwrite,
+                self.app_data.disc_data, agent=agent, overwrite=overwrite,
             )
             self._refresh_user_data()
         self._send_json({

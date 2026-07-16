@@ -119,6 +119,9 @@
   }
   .inv-card .badge { font-size: 11px; color: var(--muted); }
   .inv-card .badge.eq { color: var(--accent); font-weight: 700; }
+  .inv-card.reserved { opacity: .55; cursor: not-allowed; }
+  .inv-card.reserved:hover { border-color: #333; }
+  .inv-card .badge.reserved { color: var(--error); font-weight: 700; }
   .inv-card .del { color: var(--muted); background: none; border: none;
                    padding: 0 4px; font-size: 13px; }
   .inv-card .del:hover { color: var(--error); }
@@ -245,9 +248,11 @@
     max +5 on one substat, max 5 upgrades total per disc.
     <b>Save</b> stores a card's disc in your inventory
     (<code>user_discs.json</code>); <b>Equip…</b> opens the inventory
-    browser filtered to that slot.</p>
+    browser filtered to that slot. Discs in another agent's saved loadout
+    are reserved (🔒): they can't be equipped here and the optimizer
+    skips them.</p>
     <div class="toolbar" style="margin-top:12px">
-      <div><label>Save equipped discs as a new loadout — name</label>
+      <div><label>Save equipped discs as a new loadout for the selected agent — name</label>
         <input type="text" id="loadout-name" placeholder="e.g. NEKO CRIT"></div>
       <div><label>Description (optional)</label>
         <input type="text" id="loadout-desc"></div>
@@ -493,7 +498,11 @@ function buildStaticSelects() {
 function rebuildLoadoutSelect(selected) {
   const names = Object.keys(DB.loadouts);
   fillSelect($("loadout"), names.length
-    ? names.map(n => [n, `${n} — ${DB.loadouts[n].description}`])
+    ? names.map(n => {
+        const l = DB.loadouts[n];
+        const who = l.agent ? `[${agentName(l.agent)}] ` : "";
+        return [n, `${who}${n} — ${l.description}`];
+      })
     : [["", "(no saved loadouts)"]]);
   if (selected) $("loadout").value = selected;
 }
@@ -1621,6 +1630,29 @@ function sameDisc(a, b) {
     && subs(a.substats) === subs(b.substats);
 }
 
+function agentName(key) {
+  return DB.agents[key] ? DB.agents[key].name : key;
+}
+
+/* disc id -> {loadout, agent} for every inventory disc referenced by an
+   agent-tagged loadout. A disc reserved by an agent other than the
+   selected one cannot be equipped, and the optimizer skips it. */
+function discOwners() {
+  const owners = {};
+  for (const [name, l] of Object.entries(DB.loadouts || {})) {
+    if (!l.agent) continue;
+    for (const d of l.discs)
+      if (d.id && !(d.id in owners)) owners[d.id] = { loadout: name, agent: l.agent };
+  }
+  return owners;
+}
+
+/* The owner entry if the disc is reserved by another agent's loadout. */
+function reservedBy(id) {
+  const owner = discOwners()[id];
+  return owner && owner.agent !== $("agent").value ? owner : null;
+}
+
 function renderInvGrid() {
   const grid = $("inv-grid");
   grid.innerHTML = "";
@@ -1642,12 +1674,17 @@ function renderInvGrid() {
   }
 
   const equipped = equippedBySlot();
+  const owners = discOwners();
+  const me = $("agent").value;
   for (const [id, disc] of matches) {
     const card = document.createElement("div");
     card.className = "inv-card";
     card.dataset.id = id;
     if (id === invState.selected) card.classList.add("selected");
     const isEquipped = sameDisc(equipped[disc.slot], disc);
+    const owner = owners[id];
+    const reserved = owner && owner.agent !== me ? owner : null;
+    if (reserved) card.classList.add("reserved");
 
     const head = document.createElement("div");
     head.className = "inv-head";
@@ -1657,6 +1694,19 @@ function renderInvGrid() {
     right.style.display = "flex";
     right.style.gap = "6px";
     right.style.alignItems = "center";
+    if (reserved) {
+      const badge = document.createElement("span");
+      badge.className = "badge reserved";
+      badge.textContent = `🔒 ${agentName(reserved.agent)}`;
+      badge.title = `Reserved by loadout '${reserved.loadout}'`;
+      right.appendChild(badge);
+    } else if (owner) {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = `in '${owner.loadout}'`;
+      badge.title = `Part of ${agentName(owner.agent)}'s saved loadout`;
+      right.appendChild(badge);
+    }
     if (isEquipped) {
       const badge = document.createElement("span");
       badge.className = "badge eq";
@@ -1705,12 +1755,20 @@ function renderInvGrid() {
     }
 
     card.addEventListener("click", () => {
+      if (reserved) {
+        invShowError(`${id} is reserved by ${agentName(reserved.agent)} `
+          + `(loadout '${reserved.loadout}') — a disc can only be equipped `
+          + `by one character.`);
+        return;
+      }
+      invShowError("");
       invState.selected = id;
       for (const other of grid.querySelectorAll(".inv-card"))
         other.classList.toggle("selected", other === card);
       $("inv-equip").disabled = false;
     });
     card.addEventListener("dblclick", () => {
+      if (reserved) return;
       invState.selected = id;
       equipSelected();
     });
@@ -1721,6 +1779,12 @@ function renderInvGrid() {
 function equipSelected() {
   const disc = (DB.user_discs || {})[invState.selected];
   if (!disc) return;
+  const reserved = reservedBy(invState.selected);
+  if (reserved) {
+    invShowError(`${invState.selected} is reserved by `
+      + `${agentName(reserved.agent)} (loadout '${reserved.loadout}').`);
+    return;
+  }
   const target = document.querySelector(`.disc[data-slot="${disc.slot}"]`);
   fillCard(target, disc);
   refreshSetStacks();
@@ -1814,7 +1878,10 @@ async function saveNewDisc() {
 }
 
 /* Save the equipped discs as a loadout: the server stores each disc in the
-   inventory (deduped) and writes the loadout as references to their ids. */
+   inventory (deduped) and writes the loadout as references to their ids.
+   The loadout is tagged with the selected agent, reserving its discs for
+   that character (the server rejects discs already reserved by another
+   agent's loadout). */
 async function saveLoadoutFlow(overwrite = false) {
   $("error").style.display = "none";
   const name = $("loadout-name").value.trim();
@@ -1830,12 +1897,14 @@ async function saveLoadoutFlow(overwrite = false) {
   try {
     const data = await postJSON("/loadouts", {
       name, description: $("loadout-desc").value.trim(), discs, overwrite,
+      agent_key: $("agent").value,
     });
     DB.loadouts = data.loadouts;
     DB.user_discs = data.user_discs;
     rebuildLoadoutSelect(name);
-    $("save-feedback").textContent = `Loadout '${name}' saved — ${discs.length} `
-      + `discs stored in the inventory and referenced by id.`;
+    $("save-feedback").textContent = `Loadout '${name}' saved for `
+      + `${agentName($("agent").value)} — ${discs.length} `
+      + `discs stored in the inventory and reserved for them.`;
   } catch (exc) {
     if (exc.data && exc.data.exists) {
       if (confirm(`Loadout '${name}' already exists. Overwrite it?`))
@@ -1989,15 +2058,8 @@ async function runCalc() {
     renderResults(data);
     lastResults = data;
     autoCalc = true;
-    // The optimizer runs in the direct/anomaly families; Sheer (Rupture)
-    // support is a planned follow-up (DOCS/rupture_plan.md), so the
-    // panel hides there instead of offering a rejected request.
-    if (data.mode === "rupture") {
-      $("optimize-wrap").style.display = "none";
-    } else {
-      syncOptimizeObjectives(data.mode);
-      $("optimize-wrap").style.display = "";
-    }
+    syncOptimizeObjectives(data.mode);
+    $("optimize-wrap").style.display = "";
   } catch (exc) {
     showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
@@ -2205,18 +2267,34 @@ const OBJECTIVE_OPTIONS = {
     ["per_proc_stunned", "Per proc/tick (stunned)"],
   ],
 };
+// Sheer (Rupture) crits like a direct hit: SheerResults shares the six
+// crit-table fields, so the rupture family reuses the direct labels but
+// keeps its own key (its constraint stats differ — see CONSTRAINT_DEFS).
+OBJECTIVE_OPTIONS.rupture = OBJECTIVE_OPTIONS.direct;
 
 /* Repopulate the "Optimize for" dropdown for the mode just calculated:
-   direct-hit crit fields, or the anomaly family (default full duration).
-   Keeps the current selection when it stays valid. */
+   crit fields (direct/rupture) or the anomaly family (default full
+   duration). Keeps the current selection when it stays valid, and swaps
+   the constraint rows' stat lists to the new family's. */
 function syncOptimizeObjectives(mode) {
-  const family = mode === "direct" ? "direct" : "anomaly";
+  const family = mode === "direct" || mode === "rupture" ? mode : "anomaly";
   const sel = $("opt-objective");
   if (sel.dataset.family === family) return;
   const prev = sel.value;
   fillSelect(sel, OBJECTIVE_OPTIONS[family]);
   sel.dataset.family = family;
   if (OBJECTIVE_OPTIONS[family].some(([k]) => k === prev)) sel.value = prev;
+  // Constraint stats differ per family: refill each row's stat select,
+  // keeping still-valid picks and dropping rows whose stat the new
+  // family doesn't support (a stale row would be rejected server-side).
+  const defs = CONSTRAINT_DEFS[family];
+  for (const row of document.querySelectorAll(".constraint-row")) {
+    const statSel = row.querySelector(".constraint-stat");
+    const prevStat = statSel.value;
+    if (!defs.some(([k]) => k === prevStat)) { row.remove(); continue; }
+    fillSelect(statSel, defs.map(([k, label]) => [k, `min ${label}`]));
+    statSel.value = prevStat;
+  }
 }
 
 /* The comparison rows to show for a given objective (anomaly vs direct). */
@@ -2231,18 +2309,36 @@ function lockedSlots() {
     .map(card => parseInt(card.dataset.slot, 10));
 }
 
-/* Minimum-stat constraints (§11 E3). Percent-like stats are entered as
-   human percentages and converted to fractions on send; the totals are
-   the ones the results panel reports. */
-const CONSTRAINT_DEFS = [
-  ["ATK", "ATK (final panel)", false],
-  ["CRIT Rate", "CRIT Rate %", true],
-  ["CRIT DMG", "CRIT DMG %", true],
-  ["PEN Ratio", "PEN Ratio %", true],
-  ["PEN", "PEN (flat)", false],
-  ["Anomaly Proficiency", "Anomaly Proficiency", false],
-  ["Anomaly Mastery", "Anomaly Mastery", false],
-];
+/* Minimum-stat constraints per optimizer family (§11 E3). Percent-like
+   stats are entered as human percentages and converted to fractions on
+   send; the totals are the ones the results panel reports. Sheer
+   (Rupture) has no DEF zone and no AP/AM scaling, so its family swaps
+   PEN/AP/AM for HP and Sheer Force. */
+const CONSTRAINT_DEFS = {
+  direct: [
+    ["ATK", "ATK (final panel)", false],
+    ["CRIT Rate", "CRIT Rate %", true],
+    ["CRIT DMG", "CRIT DMG %", true],
+    ["PEN Ratio", "PEN Ratio %", true],
+    ["PEN", "PEN (flat)", false],
+    ["Anomaly Proficiency", "Anomaly Proficiency", false],
+    ["Anomaly Mastery", "Anomaly Mastery", false],
+  ],
+  rupture: [
+    ["ATK", "ATK (final panel)", false],
+    ["HP", "HP (final panel)", false],
+    ["CRIT Rate", "CRIT Rate %", true],
+    ["CRIT DMG", "CRIT DMG %", true],
+    ["Sheer Force", "Sheer Force", false],
+  ],
+};
+CONSTRAINT_DEFS.anomaly = CONSTRAINT_DEFS.direct;
+
+/* The active optimizer family / its constraint stats (set by
+   syncOptimizeObjectives after each Calculate; "direct" before one). */
+function constraintDefs() {
+  return CONSTRAINT_DEFS[$("opt-objective").dataset.family || "direct"];
+}
 
 function addConstraintRow(stat = "CRIT Rate", value = "") {
   const row = document.createElement("div");
@@ -2251,7 +2347,7 @@ function addConstraintRow(stat = "CRIT Rate", value = "") {
     + "gap:8px;margin-bottom:8px;align-items:end";
   const sel = document.createElement("select");
   sel.className = "constraint-stat";
-  fillSelect(sel, CONSTRAINT_DEFS.map(([k, label]) => [k, `min ${label}`]));
+  fillSelect(sel, constraintDefs().map(([k, label]) => [k, `min ${label}`]));
   sel.value = stat;
   const num = document.createElement("input");
   num.type = "number"; num.min = 0; num.step = "any";
@@ -2268,7 +2364,7 @@ function addConstraintRow(stat = "CRIT Rate", value = "") {
 
 function collectMinStats() {
   const pctStats = new Set(
-    CONSTRAINT_DEFS.filter(([, , pct]) => pct).map(([k]) => k));
+    constraintDefs().filter(([, , pct]) => pct).map(([k]) => k));
   const minStats = {};
   for (const row of document.querySelectorAll(".constraint-row")) {
     const stat = row.querySelector(".constraint-stat").value;
@@ -2349,7 +2445,7 @@ function fmtDelta(delta) {
 
 function constraintsNote(data) {
   const pctStats = new Set(
-    CONSTRAINT_DEFS.filter(([, , pct]) => pct).map(([k]) => k));
+    constraintDefs().filter(([, , pct]) => pct).map(([k]) => k));
   const parts = [];
   if (data.required_4pc) {
     const set = DB.sets[data.required_4pc];
@@ -2373,7 +2469,11 @@ function renderOptimize(data) {
   const searched = `<p class="note">Searched ${data.combos_evaluated
     .toLocaleString("en-US")} build(s)`
     + (data.discs_pruned ? `, ${data.discs_pruned} dominated disc(s) skipped`
-                         : "") + `.</p>`;
+                         : "")
+    + (data.discs_excluded
+        ? `, ${data.discs_excluded} disc(s) reserved by other agents' `
+          + `loadouts excluded`
+        : "") + `.</p>`;
 
   if (data.already_optimal) {
     out.innerHTML = `
@@ -2643,7 +2743,15 @@ async function init() {
   $("add-slot").addEventListener("change", renderAddMains);
   $("add-main").addEventListener("change", renderAddSubs);
   $("load-loadout").addEventListener("click", () => {
-    loadLoadout($("loadout").value); onAnyChange();
+    const name = $("loadout").value;
+    const loadout = DB.loadouts[name];
+    if (loadout && loadout.agent && loadout.agent !== $("agent").value) {
+      const who = agentName(loadout.agent);
+      if (!confirm(`'${name}' belongs to ${who}, not the selected agent. `
+          + `Load it anyway to inspect it? Its discs stay reserved for `
+          + `${who}.`)) return;
+    }
+    loadLoadout(name); onAnyChange();
   });
   $("clear-discs").addEventListener("click", () => { clearDiscs(); onAnyChange(); });
   $("save-loadout").addEventListener("click", () => saveLoadoutFlow());

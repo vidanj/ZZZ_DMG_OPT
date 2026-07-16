@@ -612,17 +612,26 @@ def set_tagged_dmg_bonuses(
 
 @dataclass(frozen=True)
 class Loadout:
-    """A named, pre-validated set of discs from ``data/loadouts.json``."""
+    """A named, pre-validated set of discs from ``data/loadouts.json``.
+
+    ``agent`` (an agent key) marks the loadout as that character's build:
+    its inventory discs are reserved — other agents cannot equip them and
+    the optimizer skips them. ``None`` reserves nothing (legacy/test sets).
+    ``disc_ids`` parallels ``discs``; inline (non-inventory) discs are None.
+    """
 
     name: str
     description: str
     discs: tuple[Disc, ...]
+    agent: str | None = None
+    disc_ids: tuple[str | None, ...] = ()
 
 
 def load_loadouts(
     disc_data: DiscData, path: Path = LOADOUTS_FILE,
     user_discs: dict[str, Disc] | None = None,
     user_discs_path: Path = USER_DISCS_FILE,
+    valid_agents: set[str] | None = None,
 ) -> dict[str, Loadout]:
     """Load saved disc loadouts and validate every disc in them.
 
@@ -636,10 +645,14 @@ def load_loadouts(
     Args:
         user_discs: Already-loaded inventory to resolve references against;
             ``None`` loads it from ``user_discs_path``.
+        valid_agents: Known agent keys to validate each loadout's optional
+            ``agent`` against; ``None`` skips the check (callers without
+            the agents database).
 
     Raises:
         DiscError: on malformed JSON, invalid discs, unknown ``disc_id``
-            references, or duplicate slots within a loadout.
+            references, an unknown ``agent`` key, or duplicate slots
+            within a loadout.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -660,7 +673,19 @@ def load_loadouts(
         if not isinstance(entry, dict) or not isinstance(entry.get("discs"), list):
             raise DiscError(f"Loadout '{name}' must be an object with a 'discs' list")
 
+        agent = entry.get("agent")
+        if agent is not None:
+            if not isinstance(agent, str) or not agent.strip():
+                raise DiscError(
+                    f"Loadout '{name}': 'agent' must be a non-empty string"
+                )
+            if valid_agents is not None and agent not in valid_agents:
+                raise DiscError(
+                    f"Loadout '{name}': unknown agent '{agent}'"
+                )
+
         discs: list[Disc] = []
+        disc_ids: list[str | None] = []
         seen_slots: set[int] = set()
         for disc_raw in entry["discs"]:
             if not isinstance(disc_raw, dict):
@@ -673,7 +698,9 @@ def load_loadouts(
                         f"(not in the user disc inventory)"
                     )
                 disc = user_discs[disc_id]
+                disc_ids.append(disc_id)
             else:
+                disc_ids.append(None)
                 try:
                     disc = Disc(
                         slot=disc_raw["slot"],
@@ -696,6 +723,8 @@ def load_loadouts(
             name=name,
             description=str(entry.get("description", "")),
             discs=tuple(discs),
+            agent=agent,
+            disc_ids=tuple(disc_ids),
         )
     return loadouts
 
@@ -849,14 +878,20 @@ def delete_user_disc(
 
 def save_loadout(
     name: str, description: str, disc_ids: list[str], disc_data: DiscData,
-    *, overwrite: bool = False, path: Path = LOADOUTS_FILE,
-    user_discs_path: Path = USER_DISCS_FILE,
+    *, agent: str | None = None, overwrite: bool = False,
+    path: Path = LOADOUTS_FILE, user_discs_path: Path = USER_DISCS_FILE,
 ) -> None:
     """Save a loadout as references into the user disc inventory.
 
+    ``agent`` records whose build this is; its discs become reserved for
+    that agent. A disc already reserved by a different agent's loadout is
+    rejected — a disc can only be equipped by one character. Loadouts of
+    the same agent may share discs freely (alternate builds).
+
     Raises:
-        DiscError: empty name, unknown disc ids, duplicate slots, a name
-            collision without ``overwrite``, or a malformed loadouts file.
+        DiscError: empty name, unknown disc ids, duplicate slots, a disc
+            reserved by another agent's loadout, a name collision without
+            ``overwrite``, or a malformed loadouts file.
     """
     if not isinstance(name, str) or not name.strip():
         raise DiscError("Loadout name must be a non-empty string")
@@ -885,10 +920,26 @@ def save_loadout(
     if name in raw["loadouts"] and not overwrite:
         raise DiscError(f"Loadout '{name}' already exists")
 
-    raw["loadouts"][name] = {
-        "description": str(description or ""),
-        "discs": [{"disc_id": disc_id} for disc_id in disc_ids],
-    }
+    for other_name, other in raw["loadouts"].items():
+        if other_name == name or not isinstance(other, dict):
+            continue
+        other_agent = other.get("agent")
+        if not other_agent or other_agent == agent:
+            continue
+        for disc_raw in other.get("discs", []):
+            if (isinstance(disc_raw, dict)
+                    and disc_raw.get("disc_id") in disc_ids):
+                raise DiscError(
+                    f"Disc '{disc_raw['disc_id']}' is reserved by "
+                    f"'{other_name}' (agent '{other_agent}'); a disc can "
+                    f"only be equipped by one character"
+                )
+
+    entry: dict = {"description": str(description or "")}
+    if agent:
+        entry["agent"] = agent
+    entry["discs"] = [{"disc_id": disc_id} for disc_id in disc_ids]
+    raw["loadouts"][name] = entry
     _atomic_write_json(path, raw)
 
 

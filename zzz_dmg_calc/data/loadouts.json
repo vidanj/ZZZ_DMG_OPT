@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "Saved disc loadouts, selectable at the CLI's disc step instead of manual entry. User data, not game data — edit freely.",
-    "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1, counting the initial roll). Every disc is validated against discs.json on load: 4 distinct substats, no duplicate of the main stat, <= 6 rolls each, <= 9 total, unique slots per loadout. Optional 'set' names a key in disc_sets.json."
+    "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1, counting the initial roll). Every disc is validated against discs.json on load: 4 distinct substats, no duplicate of the main stat, <= 6 rolls each, <= 9 total, unique slots per loadout. Optional 'set' names a key in disc_sets.json. Optional 'agent' (an agents.json key) reserves the loadout's inventory discs for that character: other agents cannot equip them and the optimizer skips them; loadouts without 'agent' reserve nothing."
   },
   "loadouts": {
     "TEST": {
@@ -77,6 +77,7 @@
     },
     "NEKO Build 1": {
       "description": "Crit build Neko 02072026",
+      "agent": "nekomata",
       "discs": [
         {
           "disc_id": "d3"
@@ -100,6 +101,7 @@
     },
     "Piper Build 1": {
       "description": "Piper Yuzuha Velina",
+      "agent": "piper",
       "discs": [
         {
           "disc_id": "d165"
@@ -123,6 +125,7 @@
     },
     "Velina Build 1": {
       "description": "Piper Yuzuha Velina",
+      "agent": "velina",
       "discs": [
         {
           "disc_id": "d130"
@@ -146,6 +149,7 @@
     },
     "Yanagi Build 1": {
       "description": "Yanagi Rina Vivian",
+      "agent": "yanagi",
       "discs": [
         {
           "disc_id": "d144"
@@ -169,6 +173,7 @@
     },
     "vivian Build": {
       "description": "Vivian Yanagi Rina",
+      "agent": "vivian",
       "discs": [
         {
           "disc_id": "d136"
@@ -192,6 +197,7 @@
     },
     "Yixuan Build 1": {
       "description": "Qingyi Lucia Yixuan",
+      "agent": "yixuan",
       "discs": [
         {
           "disc_id": "d157"
