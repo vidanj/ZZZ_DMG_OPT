@@ -576,6 +576,78 @@ def _sets_coverage_ok(discs) -> bool:
     return all(count >= 2 for count in counts.values())
 
 
+#: Kit scaling inputs that ARE panel stats of their owner (agents.json
+#: scaling.input names -> the min-stat constraint that panel maps to).
+#: When the MAIN agent's active kit reads one, the user-entered value is
+#: auto-added as a minimum-stat constraint: the search varies the panel,
+#: but the buff amount stays at the entered constant — the constraint
+#: guarantees no build is credited a bigger buff than its panel supports
+#: (builds above the entered value under-credit, the conservative
+#: direction). Non-stat inputs (potential_level, power_at_smash) and
+#: stats the mode can't constrain (Norma's sheer_force outside rupture)
+#: are skipped. Supports' inputs are THEIR panels — never constrained.
+_SCALING_INPUT_STAT = {
+    "initial_atk": "ATK",
+    "initial_max_hp": "HP",
+    "initial_crit_rate": "CRIT Rate",
+    "initial_crit_dmg": "CRIT DMG",
+    "initial_energy_regen": "Energy Regen",
+    "impact": "Impact",
+    "anomaly_mastery": "Anomaly Mastery",
+    "pen_ratio": "PEN Ratio",
+    "sheer_force": "Sheer Force",
+}
+
+
+def _apply_scaling_input_minimums(
+    agent: Agent, config: CalcConfig, options: OptimizeOptions,
+    constraint_stats: tuple,
+) -> OptimizeOptions:
+    """Fold the MAIN agent's self-scaling kit inputs into ``min_stats``.
+
+    Collects the scaling inputs read by the agent's ACTIVE kit buffs
+    (core passive / additional ability / mindscapes / potentials / own
+    team buffs — mirroring ``_kit_contributions``) and, for each that
+    maps to a constrainable panel stat, raises the minimum to the
+    entered value. An explicit user minimum above the input wins.
+    """
+    active_buffs = []
+    if config.core_passive_active and agent.core_passive is not None:
+        active_buffs.append(agent.core_passive)
+    if config.additional_ability_stacks and agent.additional_ability is not None:
+        active_buffs.append(agent.additional_ability)
+    for level, stacks in config.mindscapes.items():
+        entry = agent.mindscapes.get(int(level))
+        if stacks and entry is not None and entry.buff is not None:
+            active_buffs.append(entry.buff)
+    for level, stacks in config.potentials.items():
+        entry = agent.potentials.get(int(level))
+        if stacks and entry is not None and entry.buff is not None:
+            active_buffs.append(entry.buff)
+    own_by_name = {b.name: b for b in agent.team_buffs}
+    for name, stacks in config.own_team_buffs.items():
+        buff = own_by_name.get(name)
+        if stacks and buff is not None:
+            active_buffs.append(buff)
+
+    minimums = dict(options.min_stats)
+    changed = False
+    for buff in active_buffs:
+        for effect in buff.effects:
+            if effect.scaling is None:
+                continue
+            stat = _SCALING_INPUT_STAT.get(effect.scaling.input)
+            value = config.scaling_inputs.get(effect.scaling.input)
+            if (stat is None or stat not in constraint_stats
+                    or isinstance(value, bool)
+                    or not isinstance(value, (int, float)) or value <= 0):
+                continue
+            if float(value) > minimums.get(stat, 0.0):
+                minimums[stat] = float(value)
+                changed = True
+    return replace(options, min_stats=minimums) if changed else options
+
+
 def _baseline_mains_ok(
     equipped: dict[int, Disc],
     slot_main_stats: dict[int, str],
@@ -885,6 +957,11 @@ def optimize(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Self-scaling kit inputs (the MAIN's own panel values) become
+    # minimum-stat constraints — the buff amount is a constant, so no
+    # build may fall short of the panel the user claimed.
+    options = _apply_scaling_input_minimums(agent, config, options,
+                                            CONSTRAINT_STATS)
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     dominance_indices = _dominance_indices(_DAMAGE_INDICES,
@@ -1311,6 +1388,11 @@ def optimize_anomaly(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Self-scaling kit inputs (the MAIN's own panel values) become
+    # minimum-stat constraints — the buff amount is a constant, so no
+    # build may fall short of the panel the user claimed.
+    options = _apply_scaling_input_minimums(agent, config, options,
+                                            CONSTRAINT_STATS)
     engine_key = (config.engine_key if config.engine_key is not None
                   else agent.default_engine)
     engine = engines[engine_key]
@@ -1782,6 +1864,11 @@ def optimize_sheer(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Self-scaling kit inputs (the MAIN's own panel values) become
+    # minimum-stat constraints — the buff amount is a constant, so no
+    # build may fall short of the panel the user claimed.
+    options = _apply_scaling_input_minimums(agent, config, options,
+                                            SHEER_CONSTRAINT_STATS)
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     # HP only matters when the agent converts it to Sheer Force; for a
