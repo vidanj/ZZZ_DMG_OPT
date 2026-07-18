@@ -664,17 +664,6 @@
       },
       "set": "BRANCH_BLADE_SONG"
     },
-    "d64": {
-      "slot": 4,
-      "main_stat": "CRIT Rate",
-      "substats": {
-        "ATK%": 1,
-        "CRIT DMG": 3,
-        "Anomaly Proficiency": 2,
-        "PEN": 2
-      },
-      "set": "BRANCH_BLADE_SONG"
-    },
     "d65": {
       "slot": 4,
       "main_stat": "CRIT Rate",
@@ -1172,7 +1161,7 @@
     },
     "d110": {
       "slot": 6,
-      "main_stat": "Anomaly Mastery",
+      "main_stat": "Anomaly Mastery%",
       "substats": {
         "DEF%": 1,
         "CRIT Rate": 3,
@@ -1492,7 +1481,7 @@
     },
     "d143": {
       "slot": 6,
-      "main_stat": "Anomaly Mastery",
+      "main_stat": "Anomaly Mastery%",
       "substats": {
         "PEN": 1,
         "ATK%": 1,
@@ -1558,7 +1547,7 @@
     },
     "d149": {
       "slot": 6,
-      "main_stat": "Anomaly Mastery",
+      "main_stat": "Anomaly Mastery%",
       "substats": {
         "PEN": 2,
         "HP": 1,
@@ -2258,7 +2247,7 @@
     },
     "d214": {
       "slot": 6,
-      "main_stat": "Anomaly Mastery",
+      "main_stat": "Anomaly Mastery%",
       "substats": {
         "Anomaly Proficiency": 3,
         "CRIT DMG": 1,
@@ -3292,6 +3281,3358 @@
         "PEN": 3
       },
       "set": "ASTRAL_VOICE"
+    },
+    "d311": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 3,
+        "ATK%": 1,
+        "HP%": 1,
+        "Anomaly Proficiency": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d312": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "PEN": 2,
+        "CRIT Rate": 3,
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d313": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 1,
+        "ATK%": 3,
+        "CRIT DMG": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d314": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 1,
+        "CRIT Rate": 3,
+        "CRIT DMG": 4,
+        "DEF": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d315": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 3,
+        "PEN": 1,
+        "DEF": 2,
+        "CRIT Rate": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d316": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 3,
+        "ATK": 2,
+        "CRIT Rate": 1,
+        "HP%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d317": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 3,
+        "CRIT DMG": 1,
+        "ATK%": 2,
+        "CRIT Rate": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d318": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "DEF": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "HP%": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d319": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 2,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 2,
+        "ATK": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d320": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 2,
+        "CRIT DMG": 3,
+        "ATK": 2,
+        "ATK%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d321": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "ATK": 3,
+        "PEN": 2,
+        "CRIT Rate": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d322": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 2,
+        "CRIT DMG": 3,
+        "DEF%": 1,
+        "ATK": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d323": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "ATK": 2,
+        "CRIT Rate": 2,
+        "PEN": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d324": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 4,
+        "ATK%": 1,
+        "PEN": 1,
+        "HP%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d325": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "PEN": 2,
+        "CRIT Rate": 3,
+        "HP%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d326": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "ATK%": 1,
+        "PEN": 3,
+        "HP": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d327": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 3,
+        "CRIT Rate": 4,
+        "ATK%": 1,
+        "DEF": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d328": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 2,
+        "DEF%": 2,
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d329": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 3,
+        "ATK%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d330": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 1,
+        "CRIT DMG": 2,
+        "ATK%": 3,
+        "HP": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d331": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 4,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "DEF": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d332": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "CRIT Rate": 2,
+        "ATK%": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d333": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP%": 1,
+        "DEF%": 3,
+        "ATK%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d334": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 3,
+        "CRIT Rate": 2,
+        "HP": 2,
+        "ATK%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d335": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 1,
+        "DEF": 2,
+        "CRIT Rate": 2,
+        "CRIT DMG": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d336": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 1,
+        "DEF%": 2,
+        "CRIT Rate": 3,
+        "CRIT DMG": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d337": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF%": 1,
+        "ATK%": 3,
+        "CRIT Rate": 2,
+        "PEN": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d338": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 3,
+        "HP%": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d339": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 2,
+        "CRIT DMG": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d340": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 2,
+        "PEN": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d341": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF%": 1,
+        "PEN": 2,
+        "CRIT Rate": 2,
+        "CRIT DMG": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d342": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF": 2,
+        "PEN": 2,
+        "CRIT Rate": 2,
+        "ATK%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d343": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP%": 1,
+        "ATK%": 1,
+        "ATK": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d344": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 2,
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 2,
+        "HP": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d345": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 3,
+        "ATK%": 2,
+        "CRIT Rate": 3,
+        "CRIT DMG": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d346": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP": 2,
+        "ATK%": 1,
+        "ATK": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d347": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 1,
+        "CRIT DMG": 3,
+        "CRIT Rate": 2,
+        "HP": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d348": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "DEF%": 2,
+        "ATK%": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d349": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK": 1,
+        "ATK%": 2,
+        "CRIT Rate": 3,
+        "HP%": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d350": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "CRIT Rate": 3,
+        "HP%": 1,
+        "DEF%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d351": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 2,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 3,
+        "DEF%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d352": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 3,
+        "CRIT DMG": 1,
+        "DEF%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d353": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP": 1,
+        "CRIT Rate": 1,
+        "ATK%": 2,
+        "Anomaly Proficiency": 4
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d354": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT DMG": 3,
+        "ATK%": 1,
+        "CRIT Rate": 2,
+        "PEN": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d355": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "ATK%": 1,
+        "HP": 2,
+        "DEF": 2,
+        "CRIT Rate": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d356": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "ATK%": 2,
+        "HP%": 3,
+        "DEF%": 1,
+        "HP": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d357": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 3,
+        "DEF": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d358": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "ATK": 2,
+        "ATK%": 2,
+        "DEF": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d359": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "CRIT DMG": 2,
+        "HP%": 3,
+        "DEF": 2,
+        "ATK": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d360": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "DEF%": 3,
+        "CRIT DMG": 2,
+        "HP%": 2,
+        "HP": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d361": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "HP": 3,
+        "PEN": 3,
+        "CRIT DMG": 2,
+        "HP%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d362": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "HP": 2,
+        "ATK%": 2,
+        "CRIT DMG": 2,
+        "PEN": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d363": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "ATK%": 3,
+        "HP": 2,
+        "CRIT Rate": 1,
+        "DEF%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d364": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "HP%": 1,
+        "CRIT Rate": 2,
+        "ATK%": 4
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d365": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK%": 4,
+        "HP": 1,
+        "CRIT Rate": 1,
+        "DEF%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "fire"
+    },
+    "d366": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "DEF": 2,
+        "CRIT DMG": 2,
+        "HP": 1,
+        "CRIT Rate": 4
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d367": {
+      "slot": 5,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT DMG": 1,
+        "DEF%": 2,
+        "HP": 1,
+        "CRIT Rate": 4
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d368": {
+      "slot": 5,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT DMG": 2,
+        "HP": 2,
+        "CRIT Rate": 2,
+        "ATK": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d369": {
+      "slot": 5,
+      "main_stat": "ATK%",
+      "substats": {
+        "PEN": 1,
+        "CRIT Rate": 3,
+        "DEF%": 2,
+        "DEF": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d370": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK%": 2,
+        "Anomaly Proficiency": 2,
+        "ATK": 2,
+        "CRIT Rate": 2
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "electric"
+    },
+    "d371": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT DMG": 3,
+        "CRIT Rate": 3,
+        "DEF%": 1,
+        "Anomaly Proficiency": 1
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "fire"
+    },
+    "d372": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 2,
+        "CRIT Rate": 2,
+        "HP%": 2,
+        "DEF": 2
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "physical"
+    },
+    "d373": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 1,
+        "HP%": 2,
+        "CRIT DMG": 4,
+        "Anomaly Proficiency": 1
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "ice"
+    },
+    "d374": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "ATK%": 1,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 2,
+        "ATK": 4
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d375": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT DMG": 2,
+        "ATK": 2,
+        "PEN": 1,
+        "CRIT Rate": 3
+      },
+      "set": "KING_OF_THE_SUMMIT",
+      "element": "electric"
+    },
+    "d376": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "ATK%": 1,
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 4,
+        "HP%": 1
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d377": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "ATK%": 1,
+        "HP": 3,
+        "CRIT Rate": 2,
+        "PEN": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d378": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT DMG": 3,
+        "DEF%": 2,
+        "DEF": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d379": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT Rate": 2,
+        "PEN": 2,
+        "CRIT DMG": 2,
+        "HP%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d380": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "DEF%": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d381": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 3,
+        "HP": 1,
+        "ATK": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d382": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT DMG": 3,
+        "ATK": 1,
+        "PEN": 2,
+        "HP%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d383": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 2,
+        "DEF": 2,
+        "DEF%": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d384": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "DEF": 2,
+        "CRIT DMG": 3,
+        "DEF%": 1,
+        "CRIT Rate": 3
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d385": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT Rate": 2,
+        "CRIT DMG": 4,
+        "DEF%": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "KING_OF_THE_SUMMIT"
+    },
+    "d386": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "HP": 2,
+        "CRIT Rate": 1,
+        "CRIT DMG": 3,
+        "DEF%": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d387": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "PEN": 1,
+        "ATK%": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d388": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "CRIT DMG": 1,
+        "CRIT Rate": 2,
+        "HP%": 2,
+        "ATK%": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d389": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "ATK": 3,
+        "PEN": 2,
+        "HP": 1,
+        "CRIT DMG": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d390": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT DMG": 3,
+        "HP": 2,
+        "CRIT Rate": 2,
+        "PEN": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d391": {
+      "slot": 5,
+      "main_stat": "ATK%",
+      "substats": {
+        "DEF%": 3,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d392": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "HP%": 1,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "HP": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d393": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "ATK": 3,
+        "PEN": 1,
+        "DEF%": 2,
+        "CRIT DMG": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d394": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "CRIT DMG": 2,
+        "DEF%": 1,
+        "PEN": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d395": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK": 3,
+        "PEN": 1,
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d396": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 1,
+        "ATK%": 3,
+        "Anomaly Proficiency": 3,
+        "HP%": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d397": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "ATK%": 2,
+        "CRIT Rate": 2,
+        "ATK": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d398": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP": 2,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 2,
+        "CRIT Rate": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d399": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 4,
+        "PEN": 1,
+        "Anomaly Proficiency": 1,
+        "ATK": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d400": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP": 1,
+        "ATK%": 2,
+        "PEN": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d401": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF": 1,
+        "CRIT DMG": 2,
+        "ATK%": 3,
+        "CRIT Rate": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d402": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF": 2,
+        "ATK%": 3,
+        "CRIT Rate": 1,
+        "CRIT DMG": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d403": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "CRIT DMG": 1,
+        "HP%": 2,
+        "HP": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d404": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 4,
+        "CRIT DMG": 1,
+        "ATK%": 2,
+        "CRIT Rate": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d405": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "PEN": 3,
+        "CRIT Rate": 3,
+        "ATK%": 1,
+        "DEF": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d406": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 3,
+        "DEF%": 1,
+        "Anomaly Proficiency": 3,
+        "ATK%": 1
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d407": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "DEF%": 2,
+        "PEN": 2,
+        "CRIT Rate": 2
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d408": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "DEF%": 2,
+        "CRIT DMG": 1,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d409": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 1,
+        "Anomaly Proficiency": 3,
+        "ATK%": 1,
+        "PEN": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d410": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 1,
+        "ATK%": 2,
+        "HP%": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d411": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "DEF%": 1,
+        "CRIT Rate": 2,
+        "ATK%": 2,
+        "PEN": 3
+      },
+      "set": "SHOCKSTAR_DISCO"
+    },
+    "d413": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 1,
+        "ATK%": 4,
+        "ATK": 2,
+        "DEF": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d414": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 1,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 3,
+        "ATK": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d415": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 3,
+        "CRIT DMG": 2,
+        "ATK": 3,
+        "Anomaly Proficiency": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d416": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 2,
+        "CRIT DMG": 3,
+        "PEN": 2,
+        "CRIT Rate": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d417": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP%": 3,
+        "DEF%": 2,
+        "ATK%": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d418": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 1,
+        "CRIT Rate": 3,
+        "HP": 2,
+        "PEN": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d419": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 3,
+        "CRIT DMG": 2,
+        "PEN": 2,
+        "DEF%": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d420": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 4,
+        "PEN": 2,
+        "CRIT DMG": 1,
+        "ATK%": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d421": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "CRIT DMG": 2,
+        "DEF%": 2,
+        "CRIT Rate": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d422": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 2,
+        "DEF%": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d423": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "CRIT Rate": 1,
+        "HP%": 1,
+        "PEN": 4
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d424": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 1,
+        "CRIT Rate": 3,
+        "DEF": 1,
+        "HP%": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d425": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP": 1,
+        "CRIT DMG": 1,
+        "HP%": 2,
+        "PEN": 4
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d426": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 2,
+        "HP": 1,
+        "CRIT DMG": 2,
+        "CRIT Rate": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d427": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "DEF%": 1,
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "CRIT DMG": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d428": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 1,
+        "HP": 4,
+        "ATK": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d429": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "ATK": 3,
+        "CRIT DMG": 3,
+        "HP%": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d430": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "HP": 2,
+        "PEN": 1,
+        "Anomaly Proficiency": 3,
+        "CRIT DMG": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d431": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "DEF": 1,
+        "HP": 2,
+        "CRIT DMG": 3,
+        "PEN": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d432": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "DEF%": 2,
+        "CRIT DMG": 2,
+        "ATK": 2,
+        "HP%": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d433": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "HP": 2,
+        "CRIT DMG": 2,
+        "HP%": 2,
+        "DEF": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d434": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP%": 3,
+        "DEF": 2,
+        "HP": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d435": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT Rate": 2,
+        "PEN": 2,
+        "ATK": 1,
+        "CRIT DMG": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d436": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "CRIT Rate": 2,
+        "ATK": 3,
+        "HP%": 2,
+        "PEN": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d437": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "HP%": 1,
+        "DEF%": 2,
+        "Anomaly Proficiency": 2,
+        "CRIT Rate": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d438": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "CRIT DMG": 2,
+        "HP": 2,
+        "DEF%": 3,
+        "HP%": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d439": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 1,
+        "DEF": 2,
+        "CRIT DMG": 2,
+        "ATK%": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND",
+      "element": "ice"
+    },
+    "d440": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT Rate": 2,
+        "ATK%": 1,
+        "CRIT DMG": 3,
+        "ATK": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND",
+      "element": "ice"
+    },
+    "d441": {
+      "slot": 5,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK%": 2,
+        "PEN": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d442": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK%": 2,
+        "HP%": 3,
+        "HP": 2,
+        "PEN": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND",
+      "element": "ice"
+    },
+    "d443": {
+      "slot": 5,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 1,
+        "CRIT Rate": 4,
+        "ATK": 1,
+        "DEF": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d444": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "DEF": 2,
+        "CRIT Rate": 2,
+        "ATK%": 3,
+        "DEF%": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d445": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT Rate": 1,
+        "ATK%": 1,
+        "CRIT DMG": 4,
+        "PEN": 3
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d446": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "HP": 2,
+        "ATK%": 3,
+        "CRIT Rate": 2,
+        "PEN": 1
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d447": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "HP%": 1,
+        "PEN": 2,
+        "CRIT Rate": 1,
+        "Anomaly Proficiency": 4
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d448": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 3,
+        "ATK%": 1,
+        "PEN": 2,
+        "ATK": 2
+      },
+      "set": "BUNNY_IN_WONDERLAND"
+    },
+    "d449": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 4,
+        "ATK%": 1,
+        "CRIT DMG": 2,
+        "CRIT Rate": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d450": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 2,
+        "Anomaly Proficiency": 2,
+        "ATK%": 2,
+        "CRIT Rate": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d451": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "PEN": 2,
+        "CRIT Rate": 3,
+        "DEF": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d452": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 2,
+        "CRIT DMG": 2,
+        "HP%": 3,
+        "DEF": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d453": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "HP%": 3,
+        "ATK%": 3,
+        "DEF%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d454": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 3,
+        "CRIT DMG": 3,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d455": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 2,
+        "CRIT DMG": 1,
+        "HP%": 4,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d456": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "HP": 2,
+        "HP%": 3,
+        "CRIT Rate": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d457": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 2,
+        "HP%": 1,
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d458": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 3,
+        "Anomaly Proficiency": 2,
+        "DEF%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d459": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 1,
+        "HP%": 2,
+        "HP": 3,
+        "ATK%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d460": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 3,
+        "CRIT Rate": 2,
+        "HP": 1,
+        "DEF": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d461": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 2,
+        "CRIT Rate": 2,
+        "HP%": 3,
+        "Anomaly Proficiency": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d462": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 1,
+        "HP%": 2,
+        "HP": 1,
+        "CRIT Rate": 4
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d463": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF%": 1,
+        "CRIT Rate": 2,
+        "CRIT DMG": 3,
+        "PEN": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d464": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 4,
+        "DEF%": 1,
+        "HP": 2,
+        "Anomaly Proficiency": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d465": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF": 2,
+        "CRIT DMG": 2,
+        "HP": 2,
+        "HP%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d466": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT DMG": 3,
+        "ATK%": 1,
+        "DEF%": 2,
+        "HP%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d468": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP": 2,
+        "CRIT DMG": 1,
+        "ATK%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d469": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 2,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 1,
+        "HP%": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d470": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT DMG": 2,
+        "PEN": 2,
+        "HP%": 3,
+        "HP": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d471": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 1,
+        "CRIT DMG": 3,
+        "CRIT Rate": 1,
+        "Anomaly Proficiency": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d472": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "DEF%": 1,
+        "HP": 2,
+        "Anomaly Proficiency": 4,
+        "HP%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d473": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 3,
+        "CRIT DMG": 2,
+        "HP%": 2,
+        "CRIT Rate": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d474": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 2,
+        "DEF%": 1,
+        "CRIT DMG": 3,
+        "ATK": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d475": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "HP": 3,
+        "HP%": 2,
+        "CRIT Rate": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d476": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 3,
+        "CRIT DMG": 2,
+        "ATK": 1,
+        "HP": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d477": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "CRIT Rate": 3,
+        "HP%": 1,
+        "ATK": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d478": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT Rate": 4,
+        "HP": 2,
+        "ATK%": 1,
+        "ATK": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d479": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 3,
+        "HP": 1,
+        "Anomaly Proficiency": 3,
+        "PEN": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d480": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "DEF%": 1,
+        "CRIT Rate": 2,
+        "CRIT DMG": 3,
+        "PEN": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d481": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "DEF": 2,
+        "HP": 2,
+        "DEF%": 1,
+        "CRIT Rate": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d482": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK%": 2,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 2,
+        "HP": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d483": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 4,
+        "ATK%": 2,
+        "DEF%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d484": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "HP%": 4,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 2,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d485": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "CRIT DMG": 3,
+        "DEF%": 2,
+        "HP": 1,
+        "HP%": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d486": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "HP%": 2,
+        "ATK%": 2,
+        "DEF%": 1,
+        "CRIT DMG": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d487": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 2,
+        "PEN": 3,
+        "DEF%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d488": {
+      "slot": 4,
+      "main_stat": "CRIT DMG",
+      "substats": {
+        "PEN": 2,
+        "HP%": 3,
+        "HP": 2,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d489": {
+      "slot": 5,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK": 1,
+        "HP": 4,
+        "DEF%": 2,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d490": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 2,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 1,
+        "HP%": 3
+      },
+      "set": "YUNKUI_TALES",
+      "element": "ether"
+    },
+    "d491": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK%": 2,
+        "HP%": 2,
+        "DEF%": 2,
+        "CRIT Rate": 3
+      },
+      "set": "YUNKUI_TALES",
+      "element": "physical"
+    },
+    "d492": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "HP": 4,
+        "CRIT DMG": 2,
+        "HP%": 1,
+        "PEN": 2
+      },
+      "set": "YUNKUI_TALES",
+      "element": "physical"
+    },
+    "d493": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT DMG": 2,
+        "HP%": 2,
+        "PEN": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "YUNKUI_TALES",
+      "element": "physical"
+    },
+    "d494": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "HP": 3,
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d495": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK": 2,
+        "CRIT Rate": 3,
+        "CRIT DMG": 1,
+        "Anomaly Proficiency": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d496": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "HP": 2,
+        "DEF": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d497": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "DEF%": 2,
+        "CRIT DMG": 3,
+        "HP": 2,
+        "ATK%": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d498": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "PEN": 1,
+        "HP%": 1,
+        "ATK": 2,
+        "CRIT DMG": 4
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d499": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "HP%": 2,
+        "ATK": 1,
+        "ATK%": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d500": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "PEN": 3,
+        "ATK": 1,
+        "CRIT Rate": 2,
+        "HP%": 3
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d501": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "HP%": 3,
+        "CRIT Rate": 1,
+        "PEN": 2,
+        "DEF%": 2
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d502": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 1
+      },
+      "set": "YUNKUI_TALES"
+    },
+    "d503": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "ATK%": 1,
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 2,
+        "ATK": 2
+      },
+      "set": "BRANCH_BLADE_SONG"
+    },
+    "d504": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 1,
+        "ATK%": 4,
+        "CRIT Rate": 1,
+        "DEF%": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d505": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 3,
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 3,
+        "ATK%": 1
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d506": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 3,
+        "HP%": 2,
+        "CRIT DMG": 1,
+        "CRIT Rate": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d507": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "ATK%": 1,
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d508": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 3,
+        "DEF": 2,
+        "CRIT Rate": 1,
+        "PEN": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d509": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 2,
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 4,
+        "CRIT Rate": 1
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d510": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 2,
+        "ATK%": 3,
+        "DEF%": 1
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d511": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "PEN": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d512": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "CRIT DMG": 4,
+        "ATK%": 2,
+        "HP": 1,
+        "Anomaly Proficiency": 1
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d513": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "CRIT DMG": 2,
+        "ATK%": 3,
+        "ATK": 2,
+        "DEF": 1
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d514": {
+      "slot": 4,
+      "main_stat": "ATK%",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "ATK": 1,
+        "CRIT DMG": 3,
+        "CRIT Rate": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d515": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "CRIT DMG": 3,
+        "Anomaly Proficiency": 2,
+        "DEF": 1,
+        "CRIT Rate": 2
+      },
+      "set": "THE_SKY_ABLAZE"
+    },
+    "d516": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "HP%": 2,
+        "CRIT DMG": 1,
+        "ATK%": 3
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d517": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 3,
+        "CRIT Rate": 1,
+        "ATK": 1,
+        "CRIT DMG": 3
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d518": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 2,
+        "ATK": 3,
+        "CRIT DMG": 3,
+        "PEN": 1
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d519": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "ATK": 2,
+        "DEF%": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d520": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 2,
+        "ATK%": 3,
+        "PEN": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d521": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "HP%": 2,
+        "CRIT Rate": 2,
+        "ATK%": 3
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d522": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 3,
+        "PEN": 2,
+        "CRIT DMG": 1,
+        "DEF%": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d523": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 3,
+        "CRIT DMG": 2,
+        "Anomaly Proficiency": 3,
+        "PEN": 1
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d524": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "DEF%": 2,
+        "PEN": 3,
+        "ATK%": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d525": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "DEF": 1,
+        "ATK%": 2,
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 4
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d526": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 3,
+        "DEF%": 1,
+        "PEN": 3
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d527": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "PEN": 3,
+        "ATK%": 2,
+        "CRIT DMG": 2,
+        "HP%": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d528": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "PEN": 3,
+        "CRIT DMG": 2,
+        "CRIT Rate": 1,
+        "HP": 3
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d529": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 3,
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 1,
+        "ATK%": 2
+      },
+      "set": "SWING_JAZZ",
+      "element": "ether"
+    },
+    "d531": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "DEF": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 2,
+        "ATK%": 1
+      },
+      "set": "SWING_JAZZ",
+      "element": "fire"
+    },
+    "d532": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "CRIT DMG": 1,
+        "PEN": 3,
+        "HP%": 1,
+        "Anomaly Proficiency": 3
+      },
+      "set": "SWING_JAZZ",
+      "element": "physical"
+    },
+    "d533": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT Rate": 3,
+        "PEN": 1,
+        "ATK": 3,
+        "CRIT DMG": 1
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d534": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "ATK%": 3,
+        "CRIT Rate": 2,
+        "ATK": 2,
+        "HP%": 1
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d535": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery%",
+      "substats": {
+        "ATK%": 2,
+        "HP": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d536": {
+      "slot": 6,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT Rate": 4,
+        "HP%": 1,
+        "PEN": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "SWING_JAZZ"
+    },
+    "d538": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 2,
+        "HP%": 4,
+        "CRIT Rate": 2,
+        "ATK": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d539": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 1,
+        "ATK%": 4,
+        "CRIT DMG": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d540": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "DEF": 2,
+        "ATK%": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d541": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 4,
+        "PEN": 1,
+        "CRIT Rate": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d542": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "DEF": 2,
+        "Anomaly Proficiency": 2,
+        "ATK%": 3,
+        "CRIT Rate": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d543": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 4,
+        "CRIT Rate": 1,
+        "Anomaly Proficiency": 1,
+        "PEN": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d544": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 1,
+        "CRIT DMG": 1,
+        "PEN": 3,
+        "CRIT Rate": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d545": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "HP%": 2,
+        "CRIT Rate": 2,
+        "CRIT DMG": 2,
+        "DEF": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d546": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "DEF%": 1,
+        "CRIT Rate": 2,
+        "HP%": 3,
+        "DEF": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d547": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "DEF%": 2,
+        "CRIT DMG": 2,
+        "ATK%": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d548": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "CRIT Rate": 3,
+        "CRIT DMG": 1,
+        "DEF%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d549": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 2,
+        "ATK%": 2,
+        "Anomaly Proficiency": 2,
+        "CRIT Rate": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d550": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP%": 3,
+        "HP": 1,
+        "PEN": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d551": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF%": 2,
+        "HP%": 1,
+        "ATK%": 3,
+        "Anomaly Proficiency": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d552": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "HP%": 3,
+        "PEN": 2,
+        "ATK%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d553": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP": 2,
+        "ATK%": 3,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d554": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP": 1,
+        "HP%": 3,
+        "PEN": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d555": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 3,
+        "ATK%": 2,
+        "CRIT Rate": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d556": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP%": 2,
+        "CRIT DMG": 2,
+        "CRIT Rate": 2,
+        "HP": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d557": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "HP": 3,
+        "HP%": 2,
+        "CRIT DMG": 1,
+        "CRIT Rate": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d558": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "DEF": 2,
+        "HP%": 2,
+        "CRIT DMG": 3,
+        "ATK%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d559": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 3,
+        "HP": 1,
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d560": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "ATK%": 4,
+        "CRIT Rate": 1,
+        "PEN": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d561": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT DMG": 1,
+        "ATK%": 3,
+        "DEF%": 3,
+        "HP": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d562": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "ATK%": 1,
+        "HP%": 1,
+        "PEN": 4
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d563": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "PEN": 2,
+        "ATK%": 2,
+        "Anomaly Proficiency": 2,
+        "DEF%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d564": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "PEN": 3,
+        "ATK%": 3,
+        "Anomaly Proficiency": 1,
+        "HP": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d565": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "HP%": 3,
+        "CRIT DMG": 2,
+        "ATK%": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d566": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP": 1,
+        "CRIT DMG": 1,
+        "HP%": 3,
+        "CRIT Rate": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d567": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 2,
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "CRIT DMG": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d568": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK": 2,
+        "Anomaly Proficiency": 2,
+        "HP%": 1,
+        "CRIT Rate": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d569": {
+      "slot": 4,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT DMG": 2,
+        "PEN": 3,
+        "DEF%": 2,
+        "ATK": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d570": {
+      "slot": 4,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK%": 1,
+        "HP": 1,
+        "PEN": 3,
+        "Anomaly Proficiency": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d571": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "PEN": 1,
+        "CRIT DMG": 3,
+        "ATK": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d572": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "PEN": 3,
+        "DEF": 1,
+        "ATK": 2,
+        "ATK%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d573": {
+      "slot": 5,
+      "main_stat": "HP%",
+      "substats": {
+        "HP": 2,
+        "DEF%": 2,
+        "PEN": 3,
+        "DEF": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d574": {
+      "slot": 5,
+      "main_stat": "HP%",
+      "substats": {
+        "CRIT DMG": 3,
+        "DEF%": 2,
+        "Anomaly Proficiency": 2,
+        "DEF": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d575": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "ATK": 1,
+        "PEN": 1,
+        "DEF": 2,
+        "Anomaly Proficiency": 4
+      },
+      "set": "MOONLIGHT_LULLABY",
+      "element": "ether"
+    },
+    "d576": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "PEN": 1,
+        "CRIT DMG": 1,
+        "DEF%": 2,
+        "HP": 4
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d577": {
+      "slot": 6,
+      "main_stat": "Impact%",
+      "substats": {
+        "CRIT DMG": 2,
+        "DEF%": 2,
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d578": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "HP": 3,
+        "CRIT DMG": 3,
+        "ATK%": 1,
+        "ATK": 1
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d579": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "HP%": 3,
+        "ATK": 2,
+        "PEN": 2,
+        "ATK%": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d580": {
+      "slot": 6,
+      "main_stat": "HP%",
+      "substats": {
+        "ATK": 3,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 2,
+        "HP": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d581": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "CRIT Rate": 4,
+        "HP%": 1,
+        "Anomaly Proficiency": 1,
+        "HP": 2
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d582": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery%",
+      "substats": {
+        "ATK%": 2,
+        "CRIT DMG": 1,
+        "DEF": 2,
+        "Anomaly Proficiency": 3
+      },
+      "set": "MOONLIGHT_LULLABY"
+    },
+    "d583": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 2,
+        "PEN": 3,
+        "Anomaly Proficiency": 2,
+        "HP%": 2
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d584": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK%": 2,
+        "DEF": 2,
+        "Anomaly Proficiency": 3,
+        "HP%": 1
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d585": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "PEN": 2,
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "DEF": 1
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d586": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT DMG": 4,
+        "Anomaly Proficiency": 1,
+        "PEN": 3,
+        "CRIT Rate": 1
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d587": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "CRIT Rate": 2,
+        "HP%": 1,
+        "Anomaly Proficiency": 2,
+        "ATK%": 3
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d588": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK%": 2,
+        "CRIT Rate": 3,
+        "Anomaly Proficiency": 1,
+        "ATK": 2
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d589": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "DEF": 2,
+        "ATK%": 3,
+        "CRIT Rate": 2,
+        "HP": 1
+      },
+      "set": "WUTHERING_SALON"
+    },
+    "d590": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 3,
+        "ATK%": 1,
+        "CRIT Rate": 1,
+        "Anomaly Proficiency": 3
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d591": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 2,
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "PEN": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d592": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "ATK%": 2,
+        "ATK": 1,
+        "DEF": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d593": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "ATK": 1,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 3,
+        "PEN": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d594": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP%": 2,
+        "Anomaly Proficiency": 2,
+        "ATK%": 3
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d595": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "CRIT Rate": 1,
+        "CRIT DMG": 5,
+        "ATK%": 1,
+        "ATK": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d596": {
+      "slot": 1,
+      "main_stat": "HP",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "PEN": 3,
+        "CRIT Rate": 2,
+        "ATK%": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d597": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "ATK%": 1,
+        "Anomaly Proficiency": 3,
+        "PEN": 1,
+        "HP": 3
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d598": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "DEF%": 1,
+        "CRIT Rate": 3,
+        "HP": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d599": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "PEN": 1,
+        "Anomaly Proficiency": 1,
+        "CRIT DMG": 3,
+        "ATK%": 3
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d600": {
+      "slot": 2,
+      "main_stat": "ATK",
+      "substats": {
+        "CRIT Rate": 1,
+        "HP": 2,
+        "ATK%": 3,
+        "Anomaly Proficiency": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d601": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 1,
+        "HP": 2,
+        "Anomaly Proficiency": 3,
+        "ATK%": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d602": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 3,
+        "CRIT Rate": 1,
+        "CRIT DMG": 2,
+        "ATK": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d603": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP%": 1,
+        "Anomaly Proficiency": 1,
+        "CRIT Rate": 2,
+        "CRIT DMG": 4
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d604": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "HP": 2,
+        "CRIT Rate": 4,
+        "DEF%": 1,
+        "Anomaly Proficiency": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d605": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "PEN": 1,
+        "Anomaly Proficiency": 3,
+        "HP%": 2,
+        "ATK": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d606": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "PEN": 3,
+        "Anomaly Proficiency": 1,
+        "ATK%": 3,
+        "CRIT Rate": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d607": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "ATK": 2,
+        "HP": 2,
+        "Anomaly Proficiency": 3,
+        "ATK%": 1
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d608": {
+      "slot": 3,
+      "main_stat": "DEF",
+      "substats": {
+        "Anomaly Proficiency": 2,
+        "CRIT DMG": 2,
+        "ATK%": 3,
+        "PEN": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d609": {
+      "slot": 4,
+      "main_stat": "Anomaly Proficiency",
+      "substats": {
+        "CRIT DMG": 3,
+        "DEF%": 1,
+        "HP": 2,
+        "PEN": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d610": {
+      "slot": 4,
+      "main_stat": "CRIT Rate",
+      "substats": {
+        "DEF": 1,
+        "ATK%": 2,
+        "CRIT DMG": 3,
+        "DEF%": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d611": {
+      "slot": 5,
+      "main_stat": "PEN Ratio",
+      "substats": {
+        "HP": 1,
+        "ATK%": 2,
+        "Anomaly Proficiency": 4,
+        "PEN": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d612": {
+      "slot": 5,
+      "main_stat": "ATK%",
+      "substats": {
+        "CRIT Rate": 1,
+        "ATK": 3,
+        "DEF": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d613": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 2,
+        "ATK%": 2,
+        "DEF": 2,
+        "Anomaly Proficiency": 2
+      },
+      "set": "PHAETHONS_MELODY",
+      "element": "ether"
+    },
+    "d614": {
+      "slot": 5,
+      "main_stat": "Attribute DMG%",
+      "substats": {
+        "PEN": 1,
+        "ATK": 2,
+        "ATK%": 2,
+        "CRIT Rate": 3
+      },
+      "set": "PHAETHONS_MELODY",
+      "element": "ether"
+    },
+    "d615": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery%",
+      "substats": {
+        "ATK": 1,
+        "CRIT DMG": 2,
+        "HP%": 1,
+        "Anomaly Proficiency": 4
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d616": {
+      "slot": 6,
+      "main_stat": "Anomaly Mastery%",
+      "substats": {
+        "ATK%": 2,
+        "ATK": 2,
+        "CRIT Rate": 1,
+        "DEF": 2
+      },
+      "set": "PHAETHONS_MELODY"
+    },
+    "d617": {
+      "slot": 6,
+      "main_stat": "Energy Regen%",
+      "substats": {
+        "ATK": 2,
+        "ATK%": 3,
+        "CRIT Rate": 2,
+        "Anomaly Proficiency": 1
+      },
+      "set": "PHAETHONS_MELODY"
     }
   }
 }

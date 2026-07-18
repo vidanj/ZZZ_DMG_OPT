@@ -69,6 +69,17 @@ KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
 #: An effect without ``modes`` applies in every mode (original behavior).
 KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
 
+#: Stat kinds ``core_skill_bonuses`` may carry (datamined coreStats at max
+#: core rank). ``base_atk``/``base_hp`` are flat additions to the percent-
+#: scaling base buckets; ``hp_pct`` joins the sheet HP% bracket (Zhao);
+#: ``pen_ratio`` feeds the DEF zone (Rina); ``impact``/``energy_regen``
+#: are flat additions to those base stats (panel/constraints only).
+_CORE_BONUS_KINDS = frozenset({
+    "base_atk", "base_hp", "crit_rate", "crit_dmg",
+    "anomaly_proficiency", "anomaly_mastery",
+    "impact", "energy_regen", "hp_pct", "pen_ratio",
+})
+
 
 @dataclass(frozen=True)
 class EffectScaling:
@@ -204,6 +215,19 @@ class Agent:
     core_bonus_anomaly_mastery: float
     default_engine: str
     core_bonus_hp: float = 0.0
+    # Base Impact / Energy Regen (Lv. 60 panel values, datamined): read
+    # only by the optimizer's min-stat constraints (Impact / Energy Regen
+    # panel totals) — neither stat affects the modeled damage.
+    base_impact: float = 0.0
+    base_energy_regen: float = 0.0
+    # Core stat boosts beyond ATK/HP/CRIT/AP/AM (datamined coreStats at
+    # max rank): flat Impact (stunners +18), flat Energy Regen (+0.36),
+    # sheet HP% (Zhao +18% — joins the disc HP% bracket), and PEN Ratio
+    # (Rina +14.4% — feeds the DEF zone like disc PEN Ratio).
+    core_bonus_impact: float = 0.0
+    core_bonus_energy_regen: float = 0.0
+    core_bonus_hp_pct: float = 0.0
+    core_bonus_pen_ratio: float = 0.0
     # Core stat boost kinds beyond the classic ATK/CRIT Rate pairs: Seed's
     # core grants CRIT DMG (+28.8% at max rank) — added to the base CRIT
     # DMG exactly like core CRIT Rate adds to base CRIT Rate.
@@ -527,6 +551,14 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
         core = entry.get("core_skill_bonuses", {})
         if not isinstance(core, dict):
             raise AgentError(f"Agent '{key}': 'core_skill_bonuses' must be an object")
+        unknown_core = set(core) - _CORE_BONUS_KINDS
+        if unknown_core:
+            # A typo here would be DROPPED silently (found the hard way:
+            # Rina's core PEN Ratio sat unread for a week) — hard-fail.
+            raise AgentError(
+                f"Agent '{key}': unknown core_skill_bonuses "
+                f"{sorted(unknown_core)}; kinds: {sorted(_CORE_BONUS_KINDS)}"
+            )
 
         default_engine = entry.get("default_engine")
         if not isinstance(default_engine, str) or not default_engine.strip():
@@ -577,6 +609,8 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             base_hp=number(entry, "base_hp", key),
             base_atk=number(entry, "base_atk", key),
             base_def=number(entry, "base_def", key),
+            base_impact=number(entry, "impact", key),
+            base_energy_regen=number(entry, "energy_regen", key),
             base_anomaly_mastery=number(entry, "anomaly_mastery", key),
             base_anomaly_proficiency=number(entry, "anomaly_proficiency", key),
             core_bonus_atk=float(core.get("base_atk", 0.0)),
@@ -587,6 +621,10 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             ),
             core_bonus_anomaly_mastery=float(core.get("anomaly_mastery", 0.0)),
             core_bonus_hp=float(core.get("base_hp", 0.0)),
+            core_bonus_impact=float(core.get("impact", 0.0)),
+            core_bonus_energy_regen=float(core.get("energy_regen", 0.0)),
+            core_bonus_hp_pct=float(core.get("hp_pct", 0.0)),
+            core_bonus_pen_ratio=float(core.get("pen_ratio", 0.0)),
             sheer_force_hp_conversion=float(hp_conversion),
             default_engine=default_engine,
             specialty=str(entry.get("specialty", "")),
@@ -638,6 +676,10 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
         build.anomaly_proficiency += value
     elif stat == "Anomaly Mastery":
         build.anomaly_mastery += value
+    elif stat == "Anomaly Mastery%":
+        # Percent AM (slot-6 main +30%, Phaethon's Melody 2pc +8%) —
+        # multiplies the flat AM total at the end of aggregate_build.
+        build.other["_am_pct"] = build.other.get("_am_pct", 0.0) + value
     elif stat == "Attribute DMG%":
         build.dmg_bonuses.append(value)
     elif stat == "DMG%":
@@ -694,7 +736,10 @@ def aggregate_build(
         atk=0.0,
         crit_rate=consts.base_crit_rate + agent.core_bonus_crit_rate,
         crit_dmg=consts.base_crit_dmg + agent.core_bonus_crit_dmg,
-        pen_ratio=0.0,
+        # Core PEN Ratio (Rina +14.4%) enters the same DEF-zone total as
+        # disc PEN Ratio; core sheet HP% (Zhao +18%) joins the disc HP%
+        # bracket — both datamined coreStats kinds at max rank.
+        pen_ratio=agent.core_bonus_pen_ratio,
         pen_flat=0.0,
         anomaly_proficiency=(
             agent.base_anomaly_proficiency
@@ -704,6 +749,7 @@ def aggregate_build(
             agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
         ),
         hp_base=agent.total_base_hp(),
+        hp_pct=agent.core_bonus_hp_pct,
     )
 
     for stat, value in engine.advanced_stat.items():
@@ -744,4 +790,8 @@ def aggregate_build(
     # — the combat HP bracket mirrors the combat ATK% structure (datamine:
     # final hp = initial hp × (1 + combat hp_) + combat hp).
     build.hp = build.hp_base * (1.0 + build.hp_pct) + build.hp_flat
+    # Panel Anomaly Mastery: AM% (slot-6 main, Phaethon's Melody 2pc)
+    # multiplies the flat total (agent base + core; discs have no flat AM
+    # sources). Verified in-game 2026-07-17: Yuzuha (88+36)×1.38 = 171.
+    build.anomaly_mastery *= 1.0 + build.other.pop("_am_pct", 0.0)
     return build

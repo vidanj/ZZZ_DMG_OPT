@@ -486,6 +486,51 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
     return sets
 
 
+#: Squad-facing 4pc kinds the EQUIPPER path can carry as build stats —
+#: "the wearer is a squad member too" (King of the Summit's squad CRIT
+#: DMG covers the wearer; Swing Jazz triggers off the wearer's own
+#: Chain/Ult). res_shred / dmg_taken / daze_bonus are API-level bracket
+#: factors, not build stats, so those stay support-side only.
+_SQUAD_KIND_STAT = {"dmg_bonus": "DMG%", "crit_rate": "CRIT Rate",
+                    "crit_dmg": "CRIT DMG"}
+
+
+def set_4pc_max_stacks(entry: DiscSet) -> int:
+    """Max stacks of the 4pc effect the WEARER can toggle (0 = none).
+
+    The classic modeled ``bonus_4pc``, or — when a set's only modeled 4pc
+    is the squad-facing part — that part, provided its kind maps to a
+    build stat (see ``_SQUAD_KIND_STAT``).
+    """
+    if entry.bonus_4pc is not None:
+        return entry.bonus_4pc.max_stacks
+    if (entry.squad_4pc is not None
+            and entry.squad_4pc.kind in _SQUAD_KIND_STAT):
+        return entry.squad_4pc.max_stacks
+    return 0
+
+
+def set_4pc_stats(entry: DiscSet, stacks: int) -> dict[str, float]:
+    """Stat contributions of one set's wearer-side 4pc at ``stacks``."""
+    if not stacks:
+        return {}
+    if entry.bonus_4pc is not None:
+        b = entry.bonus_4pc
+        stats = {b.stat: b.per_stack * stacks}
+        # Extra part granted only at MAX stacks (Yunkui Tales: "at 3
+        # stacks, Sheer DMG +10%" — calibrated 2026-07-10).
+        if b.at_max_extra_stat is not None and stacks == b.max_stacks:
+            stats[b.at_max_extra_stat] = (
+                stats.get(b.at_max_extra_stat, 0.0) + b.at_max_extra_value
+            )
+        return stats
+    if (entry.squad_4pc is not None
+            and entry.squad_4pc.kind in _SQUAD_KIND_STAT):
+        return {_SQUAD_KIND_STAT[entry.squad_4pc.kind]:
+                entry.squad_4pc.value * stacks}
+    return {}
+
+
 def set_bonus_stats(
     discs: list[Disc] | tuple[Disc, ...],
     sets: dict[str, DiscSet],
@@ -498,7 +543,10 @@ def set_bonus_stats(
     - 2+ pieces of a set -> its 2-piece bonus applies unconditionally.
     - 4+ pieces -> additionally, its modeled 4-piece stacking bonus applies
       at ``set_stacks[key]`` active stacks (default 0 — 4-piece effects are
-      combat-conditional and OFF unless the user says they're up).
+      combat-conditional and OFF unless the user says they're up). A set
+      whose modeled 4pc is squad-facing counts for its WEARER too (the
+      wearer is a squad member; e.g. King of the Summit worn by the
+      on-field stunner) when the effect kind maps to a build stat.
     - 4 pieces always include the 2-piece bonus as well.
 
     Args:
@@ -526,15 +574,15 @@ def set_bonus_stats(
     for key, stacks in set_stacks.items():
         if key not in sets:
             raise DiscError(f"Stacks given for unknown set '{key}'")
-        bonus = sets[key].bonus_4pc
-        if counts.get(key, 0) < 4 or bonus is None:
+        max_stacks = set_4pc_max_stacks(sets[key])
+        if counts.get(key, 0) < 4 or not max_stacks:
             raise DiscError(
                 f"Stacks given for '{key}' but its 4-piece bonus is not "
                 f"active (needs 4 equipped pieces and a modeled effect)"
             )
-        if isinstance(stacks, bool) or not isinstance(stacks, int) or not 0 <= stacks <= bonus.max_stacks:
+        if isinstance(stacks, bool) or not isinstance(stacks, int) or not 0 <= stacks <= max_stacks:
             raise DiscError(
-                f"'{key}' stacks must be an integer 0..{bonus.max_stacks}, "
+                f"'{key}' stacks must be an integer 0..{max_stacks}, "
                 f"got {stacks!r}"
             )
 
@@ -544,18 +592,10 @@ def set_bonus_stats(
         if count >= 2:
             for stat, value in entry.bonus_2pc.items():
                 bonuses[stat] = bonuses.get(stat, 0.0) + value
-        if count >= 4 and entry.bonus_4pc is not None:
-            stacks = set_stacks.get(key, 0)
-            if stacks:
-                b = entry.bonus_4pc
-                bonuses[b.stat] = bonuses.get(b.stat, 0.0) + b.per_stack * stacks
-                # Extra part granted only at MAX stacks (Yunkui Tales:
-                # "at 3 stacks, Sheer DMG +10%" — calibrated 2026-07-10).
-                if b.at_max_extra_stat is not None and stacks == b.max_stacks:
-                    bonuses[b.at_max_extra_stat] = (
-                        bonuses.get(b.at_max_extra_stat, 0.0)
-                        + b.at_max_extra_value
-                    )
+        if count >= 4:
+            for stat, value in set_4pc_stats(
+                    entry, set_stacks.get(key, 0)).items():
+                bonuses[stat] = bonuses.get(stat, 0.0) + value
     return bonuses
 
 
@@ -940,6 +980,30 @@ def save_loadout(
         entry["agent"] = agent
     entry["discs"] = [{"disc_id": disc_id} for disc_id in disc_ids]
     raw["loadouts"][name] = entry
+    _atomic_write_json(path, raw)
+
+
+def delete_loadout(name: str, path: Path = LOADOUTS_FILE) -> None:
+    """Remove a saved loadout from ``loadouts.json``.
+
+    Its inventory discs are untouched — they simply stop being reserved
+    for the loadout's agent and become equippable by anyone again.
+
+    Raises:
+        DiscError: unknown loadout name or a malformed loadouts file.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise DiscError(f"Unknown loadout '{name}'") from None
+    except json.JSONDecodeError as exc:
+        raise DiscError(f"Loadouts file is not valid JSON: {exc}") from None
+    if not isinstance(raw.get("loadouts", {}), dict):
+        raise DiscError("'loadouts' must be an object of name -> loadout")
+
+    if name not in raw.get("loadouts", {}):
+        raise DiscError(f"Unknown loadout '{name}'")
+    del raw["loadouts"][name]
     _atomic_write_json(path, raw)
 
 

@@ -29,7 +29,7 @@
       "ATK%": 0.30,
       "HP%": 0.30,
       "DEF%": 0.48,
-      "Anomaly Mastery": 30,
+      "Anomaly Mastery%": 0.3,
       "Impact%": 0.18,
       "Energy Regen%": 0.60
     }

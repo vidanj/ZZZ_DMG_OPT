@@ -17,6 +17,7 @@
       "base_atk": 863,
       "base_def": 606,
       "impact": 93,
+      "energy_regen": 1.2,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": {
@@ -137,9 +138,10 @@
       "base_atk": 653,
       "base_def": 606,
       "impact": 119,
+      "energy_regen": 1.2,
       "anomaly_mastery": 91,
       "anomaly_proficiency": 90,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "mindscapes": {
         "1": {
           "name": "Full Moon Momentum",
@@ -206,9 +208,10 @@
       "base_atk": 583,
       "base_def": 612,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
       "mindscapes": {
         "1": {
           "name": "Drill Formations",
@@ -265,6 +268,7 @@
       "base_atk": 835,
       "base_def": 587,
       "impact": 92,
+      "energy_regen": 1.2,
       "anomaly_mastery": 96,
       "anomaly_proficiency": 97,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
@@ -325,9 +329,10 @@
       "base_atk": 690,
       "base_def": 701,
       "impact": 93,
+      "energy_regen": 1.2,
       "anomaly_mastery": 93,
       "anomaly_proficiency": 96,
-      "core_skill_bonuses": {},
+      "core_skill_bonuses": { "base_atk": 75, "hp_pct": 0.18 },
       "core_passive": {
         "name": "Ideal Colleague: self CRIT from HP",
         "max_stacks": 1,
@@ -421,9 +426,10 @@
       "base_atk": 683,
       "base_def": 612,
       "impact": 110,
+      "energy_regen": 1.2,
       "anomaly_mastery": 0,
       "anomaly_proficiency": 0,
-      "core_skill_bonuses": {},
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
       "mindscapes": {
         "1": {
           "name": "Boundless Hospitality",
@@ -502,9 +508,10 @@
       "base_atk": 683,
       "base_def": 612,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 116,
       "anomaly_proficiency": 118,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
       "additional_ability": {
         "name": "Synced Acceleration",
         "max_stacks": 1,
@@ -571,9 +578,10 @@
       "base_atk": 683,
       "base_def": 612,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 88,
       "anomaly_proficiency": 93,
-      "core_skill_bonuses": {},
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
       "core_passive": {
         "name": "Whimsical Wonder: Tanuki Wish (self)",
         "max_stacks": 1,
@@ -674,6 +682,7 @@
       "base_atk": 854,
       "base_def": 612,
       "impact": 93,
+      "energy_regen": 1.2,
       "anomaly_mastery": 92,
       "anomaly_proficiency": 90,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
@@ -738,9 +747,10 @@
       "base_atk": 640,
       "base_def": 600,
       "impact": 83,
+      "energy_regen": 1.2,
       "anomaly_mastery": 93,
       "anomaly_proficiency": 92,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
       "core_passive": {
         "name": "Graceful Andante: Tremolo ATK (self)",
         "max_stacks": 1,
@@ -829,9 +839,10 @@
       "base_atk": 722,
       "base_def": 612,
       "impact": 119,
+      "energy_regen": 1.2,
       "anomaly_mastery": 91,
       "anomaly_proficiency": 90,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "additional_ability": {
         "name": "Fighting Spirit: Elation (Ice/Fire DMG)",
         "max_stacks": 20,
@@ -934,6 +945,7 @@
       "base_atk": 687,
       "base_def": 582,
       "impact": 106,
+      "energy_regen": 1.2,
       "anomaly_mastery": 99,
       "anomaly_proficiency": 98,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
@@ -1024,6 +1036,7 @@
       "base_atk": 854,
       "base_def": 612,
       "impact": 93,
+      "energy_regen": 1.2,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
@@ -1153,9 +1166,10 @@
       "base_atk": 675,
       "base_def": 600,
       "impact": 113,
+      "energy_regen": 1.2,
       "anomaly_mastery": 96,
       "anomaly_proficiency": 95,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "mindscapes": {
         "1": {
           "name": "Sharpened Senses",
@@ -1215,6 +1229,7 @@
       "base_atk": 854,
       "base_def": 612,
       "impact": 93,
+      "energy_regen": 1.2,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "crit_dmg": 0.288 },
@@ -1312,6 +1327,7 @@
       "base_atk": 849,
       "base_def": 612,
       "impact": 94,
+      "energy_regen": 1,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
@@ -1372,9 +1388,10 @@
       "base_atk": 574,
       "base_def": 622,
       "impact": 88,
+      "energy_regen": 1.2,
       "anomaly_mastery": 90,
       "anomaly_proficiency": 93,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
       "mindscapes": {
         "1": {
           "name": "Supercharged Bomb",
@@ -1437,6 +1454,7 @@
       "base_atk": 671,
       "base_def": 622,
       "impact": 120,
+      "energy_regen": 1.2,
       "anomaly_mastery": 90,
       "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36, "anomaly_proficiency": 120 },
@@ -1508,6 +1526,7 @@
       "base_atk": 798,
       "base_def": 613,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 112,
       "anomaly_proficiency": 114,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
@@ -1579,6 +1598,7 @@
       "base_atk": 806,
       "base_def": 607,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 108,
       "anomaly_proficiency": 118,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36 },
@@ -1663,6 +1683,7 @@
       "base_atk": 642,
       "base_def": 601,
       "impact": 83,
+      "energy_regen": 1.2,
       "anomaly_mastery": 93,
       "anomaly_proficiency": 92,
       "core_skill_bonuses": { "base_atk": 75, "pen_ratio": 0.144 },
@@ -1724,6 +1745,7 @@
       "base_atk": 872,
       "base_def": 441,
       "impact": 93,
+      "energy_regen": 0,
       "anomaly_mastery": 92,
       "anomaly_proficiency": 90,
       "core_skill_bonuses": { "base_hp": 420, "crit_rate": 0.144 },
@@ -1800,9 +1822,10 @@
       "base_atk": 683,
       "base_def": 612,
       "impact": 118,
+      "energy_regen": 1.2,
       "anomaly_mastery": 94,
       "anomaly_proficiency": 93,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "core_passive": {
         "name": "Flash Connect: consumed points (self DMG)",
         "max_stacks": 25,
@@ -1896,9 +1919,10 @@
       "base_atk": 683,
       "base_def": 594,
       "impact": 83,
+      "energy_regen": 1.2,
       "anomaly_mastery": 96,
       "anomaly_proficiency": 95,
-      "core_skill_bonuses": { "base_atk": 75 },
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
       "mindscapes": {
         "1": {
           "name": "Secret Friend",
@@ -1934,13 +1958,14 @@
       },
       "team_buffs": [
         {
-          "name": "Darkbreaker: squad Sheer Force (tooltip value)",
+          "name": "Darkbreaker: squad Sheer Force",
           "max_stacks": 1,
           "effects": [
             { "kind": "sheer_force", "modes": ["sheer"],
-              "scaling": { "input": "darkbreaker_sheer_force", "per_step": 0.01, "per_value": 0.01 } }
+              "scaling": { "input": "initial_max_hp", "base": 12,
+                           "per_step": 1, "per_value": 0.037, "cap": 900 } }
           ],
-          "note": "Her EX Special (Symphony of the Reaper: Daybreak) grants the squad the Darkbreaker state for 20s (refreshes): flat Sheer Force. ENTER THE NUMBER HER IN-GAME BUFF TOOLTIP SHOWS as 'darkbreaker_sheer_force' (e.g. 854.7) - always exact, any skill level. Reference formula (for planning a build): min(612+24xLv, 12 + LUCIA's INITIAL out-of-combat Max HP x 0.5% x (5+0.2xLv)) at her Special skill level - Lv. 12: 3.7%/cap 900 at 24,000 HP; Lv. 11: 3.6%/cap 876. CONFIRMED in-game 2026-07-10: tooltip 854.7 = 12 + 3.6% x 23,408 (Special Lv. 11) to the decimal (validation #1), and POPUP-CONFIRMED via calibration #3 (SF panel 2,466 + 854.7 + 92.1 Veil-HP term = 3,413, inside the exact 72,084 decode)."
+          "note": "Her EX Special (Symphony of the Reaper: Daybreak) grants the squad the Darkbreaker state for 20s (refreshes): flat Sheer Force = 12 + LUCIA's INITIAL out-of-combat Max HP x 3.7%, capped at 900 (reached at 24,000 HP). Enter HER panel Max HP as 'initial_max_hp' (same input as her M6). Assumes Special skill Lv. 12; general formula min(612+24xLv, 12 + HP x 0.5% x (5+0.2xLv)) - at Lv. 11 use 3.6%/cap 876. CONFIRMED in-game 2026-07-10: tooltip 854.7 = 12 + 3.6% x 23,408 (Special Lv. 11) to the decimal (validation #1), and POPUP-CONFIRMED via calibration #3 (SF panel 2,466 + 854.7 + 92.1 Veil-HP term = 3,413, inside the exact 72,084 decode)."
         },
         {
           "name": "Ether Veil: squad Max HP",
@@ -1987,6 +2012,7 @@
       "base_atk": 797,
       "base_def": 612,
       "impact": 86,
+      "energy_regen": 1.2,
       "anomaly_mastery": 112,
       "anomaly_proficiency": 111,
       "core_skill_bonuses": { "base_atk": 75, "anomaly_proficiency": 54 },
@@ -2096,11 +2122,10 @@
       "base_atk": 636,
       "base_def": 753,
       "impact": 105,
+      "energy_regen": 1.2,
       "anomaly_mastery": 87,
       "anomaly_proficiency": 90,
-      "core_skill_bonuses": {
-        "base_atk": 75
-      },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "core_passive": {
         "name": "Barrier of Resilience: Radiant Aegis ATK",
         "max_stacks": 1,
@@ -2213,6 +2238,7 @@
       "base_atk": 784,
       "base_def": 445,
       "impact": 95,
+      "energy_regen": 0,
       "anomaly_mastery": 90,
       "anomaly_proficiency": 89,
       "core_skill_bonuses": {
@@ -2300,11 +2326,10 @@
       "base_atk": 590,
       "base_def": 606,
       "impact": 118,
+      "energy_regen": 1.2,
       "anomaly_mastery": 92,
       "anomaly_proficiency": 90,
-      "core_skill_bonuses": {
-        "base_atk": 75
-      },
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
       "additional_ability": {
         "name": "Business Partner (Binding Trap)",
         "max_stacks": 1,

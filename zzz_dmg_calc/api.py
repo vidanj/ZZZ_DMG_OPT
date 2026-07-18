@@ -173,6 +173,15 @@ class CalcConfig:
             the wearer receives them too — e.g. Velina + Joyau Doré's
             +60 AP at 2 stacks. (Off-field supports' squad buffs come via
             ``SupportConfig.engine_buffs``.)
+        own_team_buffs: The ON-FIELD agent's OWN ``team_buffs`` stacks
+            (buff name -> stacks). Squad-wide buffs and enemy debuffs
+            cover their owner too (Norma's En-Nah +20% DMG / M1 RES
+            shred, Zhao's Ether Veil flat ATK), and a main agent cannot
+            sit in ``supports`` — this field applies the self share.
+            Whether a specific buff includes its owner is the user's
+            responsibility (each buff's note says; e.g. Zhao's M2 ATK%
+            is "OTHER squad members" — don't tick it here). Scaled
+            effects read ``scaling_inputs``.
         engine_buff_stacks: Stacks of the engine's refinement-scaled
             conditional buff (pilot: Sharpened Stinger's Predatory Instinct).
             The per-stack value comes from the engine's refinement rank; the
@@ -294,6 +303,7 @@ class CalcConfig:
     discs: list[Disc] = field(default_factory=list)
     set_stacks: dict[str, int] = field(default_factory=dict)
     engine_squad_buffs: dict[str, int] = field(default_factory=dict)
+    own_team_buffs: dict[str, int] = field(default_factory=dict)
     engine_buff_stacks: float = 0.0
     external_dmg_bonuses: list[float] = field(default_factory=list)
     external_crit_rate: float = 0.0
@@ -812,6 +822,26 @@ def _kit_contributions(
             apply_squad_buff(own_engine, own_rank, name, stacks,
                              f"{agent.name} (self)")
 
+    # --- On-field agent's OWN team buffs: squad-wide buffs and enemy
+    # debuffs cover their owner too (Norma's En-Nah +20% / Tech Divide /
+    # M1 RES shred, Zhao's Ether Veil flat ATK), and the main agent can
+    # never sit in ``supports`` — the self share is applied from here.
+    # Scaled effects read the main config's scaling_inputs.
+    if config.own_team_buffs:
+        own_by_name = {b.name: b for b in agent.team_buffs}
+        for name, stacks in config.own_team_buffs.items():
+            buff = own_by_name.get(name)
+            if buff is None:
+                raise CalcError(
+                    f"Agent '{agent.name}' has no team buff named "
+                    f"'{name}'; options: {sorted(own_by_name)}"
+                )
+            check_stacks(stacks, buff.max_stacks,
+                         f"{agent.name} (self): {buff.name}")
+            if stacks:
+                apply(buff, stacks, config.scaling_inputs,
+                      owner=f"{agent.name} (self): ")
+
     # --- Off-field supports: team buffs + squad set effects ---------------
     if len(config.supports) > 2:
         raise CalcError("A squad has at most 2 supports")
@@ -874,6 +904,86 @@ def _kit_contributions(
                 apply_squad_buff(support_engine, rank, name, stacks,
                                  member.name)
     return totals
+
+
+def panel_stats(
+    config: CalcConfig,
+    *,
+    consts: Constants | None = None,
+    disc_data: DiscData | None = None,
+    agents: dict[str, Agent] | None = None,
+    engines: dict[str, Engine] | None = None,
+    disc_sets: dict[str, DiscSet] | None = None,
+) -> dict[str, float]:
+    """Approximate in-game character-panel stats for the equipped build.
+
+    What the out-of-combat panel shows: agent base + max-core stat
+    boosts + engine (base ATK + advanced stat) + discs + always-on
+    2-piece set bonuses. Conditional 4-piece stacks, kit/team buffs,
+    engine conditionals and external buffs are combat-time state the
+    in-game screen does not display, so they are deliberately excluded —
+    these are the numbers the user can check against the character
+    screen (hence "approximate": panel-only, not the combat totals the
+    damage calculation uses).
+
+    Returns:
+        stat name -> value (fractions for percent stats). ``Sheer
+        Force`` appears only for rupture-specialty agents (only their
+        panel shows it): sheet ATK/HP conversions, no flat combat SF.
+
+    Raises:
+        CalcError: unknown agent or engine key.
+        DiscError / AgentError: invalid discs.
+    """
+    consts = consts if consts is not None else load_constants()
+    disc_data = disc_data if disc_data is not None else load_disc_data()
+    agents = agents if agents is not None else load_agents()
+    engines = engines if engines is not None else load_engines()
+    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
+
+    if config.agent_key not in agents:
+        raise CalcError(
+            f"Unknown agent '{config.agent_key}'; options: {sorted(agents)}"
+        )
+    agent = agents[config.agent_key]
+    engine_key = (config.engine_key if config.engine_key is not None
+                  else agent.default_engine)
+    if engine_key not in engines:
+        raise CalcError(
+            f"Unknown engine '{engine_key}'; options: {sorted(engines)}"
+        )
+    engine = engines[engine_key]
+
+    # set_stacks=None: 2pc bonuses only — 4pc stacks are combat state.
+    build = aggregate_build(
+        agent, engine, config.discs, disc_data, consts,
+        disc_sets=disc_sets, set_stacks=None,
+    )
+    other = build.other
+    stats = {
+        "HP": build.hp,
+        "ATK": build.atk_pre_combat,
+        "DEF": (agent.base_def * (1.0 + other.get("DEF%", 0.0))
+                + other.get("DEF", 0.0)),
+        "Impact": ((agent.base_impact + agent.core_bonus_impact)
+                   * (1.0 + other.get("Impact%", 0.0))),
+        "CRIT Rate": build.crit_rate,
+        "CRIT DMG": build.crit_dmg,
+        "PEN Ratio": build.pen_ratio,
+        "PEN": build.pen_flat,
+        "Energy Regen": (
+            (agent.base_energy_regen + agent.core_bonus_energy_regen)
+            * (1.0 + other.get("Energy Regen%", 0.0))
+        ),
+        "Anomaly Mastery": build.anomaly_mastery,
+        "Anomaly Proficiency": build.anomaly_proficiency,
+    }
+    if agent.specialty == "rupture":
+        stats["Sheer Force"] = (
+            build.atk_pre_combat * consts.sheer_force_atk_conversion
+            + build.hp * agent.sheer_force_hp_conversion
+        )
+    return stats
 
 
 def calculate(

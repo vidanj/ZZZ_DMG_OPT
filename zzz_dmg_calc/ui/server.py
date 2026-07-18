@@ -23,6 +23,8 @@ Endpoints::
     DELETE /discs/{id}  remove an inventory disc (blocked if referenced)
     POST   /loadouts    save equipped discs as a loadout of inventory
                         references (name collision asks before overwrite)
+    DELETE /loadouts/{name}  remove a saved loadout (its discs stay in
+                        the inventory and stop being reserved)
 
 Run either way::
 
@@ -45,15 +47,16 @@ from urllib.parse import unquote
 try:
     from ..api import (
         CalcConfig, SupportConfig, calculate, calculate_anomaly,
-        calculate_sheer,
+        calculate_sheer, panel_stats,
     )
     from ..agent import Agent, load_agents
     from ..anomalies import AnomalyData, load_anomalies
     from ..constants import Constants, load_constants
     from ..discs import (
-        Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
-        load_disc_sets, load_loadouts, load_user_discs, save_loadout,
-        save_user_disc, set_bonus_stats, set_tagged_dmg_bonuses,
+        Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
+        load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
+        save_loadout, save_user_disc, set_bonus_stats,
+        set_tagged_dmg_bonuses,
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
@@ -68,15 +71,16 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from zzz_dmg_calc.api import (
         CalcConfig, SupportConfig, calculate, calculate_anomaly,
-        calculate_sheer,
+        calculate_sheer, panel_stats,
     )
     from zzz_dmg_calc.agent import Agent, load_agents
     from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
     from zzz_dmg_calc.constants import Constants, load_constants
     from zzz_dmg_calc.discs import (
-        Disc, DiscData, DiscSet, Loadout, delete_user_disc, load_disc_data,
-        load_disc_sets, load_loadouts, load_user_discs, save_loadout,
-        save_user_disc, set_bonus_stats, set_tagged_dmg_bonuses,
+        Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
+        load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
+        save_loadout, save_user_disc, set_bonus_stats,
+        set_tagged_dmg_bonuses,
     )
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
@@ -459,6 +463,15 @@ def _build_config(body: dict) -> CalcConfig:
         str(n): int(s) for n, s in engine_squad_raw.items() if int(s)
     }
 
+    own_team_raw = body.get("own_team_buffs") or {}
+    if not isinstance(own_team_raw, dict):
+        raise ValueError(
+            "'own_team_buffs' must be an object of buff name -> stacks"
+        )
+    own_team_buffs = {
+        str(n): int(s) for n, s in own_team_raw.items() if int(s)
+    }
+
     dmg_bonus = _number(body, "external_dmg_bonus")
     dmg_taken = _number(body, "external_dmg_taken")
     stun_raw = body.get("stun_multiplier_override")
@@ -529,6 +542,7 @@ def _build_config(body: dict) -> CalcConfig:
         discs=discs,
         set_stacks=set_stacks,
         engine_squad_buffs=engine_squad_buffs,
+        own_team_buffs=own_team_buffs,
         engine_buff_stacks=_number(body, "engine_buff_stacks"),
         external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
         external_crit_rate=_number(body, "external_crit_rate"),
@@ -651,6 +665,13 @@ def run_calculation(data: AppData, body: dict) -> dict:
             counts_as_aftershock=config.counts_as_aftershock,
         ).items()
     }
+    # Approximate in-game character-panel stats for the equipped build
+    # (no combat-time buffs) — the page's "Final stats" section.
+    payload["panel_stats"] = panel_stats(
+        config, consts=data.consts, disc_data=data.disc_data,
+        agents=data.agents, engines=data.engines,
+        disc_sets=data.disc_sets,
+    )
     return payload
 
 
@@ -688,6 +709,11 @@ def run_optimization(data: AppData, body: dict) -> dict:
     min_stats_raw = opt_raw.get("min_stats") or {}
     if not isinstance(min_stats_raw, dict):
         raise ValueError("'min_stats' must be an object of stat -> minimum")
+    slot_mains_raw = opt_raw.get("slot_main_stats") or {}
+    if not isinstance(slot_mains_raw, dict):
+        raise ValueError(
+            "'slot_main_stats' must be an object of slot -> main stat"
+        )
     # Anomaly modes default to full-duration damage; the crit-table modes
     # (direct hits and Sheer, which crits the same way) default to average.
     default_objective = "average" if mode in ("direct", "rupture") else "full"
@@ -699,6 +725,10 @@ def run_optimization(data: AppData, body: dict) -> dict:
         min_stats={str(stat): float(minimum)
                    for stat, minimum in min_stats_raw.items()},
         required_4pc=opt_raw.get("required_4pc") or None,
+        slot_main_stats={int(slot): str(main)
+                         for slot, main in slot_mains_raw.items()
+                         if str(main)},
+        sets_only=bool(opt_raw.get("sets_only")),
     )
 
     # Discs reserved by another agent's loadout are off-limits: the
@@ -759,6 +789,10 @@ def run_optimization(data: AppData, body: dict) -> dict:
         "already_optimal": result.already_optimal,
         "min_stats": result.min_stats,
         "required_4pc": result.required_4pc,
+        "slot_main_stats": {
+            str(slot): main for slot, main in result.slot_main_stats.items()
+        },
+        "sets_only": result.sets_only,
         "best": build_option(result.best),
         "alternatives": [build_option(o) for o in result.alternatives],
         "combos_evaluated": result.combos_evaluated,
@@ -844,18 +878,28 @@ class UIRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=400)
 
     def do_DELETE(self) -> None:   # noqa: N802 (stdlib naming)
-        if not self.path.startswith("/discs/"):
+        if self.path.startswith("/discs/"):
+            disc_id = unquote(self.path[len("/discs/"):])
+            try:
+                with self.write_lock:
+                    delete_user_disc(disc_id)
+                    self._refresh_user_data()
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json({"user_discs": user_discs_payload(self.app_data)})
+        elif self.path.startswith("/loadouts/"):
+            name = unquote(self.path[len("/loadouts/"):])
+            try:
+                with self.write_lock:
+                    delete_loadout(name)
+                    self._refresh_user_data()
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json({"loadouts": loadouts_payload(self.app_data)})
+        else:
             self._send_json({"error": f"Unknown path {self.path}"}, status=404)
-            return
-        disc_id = unquote(self.path[len("/discs/"):])
-        try:
-            with self.write_lock:
-                delete_user_disc(disc_id)
-                self._refresh_user_data()
-        except ValueError as exc:
-            self._send_json({"error": str(exc)}, status=400)
-            return
-        self._send_json({"user_discs": user_discs_payload(self.app_data)})
 
     def _post_calculate(self, body: dict) -> None:
         self._send_json(run_calculation(self.app_data, body))

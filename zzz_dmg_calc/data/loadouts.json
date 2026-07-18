@@ -4,218 +4,75 @@
     "conventions": "Substats are stored as TOTAL rolls (in-game '+N' + 1, counting the initial roll). Every disc is validated against discs.json on load: 4 distinct substats, no duplicate of the main stat, <= 6 rolls each, <= 9 total, unique slots per loadout. Optional 'set' names a key in disc_sets.json. Optional 'agent' (an agents.json key) reserves the loadout's inventory discs for that character: other agents cannot equip them and the optimizer skips them; loadouts without 'agent' reserve nothing."
   },
   "loadouts": {
-    "TEST": {
-      "description": "Standard test disc set (entered in-game session 2026-07-02)",
-      "discs": [
-        {
-          "slot": 1,
-          "main_stat": "HP",
-          "substats": {
-            "ATK%": 3,
-            "CRIT DMG": 2,
-            "CRIT Rate": 2,
-            "Anomaly Proficiency": 1
-          },
-          "set": "BRANCH_BLADE_SONG"
-        },
-        {
-          "slot": 2,
-          "main_stat": "ATK",
-          "substats": {
-            "DEF": 2,
-            "CRIT DMG": 3,
-            "ATK%": 3,
-            "Anomaly Proficiency": 1
-          },
-          "set": "WOODPECKER_ELECTRO"
-        },
-        {
-          "slot": 3,
-          "main_stat": "DEF",
-          "substats": {
-            "ATK": 1,
-            "ATK%": 3,
-            "CRIT Rate": 3,
-            "CRIT DMG": 2
-          },
-          "set": "WOODPECKER_ELECTRO"
-        },
-        {
-          "slot": 4,
-          "main_stat": "CRIT DMG",
-          "substats": {
-            "ATK%": 4,
-            "HP": 1,
-            "PEN": 2,
-            "DEF": 2
-          },
-          "set": "WOODPECKER_ELECTRO"
-        },
-        {
-          "slot": 5,
-          "main_stat": "Attribute DMG%",
-          "substats": {
-            "CRIT Rate": 2,
-            "HP": 1,
-            "ATK%": 3,
-            "ATK": 2
-          },
-          "set": "BRANCH_BLADE_SONG"
-        },
-        {
-          "slot": 6,
-          "main_stat": "ATK%",
-          "substats": {
-            "ATK": 1,
-            "CRIT Rate": 2,
-            "PEN": 2,
-            "CRIT DMG": 3
-          },
-          "set": "WOODPECKER_ELECTRO"
-        }
-      ]
-    },
     "NEKO Build 1": {
       "description": "Crit build Neko 02072026",
       "agent": "nekomata",
       "discs": [
         {
-          "disc_id": "d3"
+          "disc_id": "d297"
         },
         {
-          "disc_id": "d4"
+          "disc_id": "d33"
         },
         {
-          "disc_id": "d5"
+          "disc_id": "d238"
         },
         {
-          "disc_id": "d8"
+          "disc_id": "d35"
         },
         {
-          "disc_id": "d7"
+          "disc_id": "d103"
         },
         {
-          "disc_id": "d9"
+          "disc_id": "d36"
         }
       ]
     },
-    "Piper Build 1": {
-      "description": "Piper Yuzuha Velina",
-      "agent": "piper",
+    "Zhao Build 1": {
+      "description": "Neko Zhao Norma",
+      "agent": "zhao",
       "discs": [
         {
-          "disc_id": "d165"
+          "disc_id": "d449"
         },
         {
-          "disc_id": "d123"
+          "disc_id": "d455"
         },
         {
-          "disc_id": "d174"
+          "disc_id": "d94"
         },
         {
-          "disc_id": "d125"
+          "disc_id": "d100"
         },
         {
-          "disc_id": "d129"
+          "disc_id": "d105"
         },
         {
-          "disc_id": "d128"
+          "disc_id": "d108"
         }
       ]
     },
-    "Velina Build 1": {
-      "description": "Piper Yuzuha Velina",
-      "agent": "velina",
+    "Norma Build 1": {
+      "description": "Neko Zhao Norma",
+      "agent": "norma",
       "discs": [
         {
-          "disc_id": "d130"
+          "disc_id": "d314"
         },
         {
-          "disc_id": "d131"
+          "disc_id": "d329"
         },
         {
-          "disc_id": "d132"
+          "disc_id": "d354"
         },
         {
-          "disc_id": "d133"
+          "disc_id": "d503"
         },
         {
-          "disc_id": "d134"
+          "disc_id": "d371"
         },
         {
-          "disc_id": "d135"
-        }
-      ]
-    },
-    "Yanagi Build 1": {
-      "description": "Yanagi Rina Vivian",
-      "agent": "yanagi",
-      "discs": [
-        {
-          "disc_id": "d144"
-        },
-        {
-          "disc_id": "d145"
-        },
-        {
-          "disc_id": "d146"
-        },
-        {
-          "disc_id": "d147"
-        },
-        {
-          "disc_id": "d148"
-        },
-        {
-          "disc_id": "d149"
-        }
-      ]
-    },
-    "vivian Build": {
-      "description": "Vivian Yanagi Rina",
-      "agent": "vivian",
-      "discs": [
-        {
-          "disc_id": "d136"
-        },
-        {
-          "disc_id": "d139"
-        },
-        {
-          "disc_id": "d140"
-        },
-        {
-          "disc_id": "d141"
-        },
-        {
-          "disc_id": "d142"
-        },
-        {
-          "disc_id": "d143"
-        }
-      ]
-    },
-    "Yixuan Build 1": {
-      "description": "Qingyi Lucia Yixuan",
-      "agent": "yixuan",
-      "discs": [
-        {
-          "disc_id": "d157"
-        },
-        {
-          "disc_id": "d161"
-        },
-        {
-          "disc_id": "d61"
-        },
-        {
-          "disc_id": "d159"
-        },
-        {
-          "disc_id": "d160"
-        },
-        {
-          "disc_id": "d73"
+          "disc_id": "d72"
         }
       ]
     }

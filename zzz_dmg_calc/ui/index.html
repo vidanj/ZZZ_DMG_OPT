@@ -119,6 +119,7 @@
   }
   .inv-card .badge { font-size: 11px; color: var(--muted); }
   .inv-card .badge.eq { color: var(--accent); font-weight: 700; }
+  .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
   .inv-card.reserved { opacity: .55; cursor: not-allowed; }
   .inv-card.reserved:hover { border-color: #333; }
   .inv-card .badge.reserved { color: var(--error); font-weight: 700; }
@@ -239,6 +240,8 @@
     <div class="toolbar">
       <div><label>Loadout</label><select id="loadout"></select></div>
       <button id="load-loadout">Load</button>
+      <button id="update-loadout" title="Update the selected loadout with the currently equipped discs (name, description and agent tag are kept)">Save</button>
+      <button id="delete-loadout" title="Remove the selected loadout — its discs stay in the inventory and stop being reserved">Delete</button>
       <button id="clear-discs">Clear all</button>
       <button id="browse-inventory">Browse inventory…</button>
     </div>
@@ -252,11 +255,11 @@
     are reserved (🔒): they can't be equipped here and the optimizer
     skips them.</p>
     <div class="toolbar" style="margin-top:12px">
-      <div><label>Save equipped discs as a new loadout for the selected agent — name</label>
+      <div><label>Create a new loadout for the selected agent — name</label>
         <input type="text" id="loadout-name" placeholder="e.g. NEKO CRIT"></div>
       <div><label>Description (optional)</label>
         <input type="text" id="loadout-desc"></div>
-      <button id="save-loadout">Save loadout</button>
+      <button id="save-loadout">Create loadout</button>
     </div>
     <div class="hint" id="save-feedback"></div>
     <div id="set-stacks"></div>
@@ -376,6 +379,18 @@
         <div><label>Build around 4pc set (synergy is your call)</label>
           <select id="opt-required"></select></div>
       </div>
+      <div class="row c3">
+        <div><label>Slot 4 main stat (required)</label>
+          <select id="opt-main-4"></select></div>
+        <div><label>Slot 5 main stat (required)</label>
+          <select id="opt-main-5"></select></div>
+        <div><label>Slot 6 main stat (required)</label>
+          <select id="opt-main-6"></select></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0"
+             title="Reject combinations with set-less discs or singleton pieces — with a required 4pc set the result is always 4pc + 2pc">
+        <input type="checkbox" id="opt-sets-only">
+        2pc priority — every disc must complete a set bonus</label>
       <div id="opt-constraints"></div>
       <button class="mini" id="opt-add-constraint" style="margin-bottom:4px">
         + Minimum-stat constraint</button>
@@ -384,7 +399,11 @@
       candidates are your saved inventory plus what's equipped. Tick 🔒 on a
       disc card to keep that slot's current disc. Constraints require the
       build to keep at least the given total (the best build meeting them
-      may deal less than your current one).</p>
+      may deal less than your current one).
+      ⚠ An unrestricted search — no 🔒 locks, no required 4pc set, no
+      required mains, no constraints — considers every saved disc and can
+      take <b>minutes</b> on a large inventory; narrowing it with any of
+      the above speeds it up.</p>
     </div>
   </div>
 </div>
@@ -492,6 +511,9 @@ function buildStaticSelects() {
     ...Object.entries(DB.skill_tags).map(([k, label]) => [k, label])]);
   fillSelect($("opt-required"), [["", "(none — any sets)"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
+  for (const slot of [4, 5, 6])
+    fillSelect($(`opt-main-${slot}`), [["", "(any)"],
+      ...Object.keys(DB.disc.main_stats[String(slot)]).map(m => [m, m])]);
   rebuildLoadoutSelect();
 }
 
@@ -626,8 +648,24 @@ function refreshSetStacks() {
   for (const inp of wrap.querySelectorAll("input"))
     previous[inp.dataset.set] = setStackValue(inp);
   wrap.innerHTML = "";
+  // Squad-facing 4pc kinds the WEARER can use as a build stat (the
+  // wearer is a squad member too — King of the Summit on the on-field
+  // stunner); other kinds stay support-side only.
+  const SQUAD_KIND_STAT = { dmg_bonus: "DMG%", crit_rate: "CRIT Rate",
+                            crit_dmg: "CRIT DMG" };
   for (const [key, count] of Object.entries(counts)) {
-    const bonus = DB.sets[key].bonus_4pc;
+    const s = DB.sets[key];
+    const squadStat = !s.bonus_4pc && s.squad_4pc
+      ? SQUAD_KIND_STAT[s.squad_4pc.kind || "dmg_bonus"] : null;
+    const bonus = s.bonus_4pc || (squadStat && {
+      stat: squadStat,
+      per_stack: s.squad_4pc.value,
+      max_stacks: s.squad_4pc.max_stacks,
+      auto: s.squad_4pc.auto,
+      note: (s.squad_4pc.note || "") + " Squad-facing: the wearer is a "
+        + "squad member too — don't ALSO tick it on a support wearing "
+        + "the same set (same-name passives don't stack).",
+    });
     if (count < 4 || !bonus) continue;
     // Flat stats (AP, ATK) show +N; percent stats show +N%.
     const flat = ["Anomaly Proficiency", "Anomaly Mastery", "ATK", "PEN",
@@ -1068,6 +1106,15 @@ function renderKit() {
                             label: `${agent.potential_name || "Potential"} P${level} — ${p.name}`,
                             hint: ` <span class="note">(activate at most ONE potential level)</span>` });
   }
+  // The agent's OWN team buffs: squad-wide buffs and enemy debuffs cover
+  // their owner too, and the main agent can't sit in the Team card — tick
+  // here the parts that apply to the agent itself (each note says which;
+  // e.g. Seed's Vanguard buffs target a TEAMMATE, skip those as main).
+  for (const b of agent.team_buffs || []) {
+    rows.push({ attr: `data-kit="tb" data-name="${b.name}"`, buff: b,
+                label: `Squad buff (self) — ${b.name}`,
+                hint: conditionHint(b.condition, "") });
+  }
   const skipped = Object.entries(agent.mindscapes || {})
     .filter(([, m]) => !m.buff)
     .map(([lv, m]) => `M${lv} ${m.name}: ${m.note}`);
@@ -1121,9 +1168,9 @@ function renderKit() {
 
 /* Read the kit controls:
    { core: 0|1, aa: stacks, mind: {level: stacks}, pot: {level: stacks},
-     scaling: {name: value} }. */
+     team: {buff name: stacks}, scaling: {name: value} }. */
 function kitState() {
-  const state = { core: 0, aa: 0, mind: {}, pot: {}, scaling: {} };
+  const state = { core: 0, aa: 0, mind: {}, pot: {}, team: {}, scaling: {} };
   for (const inp of $("kit-controls").querySelectorAll("input")) {
     if (inp.dataset.kitscaling !== undefined) {
       state.scaling[inp.dataset.kitscaling] = parseFloat(inp.value) || 0;
@@ -1134,6 +1181,7 @@ function kitState() {
     if (inp.dataset.kit === "core") state.core = value;
     else if (inp.dataset.kit === "aa") state.aa = value;
     else if (inp.dataset.kit === "p") state.pot[inp.dataset.level] = value;
+    else if (inp.dataset.kit === "tb") state.team[inp.dataset.name] = value;
     else state.mind[inp.dataset.level] = value;
   }
   return state;
@@ -1150,6 +1198,7 @@ function applyKit(state) {
     const saved = inp.dataset.kit === "core" ? state.core
       : inp.dataset.kit === "aa" ? state.aa
       : inp.dataset.kit === "p" ? (state.pot || {})[inp.dataset.level]
+      : inp.dataset.kit === "tb" ? (state.team || {})[inp.dataset.name]
       : (state.mind || {})[inp.dataset.level];
     if (saved == null) continue;
     if (inp.type === "checkbox") inp.checked = saved > 0;
@@ -1433,7 +1482,10 @@ function clearDiscs() {
 function fillCard(card, disc) {
   card.querySelector(".equipped").checked = true;
   card.classList.remove("off");
-  card.querySelector(".main").value = disc.main_stat;
+  // Legacy shim: slot-6 "Anomaly Mastery" mains predate the percent
+  // rename (2026-07-17 — the stat was always +30% of base AM in-game).
+  card.querySelector(".main").value = disc.main_stat === "Anomaly Mastery"
+    ? "Anomaly Mastery%" : disc.main_stat;
   card.querySelector(".set").value = disc.set || "";
   card.querySelector(".element").value = disc.element || "";
   refreshElementControl(card);
@@ -1556,12 +1608,19 @@ function renderInvFilters() {
       invState.slot = value;
       renderInvFilters();
       renderInvGrid();
+      // Keep an open add-disc form in step with the slot filter.
+      if (!$("inv-addform").hidden && value) {
+        $("add-slot").value = String(value);
+        renderAddMains();
+      }
     });
     tabs.appendChild(btn);
   }
 
+  const keptSet = $("inv-set").value;
   fillSelect($("inv-set"), [["", "Any set"], ["__none", "No set"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
+  $("inv-set").value = keptSet;   // every option is always present
   const mains = invState.slot
     ? Object.keys(DB.disc.main_stats[String(invState.slot)])
     : [...new Set(Object.values(DB.disc.main_stats)
@@ -1808,6 +1867,9 @@ function renderAddForm() {
   if (invState.slot) $("add-slot").value = String(invState.slot);
   fillSelect($("add-set"), [["", "No set / not modeled"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
+  // A set picked in the search filter is the likely set of the new disc.
+  const setFilter = $("inv-set").value;
+  if (setFilter && setFilter !== "__none") $("add-set").value = setFilter;
   fillSelect($("add-element"), elementsList().map(e => [e, e]));
   renderAddMains();
 }
@@ -1870,17 +1932,54 @@ async function saveNewDisc() {
     const data = await postJSON("/discs", payload);
     DB.user_discs = data.user_discs;
     invState.selected = data.id;
-    $("inv-addform").hidden = true;
     renderInvGrid();
+    // Multi-add: the form stays open with slot/main/set kept; only the
+    // substats reset for the next disc.
+    renderAddSubs();
+    flash($("add-save"), data.created ? `Saved ${data.id} ✓` : `= ${data.id}`);
   } catch (exc) {
     invShowError(exc.message);
   }
 }
 
-/* Save the equipped discs as a loadout: the server stores each disc in the
-   inventory (deduped) and writes the loadout as references to their ids.
-   The loadout is tagged with the selected agent, reserving its discs for
-   that character (the server rejects discs already reserved by another
+/* Update the loadout selected in the dropdown with the currently equipped
+   discs — no retyping the name. Description and agent tag are preserved;
+   only the disc references change. */
+async function updateLoadoutFlow() {
+  $("error").style.display = "none";
+  const name = $("loadout").value;
+  const loadout = DB.loadouts[name];
+  if (!loadout) { showError("Select a loadout to update first."); return; }
+  let discs;
+  try {
+    discs = equippedDiscs();
+  } catch (exc) {
+    showError(exc.message);
+    return;
+  }
+  if (!discs.length) { showError("Equip at least one disc first."); return; }
+  const who = loadout.agent ? ` (${agentName(loadout.agent)}'s build)` : "";
+  if (!confirm(`Update loadout '${name}'${who} with the ${discs.length} `
+      + `currently equipped disc(s)?`)) return;
+  try {
+    const data = await postJSON("/loadouts", {
+      name, description: loadout.description, discs, overwrite: true,
+      agent_key: loadout.agent || "",
+    });
+    DB.loadouts = data.loadouts;
+    DB.user_discs = data.user_discs;
+    rebuildLoadoutSelect(name);
+    $("save-feedback").textContent = `Loadout '${name}' updated with `
+      + `${discs.length} disc(s).`;
+  } catch (exc) {
+    showError(exc.message);
+  }
+}
+
+/* Create a new loadout from the equipped discs: the server stores each disc
+   in the inventory (deduped) and writes the loadout as references to their
+   ids. The loadout is tagged with the selected agent, reserving its discs
+   for that character (the server rejects discs already reserved by another
    agent's loadout). */
 async function saveLoadoutFlow(overwrite = false) {
   $("error").style.display = "none";
@@ -1968,6 +2067,9 @@ function collectConfig() {
   const potentials = {};
   for (const [level, stacks] of Object.entries(kit.pot))
     if (stacks) potentials[level] = stacks;
+  const ownTeamBuffs = {};
+  for (const [name, stacks] of Object.entries(kit.team || {}))
+    if (stacks) ownTeamBuffs[name] = stacks;
 
   const supports = [];
   for (const slot of document.querySelectorAll(".support")) {
@@ -2019,6 +2121,7 @@ function collectConfig() {
     additional_ability_stacks: kit.aa,
     mindscapes,
     potentials,
+    own_team_buffs: ownTeamBuffs,
     scaling_inputs: kit.scaling,
     supports,
     discs,
@@ -2077,6 +2180,38 @@ const fmtStat = (name, v) =>
 const fmtNum = v => v.toLocaleString("en-US",
   { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
+/* "Final stats" — the server's approximate in-game character-panel
+   values (agent + engine + discs + 2pc bonuses; combat-time buffs and
+   4pc stacks excluded, so the user can compare with the in-game
+   character screen). */
+function panelStatsBlock(r) {
+  const p = r.panel_stats;
+  if (!p) return "";
+  const pct = v => (v * 100).toFixed(1) + "%";
+  const rows = [
+    ["HP", fmtNum(p["HP"])],
+    ["ATK", fmtNum(p["ATK"])],
+    ["DEF", fmtNum(p["DEF"])],
+    ["Impact", Math.round(p["Impact"])],
+    ["CRIT Rate", pct(p["CRIT Rate"])],
+    ["CRIT DMG", pct(p["CRIT DMG"])],
+    ["PEN Ratio", pct(p["PEN Ratio"])],
+    ["PEN", Math.round(p["PEN"])],
+    ["Energy Regen", p["Energy Regen"].toFixed(2)],
+    ["Anomaly Mastery", Math.round(p["Anomaly Mastery"])],
+    ["Anomaly Proficiency", Math.round(p["Anomaly Proficiency"])],
+  ];
+  if ("Sheer Force" in p) rows.push(["Sheer Force", fmtNum(p["Sheer Force"])]);
+  return `
+    <h3 style="margin:14px 0 4px">Final stats</h3>
+    <p class="note" style="margin:0 0 6px">Approximate in-game character
+    panel (agent + engine + discs + 2pc bonuses — combat buffs and 4pc
+    stacks don't show there).</p>
+    <div class="panel-grid">${rows.map(([k, v]) =>
+      `<div class="stat-line"><span>${k}</span><b>${v}</b></div>`).join("")}
+    </div>`;
+}
+
 function renderResults(r) {
   if (r.mode === "rupture") { renderSheerResults(r); return; }
   if (r.mode && r.mode !== "direct") { renderAnomalyResults(r); return; }
@@ -2111,6 +2246,7 @@ function renderResults(r) {
       </tbody>
     </table>
     ${averageNote(r)}
+    ${panelStatsBlock(r)}
     ${buffSummary(r)}`;
 }
 
@@ -2161,6 +2297,7 @@ function renderSheerResults(r) {
     (PEN Ratio / flat PEN do nothing); crits normally. All Sheer
     coefficients are PROVISIONAL (datamine) until an in-game popup
     calibration.</p>
+    ${panelStatsBlock(r)}
     ${buffSummary(r)}`;
 }
 
@@ -2211,6 +2348,7 @@ function renderAnomalyResults(r) {
     the other 30% counts as unbuffed/teammate-diluted buildup (plain
     panel). Real rotations land in between; use the CLI's buildup
     segments for exact mixed-state calibration work.</p>
+    ${panelStatsBlock(r)}
     ${buffSummary(r)}`;
 }
 
@@ -2309,30 +2447,30 @@ function lockedSlots() {
     .map(card => parseInt(card.dataset.slot, 10));
 }
 
-/* Minimum-stat constraints per optimizer family (§11 E3). Percent-like
-   stats are entered as human percentages and converted to fractions on
-   send; the totals are the ones the results panel reports. Sheer
-   (Rupture) has no DEF zone and no AP/AM scaling, so its family swaps
-   PEN/AP/AM for HP and Sheer Force. */
+/* Minimum-stat constraints (§11 E3). Every optimizer family accepts the
+   full base-stat list — a constrained stat need not scale that mode's
+   damage (kit requirements). Percent-like stats are entered as human
+   percentages and converted to fractions on send; the rest are the
+   final panel totals (Impact / Energy Regen = agent base × (1 + % from
+   discs and engine)). Sheer (Rupture) adds its Sheer Force panel. */
+const BASE_CONSTRAINT_DEFS = [
+  ["ATK", "ATK (final panel)", false],
+  ["HP", "HP (final panel)", false],
+  ["DEF", "DEF (final panel)", false],
+  ["CRIT Rate", "CRIT Rate %", true],
+  ["CRIT DMG", "CRIT DMG %", true],
+  ["PEN Ratio", "PEN Ratio %", true],
+  ["PEN", "PEN (flat)", false],
+  ["Impact", "Impact (final panel)", false],
+  ["Energy Regen", "Energy Regen (final panel)", false],
+  ["Anomaly Proficiency", "Anomaly Proficiency", false],
+  ["Anomaly Mastery", "Anomaly Mastery", false],
+];
 const CONSTRAINT_DEFS = {
-  direct: [
-    ["ATK", "ATK (final panel)", false],
-    ["CRIT Rate", "CRIT Rate %", true],
-    ["CRIT DMG", "CRIT DMG %", true],
-    ["PEN Ratio", "PEN Ratio %", true],
-    ["PEN", "PEN (flat)", false],
-    ["Anomaly Proficiency", "Anomaly Proficiency", false],
-    ["Anomaly Mastery", "Anomaly Mastery", false],
-  ],
-  rupture: [
-    ["ATK", "ATK (final panel)", false],
-    ["HP", "HP (final panel)", false],
-    ["CRIT Rate", "CRIT Rate %", true],
-    ["CRIT DMG", "CRIT DMG %", true],
-    ["Sheer Force", "Sheer Force", false],
-  ],
+  direct: BASE_CONSTRAINT_DEFS,
+  anomaly: BASE_CONSTRAINT_DEFS,
+  rupture: [...BASE_CONSTRAINT_DEFS, ["Sheer Force", "Sheer Force", false]],
 };
-CONSTRAINT_DEFS.anomaly = CONSTRAINT_DEFS.direct;
 
 /* The active optimizer family / its constraint stats (set by
    syncOptimizeObjectives after each Calculate; "direct" before one). */
@@ -2384,6 +2522,9 @@ async function runOptimize() {
     showError(exc.message);
     return;
   }
+  const slotMains = {};
+  for (const slot of [4, 5, 6])
+    if ($(`opt-main-${slot}`).value) slotMains[slot] = $(`opt-main-${slot}`).value;
   body.optimize = {
     objective: $("opt-objective").value,
     set_assumption: $("opt-assumption").value,
@@ -2391,11 +2532,24 @@ async function runOptimize() {
     top_n: 5,
     min_stats: collectMinStats(),
     required_4pc: $("opt-required").value || null,
+    slot_main_stats: slotMains,
+    sets_only: $("opt-sets-only").checked,
   };
   const btn = $("optimize");
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Optimizing…";
+  // An unrestricted search over a big inventory can run for minutes —
+  // say so on the button instead of looking frozen.
+  const opt = body.optimize;
+  const unrestricted = !opt.required_4pc
+    && !opt.sets_only
+    && !opt.locked_slots.length
+    && !Object.keys(opt.slot_main_stats).length
+    && !Object.keys(opt.min_stats).length;
+  const bigInventory = Object.keys(DB.user_discs || {}).length > 100;
+  btn.textContent = unrestricted && bigInventory
+    ? "Optimizing… (unrestricted search, may take minutes — locks/constraints speed it up)"
+    : "Optimizing…";
   try {
     const data = await postJSON("/optimize", body);
     lastOptimize = data;
@@ -2451,6 +2605,9 @@ function constraintsNote(data) {
     const set = DB.sets[data.required_4pc];
     parts.push(`build around ${set ? set.name : data.required_4pc} 4pc`);
   }
+  if (data.sets_only) parts.push("every disc completes a set bonus (2pc priority)");
+  for (const [slot, main] of Object.entries(data.slot_main_stats || {}))
+    parts.push(`slot ${slot} main = ${main}`);
   for (const [stat, minimum] of Object.entries(data.min_stats || {}))
     parts.push(`${stat} ≥ ${pctStats.has(stat)
       ? (minimum * 100).toFixed(1) + "%" : minimum}`);
@@ -2611,7 +2768,8 @@ function restoreState() {
     card.querySelector(".equipped").checked = d.equipped;
     card.classList.toggle("off", !d.equipped);
     card.querySelector(".locked").checked = !!d.locked;
-    if (d.main) card.querySelector(".main").value = d.main;
+    if (d.main) card.querySelector(".main").value =
+      d.main === "Anomaly Mastery" ? "Anomaly Mastery%" : d.main;
     card.querySelector(".set").value = d.set || "";
     card.querySelector(".element").value = d.element || "";
     refreshElementControl(card);
@@ -2752,6 +2910,28 @@ async function init() {
           + `${who}.`)) return;
     }
     loadLoadout(name); onAnyChange();
+  });
+  $("update-loadout").addEventListener("click", updateLoadoutFlow);
+  $("delete-loadout").addEventListener("click", async () => {
+    const name = $("loadout").value;
+    const loadout = DB.loadouts[name];
+    if (!loadout) return;
+    const who = loadout.agent ? ` (${agentName(loadout.agent)}'s build)` : "";
+    if (!confirm(`Delete loadout '${name}'${who}? Its discs stay in the `
+        + `inventory and become free for any agent.`)) return;
+    $("error").style.display = "none";
+    try {
+      const resp = await fetch(`/loadouts/${encodeURIComponent(name)}`,
+                               { method: "DELETE" });
+      const data = await resp.json();
+      if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+      DB.loadouts = data.loadouts;
+      rebuildLoadoutSelect();
+      $("save-feedback").textContent = `Loadout '${name}' deleted — its discs `
+        + `are no longer reserved.`;
+    } catch (exc) {
+      showError(String(exc));
+    }
   });
   $("clear-discs").addEventListener("click", () => { clearDiscs(); onAnyChange(); });
   $("save-loadout").addEventListener("click", () => saveLoadoutFlow());
