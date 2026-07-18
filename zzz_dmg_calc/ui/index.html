@@ -395,6 +395,12 @@
              title="Search only the best 15 discs per slot (by standalone value; equipped and required-set discs always survive). Much faster on big inventories, but APPROXIMATE — the true optimum may use a disc outside the cut.">
         <input type="checkbox" id="opt-fast">
         Fast search — top 15 discs per slot (approximate)</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0"
+             title="Run until the search truly finishes instead of stopping at the work budget. Exact, but on a big unrestricted inventory this can take VERY long (hours) — 🔒 locks, a required set, constraints, or Fast search get you there far sooner.">
+        <input type="checkbox" id="opt-no-budget">
+        Bypass search budget — search until finished
+        <span class="note">⚠ can take very long; prefer adding filters
+        or Fast search</span></label>
       <div id="opt-constraints"></div>
       <button class="mini" id="opt-add-constraint" style="margin-bottom:4px">
         + Minimum-stat constraint</button>
@@ -2539,6 +2545,7 @@ async function runOptimize() {
     slot_main_stats: slotMains,
     sets_only: $("opt-sets-only").checked,
     candidate_cap: $("opt-fast").checked ? 15 : 0,
+    ignore_budget: $("opt-no-budget").checked,
   };
   const btn = $("optimize");
   const original = btn.textContent;
@@ -2553,7 +2560,10 @@ async function runOptimize() {
     && !Object.keys(opt.slot_main_stats).length
     && !Object.keys(opt.min_stats).length;
   const bigInventory = Object.keys(DB.user_discs || {}).length > 100;
-  btn.textContent = unrestricted && bigInventory
+  btn.textContent = opt.ignore_budget && unrestricted && bigInventory
+    ? "Optimizing… (⚠ no budget cap on an unrestricted search — this can "
+      + "take VERY long; filters or Fast search are much quicker)"
+    : unrestricted && bigInventory
     ? "Optimizing… (unrestricted search, may take minutes — locks/constraints speed it up)"
     : "Optimizing…";
   try {

@@ -730,6 +730,11 @@ def run_optimization(data: AppData, body: dict) -> dict:
                          if str(main)},
         sets_only=bool(opt_raw.get("sets_only")),
         candidate_cap=int(opt_raw.get("candidate_cap") or 0),
+        # Bypass the anytime budget (user-requested "search deeper"):
+        # effectively unlimited — the search runs until finished, however
+        # long that takes. The page warns and recommends filters instead.
+        **({"combo_budget": 10 ** 15}
+           if opt_raw.get("ignore_budget") else {}),
     )
 
     # Discs reserved by another agent's loadout are off-limits: the
