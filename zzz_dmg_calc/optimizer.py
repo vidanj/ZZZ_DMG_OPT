@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import heapq
 from dataclasses import dataclass, field, replace
+from itertools import product
 
 from . import formulas
 from .agent import Agent, load_agents
@@ -215,6 +216,23 @@ class OptimizeError(ValueError):
     constraints no combination can meet."""
 
 
+class _BudgetExhausted(Exception):
+    """Internal: the DFS hit the evaluation budget — the heap holds the
+    best builds found so far (anytime behavior, not an error)."""
+
+
+#: Pay for the tighter count-aware set bound only when the quick static
+#: bound lands within this factor of the incumbent threshold — nodes far
+#: above it descend anyway, so the second bound would be wasted work.
+_TIGHT_BOUND_MARGIN = 1.5
+
+#: Wide searches first run an INTERNAL fast pass capped at this many
+#: candidates per slot (budget-sliced): it finds set-coherent optima the
+#: greedy ascent cannot reach (completing a 4pc takes coordinated swaps),
+#: giving the full DFS a near-optimal incumbent before the main budget.
+_SEED_STAGE_CAP = 15
+
+
 @dataclass(frozen=True)
 class OptimizeOptions:
     """Search options (plan §3, §11).
@@ -230,8 +248,11 @@ class OptimizeOptions:
         locked_slots: Slots that must keep their current disc (or stay
             empty if the baseline leaves them empty).
         top_n: How many builds to report (the best + runners-up).
-        combo_budget: Abort after evaluating this many builds — the
-            error tells the user to lock slots (§11 E2).
+        combo_budget: Cap on total search WORK (leaf evaluations + the
+            equally-priced interior bound probes). Reaching it is not an
+            error: the best builds found so far are returned with
+            ``budget_exhausted`` set (anytime behavior), so wall time
+            stays bounded on any inventory.
         min_stats: stat name -> minimum final-build total the build must
             reach (keys from :data:`CONSTRAINT_STATS`). If the baseline
             itself misses a minimum, the best *feasible* build may deal
@@ -252,6 +273,10 @@ class OptimizeOptions:
             pieces). With ``required_4pc`` that means exactly 4pc + 2pc;
             alone it also allows 2+2+2 / 3+3 / 6. Feasibility semantics
             mirror ``min_stats``.
+        candidate_cap: fast search — keep only the best N candidates per
+            slot (by solo value; the equipped disc and the required 4pc
+            set survive the cut). APPROXIMATE by design: the true
+            optimum may use a disc outside the cap. 0 = exact search.
     """
 
     objective: str = "average"
@@ -263,6 +288,7 @@ class OptimizeOptions:
     required_4pc: str | None = None
     slot_main_stats: dict[int, str] = field(default_factory=dict)
     sets_only: bool = False
+    candidate_cap: int = 0
 
 
 @dataclass(frozen=True)
@@ -318,6 +344,9 @@ class OptimizeResult:
     discs_pruned: int
     slot_main_stats: dict[int, str] = field(default_factory=dict)
     sets_only: bool = False
+    # The evaluation budget ran out: ``best``/``alternatives`` are the
+    # best builds FOUND, with no optimality claim (anytime behavior).
+    budget_exhausted: bool = False
 
 
 def _bucket_vector(stats: dict[str, float]) -> tuple[float, ...]:
@@ -426,6 +455,10 @@ def _validate_options(
             or not isinstance(options.combo_budget, int) \
             or options.combo_budget < 1:
         raise OptimizeError("'combo_budget' must be an integer >= 1")
+    if isinstance(options.candidate_cap, bool) \
+            or not isinstance(options.candidate_cap, int) \
+            or options.candidate_cap < 0:
+        raise OptimizeError("'candidate_cap' must be an integer >= 0")
     bad_slots = [s for s in options.locked_slots if s not in (1, 2, 3, 4, 5, 6)]
     if bad_slots:
         raise OptimizeError(f"Invalid locked slots: {sorted(bad_slots)}")
@@ -699,12 +732,22 @@ def _search(
     top_n: int,
     budget: int,
     bound: bool,
-) -> tuple[list, int]:
+    slot_cap: int = 0,
+) -> tuple[list, int, bool]:
     """Branch-and-bound DFS over the per-slot candidates (plan §11 E2).
 
     ``pairs_only`` (2pc priority): only accept leaves where every set
     worn has >= 2 pieces (the callers already excluded set-less
     candidates, so singleton pieces are the only thing to reject here).
+
+    ``slot_cap`` > 0 truncates each slot to its best ``slot_cap``
+    candidates by solo value (equipped disc always kept; the required
+    4pc set keeps a piece per slot) — the user-facing "fast search",
+    APPROXIMATE by design.
+
+    Returns ``(heap, evals, exhausted)``; ``exhausted`` means the budget
+    ran out and the heap holds the best builds found so far, with no
+    completeness claim (anytime behavior — no exception).
 
     Mode-agnostic search core shared by :func:`optimize` (direct hits) and
     :func:`optimize_anomaly`. ``evaluate(buckets, tagged) -> (value, aux)``
@@ -714,12 +757,9 @@ def _search(
     evaluation budget — is identical across modes because anomaly damage is
     monotone in every tracked bucket, exactly like direct-hit damage.
 
-    Returns ``(heap, evals)``: the raw top-N heap of
-    ``(value, -counter, combo)`` tuples (ranked by the caller) and the
-    number of leaf builds evaluated.
-
-    Raises:
-        OptimizeError: the search exceeded ``budget`` evaluated builds.
+    The heap holds ``(value, -counter, combo)`` tuples, ranked and
+    de-duplicated by the caller (greedy seeds may also be found by the
+    DFS).
     """
     n_buckets = len(base_buckets)
 
@@ -738,6 +778,24 @@ def _search(
         tail = candidates[slot][len(head):]
         tail.sort(key=solo_value, reverse=True)
         candidates[slot] = head + tail
+
+    # Fast search (approximate): keep the best ``slot_cap`` candidates per
+    # slot. The tail is already solo-sorted; the equipped head survives at
+    # index 0, and the required 4pc set keeps its best piece per slot so
+    # the requirement can't become spuriously unreachable.
+    if slot_cap:
+        for slot in slots:
+            full = candidates[slot]
+            if len(full) <= slot_cap:
+                continue
+            kept = full[:slot_cap]
+            if required is not None and not any(
+                    c.disc.disc_set == required for c in kept):
+                extra = next((c for c in full[slot_cap:]
+                              if c.disc.disc_set == required), None)
+                if extra is not None:
+                    kept = kept + [extra]
+            candidates[slot] = kept
 
     # suffix_max[i][k]: the most bucket k can still gain from slots[i:].
     suffix_max = [[0.0] * n_buckets for _ in range(len(slots) + 1)]
@@ -767,8 +825,28 @@ def _search(
     )
 
     heap: list[tuple[float, int, tuple[_Candidate, ...]]] = []
+    heap_keys: set[tuple[int, ...]] = set()   # combos currently in the heap
     counter = 0
     evals = 0
+    probes = 0     # interior bound evaluations — same cost as a leaf
+
+    def offer(value: float, combo: tuple[_Candidate, ...]) -> None:
+        """Push one acceptable build into the top-N heap, deduplicated —
+        a greedy seed the DFS finds again must not crowd out a genuine
+        alternative."""
+        nonlocal counter
+        key = tuple(id(c) for c in combo)
+        if key in heap_keys:
+            return
+        counter += 1
+        entry = (value, -counter, combo)
+        if len(heap) < top_n:
+            heapq.heappush(heap, entry)
+            heap_keys.add(key)
+        elif value > heap[0][0]:
+            removed = heapq.heapreplace(heap, entry)
+            heap_keys.discard(tuple(id(c) for c in removed[2]))
+            heap_keys.add(key)
     work_buckets = list(base_buckets)
     work_counts: dict[str, int] = {}
     combo_stack: list[_Candidate] = []
@@ -823,8 +901,83 @@ def _search(
                 ub[k] = static_set_ub[k]
         return ub, min(tag_ub, static_tag_ub)
 
+    def combo_value(combo) -> tuple[float, bool]:
+        """One full build's (value, acceptable) — the leaf math, reused
+        by the greedy warm start below."""
+        buckets = list(base_buckets)
+        counts: dict[str, int] = {}
+        for cand in combo:
+            for k, v in enumerate(cand.buckets):
+                buckets[k] += v
+            key = cand.disc.disc_set
+            if key is not None:
+                counts[key] = counts.get(key, 0) + 1
+        tagged = _fold_sets(buckets, counts, set_2pc, set_4pc, set_tag_bonus)
+        value, aux = evaluate(buckets, tagged)
+        acceptable = (
+            feasible(buckets, aux)
+            and (required is None or counts.get(required, 0) >= 4)
+            and (not pairs_only
+                 or all(count >= 2 for count in counts.values()))
+        )
+        return value, acceptable
+
+    def push_seed(combo) -> None:
+        value, acceptable = combo_value(combo)
+        if acceptable:
+            offer(value, tuple(combo))
+
+    def ascend(start) -> None:
+        """Coordinate ascent over the FULL candidate lists from ``start``;
+        the (acceptable) local optimum joins the heap."""
+        combo = list(start)
+        for _ in range(3):                        # ascent passes
+            improved = False
+            for i, slot in enumerate(slots):
+                best_cand = combo[i]
+                best_value, best_ok = combo_value(combo)
+                for cand in candidates[slot]:
+                    if cand is combo[i]:
+                        continue
+                    combo[i] = cand
+                    value, acceptable = combo_value(combo)
+                    if acceptable and (not best_ok or value > best_value):
+                        best_cand, best_value = cand, value
+                        best_ok, improved = True, True
+                combo[i] = best_cand
+            if not improved:
+                break
+        push_seed(tuple(combo))
+
+    def seed_incumbents() -> None:
+        """Warm start: the DFS begins with a near-optimal top-N threshold
+        so the bound prunes from node 1, and an exhausted budget still
+        returns strong builds. Exactness is untouched — bounds only ever
+        discard builds that cannot beat the heap, and seeds the DFS finds
+        again are de-duplicated. Three stages, milliseconds total:
+        the baseline (seeded FIRST so exact ties keep resolving toward
+        the current discs), a mini exhaustive pass over the top 5 per
+        slot, then coordinate ascent over the full lists from the best
+        combos found so far."""
+        push_seed(tuple(candidates[slot][0] for slot in slots))
+        for combo in product(*(candidates[slot][:5] for slot in slots)):
+            push_seed(combo)
+        starts = [tuple(candidates[slot][0] for slot in slots),
+                  tuple(max(candidates[slot], key=solo_value)
+                        for slot in slots)]
+        starts += [entry[2]
+                   for entry in sorted(heap, key=lambda e: -e[0])[:3]]
+        for start in starts:
+            ascend(start)
+
     def dfs(i: int) -> None:
-        nonlocal counter, evals
+        nonlocal evals, probes
+        # Every node visit counts toward the budget (bound probes and
+        # reachability walks cost real time too) — so WALL TIME is capped
+        # even when the bounds prune almost every leaf.
+        probes += 1
+        if evals + probes >= budget:
+            raise _BudgetExhausted
         # Required-4pc reachability: exact, not just a bound — a branch
         # that can no longer collect 4 pieces has no feasible leaves.
         if required is not None and (
@@ -842,24 +995,17 @@ def _search(
         if i == n_slots:
             if pairs_only and any(c < 2 for c in work_counts.values()):
                 return
+            if evals >= budget:
+                # Anytime behavior: stop and report the best found so far.
+                raise _BudgetExhausted
             evals += 1
-            if evals > budget:
-                raise OptimizeError(
-                    f"Search exceeded the evaluation budget "
-                    f"({budget:,} builds); lock some slots to narrow "
-                    f"the search"
-                )
             leaf = list(work_buckets)
             tagged = _fold_sets(leaf, work_counts,
                                 set_2pc, set_4pc, set_tag_bonus)
             value, aux = evaluate(leaf, tagged)
             if not feasible(leaf, aux):
                 return
-            counter += 1
-            if len(heap) < top_n:
-                heapq.heappush(heap, (value, -counter, tuple(combo_stack)))
-            elif value > heap[0][0]:
-                heapq.heapreplace(heap, (value, -counter, tuple(combo_stack)))
+            offer(value, tuple(combo_stack))
             return
         if bound:
             threshold = heap[0][0] if len(heap) == top_n else None
@@ -872,16 +1018,20 @@ def _search(
             if threshold is not None and quick_value <= threshold:
                 return           # cannot beat the current top-N
             # The quick bound passed — pay for the tighter count-aware
-            # set bound before descending.
-            set_ub, tag_ub = node_set_ub(i)
-            suffix = suffix_max[i]
-            ub = [work_buckets[k] + suffix[k] + set_ub[k]
-                  for k in range(n_buckets)]
-            ub_value, ub_aux = evaluate(ub, tag_ub)
-            if not feasible(ub, ub_aux):
-                return
-            if threshold is not None and ub_value <= threshold:
-                return
+            # set bound only when the quick bound is CLOSE to the
+            # threshold (a node far above it descends anyway, so the
+            # second bound would be wasted arithmetic).
+            if (threshold is None
+                    or quick_value <= threshold * _TIGHT_BOUND_MARGIN):
+                set_ub, tag_ub = node_set_ub(i)
+                suffix = suffix_max[i]
+                ub = [work_buckets[k] + suffix[k] + set_ub[k]
+                      for k in range(n_buckets)]
+                ub_value, ub_aux = evaluate(ub, tag_ub)
+                if not feasible(ub, ub_aux):
+                    return
+                if threshold is not None and ub_value <= threshold:
+                    return
         for cand, sparse, key in slot_entries[i]:
             for k, v in sparse:
                 work_buckets[k] += v
@@ -897,8 +1047,30 @@ def _search(
             for k, v in sparse:
                 work_buckets[k] -= v
 
-    dfs(0)
-    return heap, evals
+    exhausted = False
+    if slots:
+        seed_incumbents()
+        # Two-stage warm start (wide searches only): the internal fast
+        # pass runs this same function over the top candidates per slot
+        # on a slice of the budget; its winners join the heap as seeds.
+        if (not slot_cap and bound and any(
+                len(candidates[slot]) > _SEED_STAGE_CAP for slot in slots)):
+            stage_heap, stage_evals, _ = _search(
+                {slot: list(candidates[slot]) for slot in slots},
+                list(slots), equipped, base_buckets, evaluate, feasible,
+                set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
+                pairs_only, top_n, min(budget // 2, 2_500_000), True,
+                slot_cap=_SEED_STAGE_CAP,
+            )
+            probes += stage_evals
+            for value, _neg_counter, combo in sorted(stage_heap,
+                                                     reverse=True):
+                offer(value, combo)
+    try:
+        dfs(0)
+    except _BudgetExhausted:
+        exhausted = True
+    return heap, evals, exhausted
 
 
 def optimize(
@@ -1209,10 +1381,11 @@ def optimize(
     )
 
     # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals = _search(
+    heap, evals, exhausted = _search(
         candidates, slots, equipped, base_buckets, evaluate, feasible,
         set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
         options.sets_only, options.top_n, options.combo_budget, _bound,
+        slot_cap=options.candidate_cap,
     )
 
     def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
@@ -1247,10 +1420,18 @@ def optimize(
         )
 
     # Highest value first; on exact ties the earlier build wins, and the
-    # baseline is the first build evaluated, so a tie resolves toward the
-    # current discs.
+    # baseline is the first build seeded, so a tie resolves toward the
+    # current discs. Greedy seeds the DFS found again are de-duplicated.
     ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
-    options_verified = [verify(combo, value) for value, _, combo in ranked]
+    seen_combos: set = set()
+    unique = []
+    for value, neg_counter, combo in ranked:
+        combo_key = tuple(id(c) for c in combo)
+        if combo_key in seen_combos:
+            continue
+        seen_combos.add(combo_key)
+        unique.append((value, combo))
+    options_verified = [verify(combo, value) for value, combo in unique]
 
     if not options_verified and not baseline_feasible:
         parts = []
@@ -1263,17 +1444,27 @@ def optimize(
             parts.append("the required main stats")
         if options.sets_only:
             parts.append("the 2pc-priority set coverage")
+        if exhausted:
+            raise OptimizeError(
+                f"Search budget exhausted ({options.combo_budget:,} "
+                f"builds) before any acceptable build was found; lock "
+                f"slots, add requirements, or use the fast search"
+            )
         raise OptimizeError(
             f"No combination of your saved discs meets "
             f"{' and '.join(parts)}; relax them and optimize again"
         )
 
     best = options_verified[0] if options_verified else None
-    already_optimal = baseline_feasible and (
+    baseline_wins = baseline_feasible and (
         best is None
         or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
     )
-    if already_optimal:
+    # A budget-exhausted search proves nothing about optimality: the
+    # baseline may still be reported as the best FOUND, but never as
+    # "already optimal".
+    already_optimal = baseline_wins and not exhausted
+    if baseline_wins:
         best = BuildOption(
             value=baseline_value,
             delta=0.0,
@@ -1305,6 +1496,7 @@ def optimize(
         required_4pc=required,
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
+        budget_exhausted=exhausted,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -1696,10 +1888,11 @@ def optimize_anomaly(
     )
 
     # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals = _search(
+    heap, evals, exhausted = _search(
         candidates, slots, equipped, base_buckets, evaluate, feasible,
         set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
         options.sets_only, options.top_n, options.combo_budget, _bound,
+        slot_cap=options.candidate_cap,
     )
 
     def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
@@ -1749,17 +1942,27 @@ def optimize_anomaly(
             parts.append("the required main stats")
         if options.sets_only:
             parts.append("the 2pc-priority set coverage")
+        if exhausted:
+            raise OptimizeError(
+                f"Search budget exhausted ({options.combo_budget:,} "
+                f"builds) before any acceptable build was found; lock "
+                f"slots, add requirements, or use the fast search"
+            )
         raise OptimizeError(
             f"No combination of your saved discs meets "
             f"{' and '.join(parts)}; relax them and optimize again"
         )
 
     best = options_verified[0] if options_verified else None
-    already_optimal = baseline_feasible and (
+    baseline_wins = baseline_feasible and (
         best is None
         or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
     )
-    if already_optimal:
+    # A budget-exhausted search proves nothing about optimality: the
+    # baseline may still be reported as the best FOUND, but never as
+    # "already optimal".
+    already_optimal = baseline_wins and not exhausted
+    if baseline_wins:
         best = BuildOption(
             value=baseline_value,
             delta=0.0,
@@ -1789,6 +1992,7 @@ def optimize_anomaly(
         required_4pc=required,
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
+        budget_exhausted=exhausted,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -2137,10 +2341,11 @@ def optimize_sheer(
     )
 
     # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals = _search(
+    heap, evals, exhausted = _search(
         candidates, slots, equipped, base_buckets, evaluate, feasible,
         set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
         options.sets_only, options.top_n, options.combo_budget, _bound,
+        slot_cap=options.candidate_cap,
     )
 
     def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
@@ -2176,10 +2381,18 @@ def optimize_sheer(
         )
 
     # Highest value first; on exact ties the earlier build wins, and the
-    # baseline is the first build evaluated, so a tie resolves toward the
-    # current discs.
+    # baseline is the first build seeded, so a tie resolves toward the
+    # current discs. Greedy seeds the DFS found again are de-duplicated.
     ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
-    options_verified = [verify(combo, value) for value, _, combo in ranked]
+    seen_combos: set = set()
+    unique = []
+    for value, neg_counter, combo in ranked:
+        combo_key = tuple(id(c) for c in combo)
+        if combo_key in seen_combos:
+            continue
+        seen_combos.add(combo_key)
+        unique.append((value, combo))
+    options_verified = [verify(combo, value) for value, combo in unique]
 
     if not options_verified and not baseline_feasible:
         parts = []
@@ -2192,17 +2405,27 @@ def optimize_sheer(
             parts.append("the required main stats")
         if options.sets_only:
             parts.append("the 2pc-priority set coverage")
+        if exhausted:
+            raise OptimizeError(
+                f"Search budget exhausted ({options.combo_budget:,} "
+                f"builds) before any acceptable build was found; lock "
+                f"slots, add requirements, or use the fast search"
+            )
         raise OptimizeError(
             f"No combination of your saved discs meets "
             f"{' and '.join(parts)}; relax them and optimize again"
         )
 
     best = options_verified[0] if options_verified else None
-    already_optimal = baseline_feasible and (
+    baseline_wins = baseline_feasible and (
         best is None
         or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
     )
-    if already_optimal:
+    # A budget-exhausted search proves nothing about optimality: the
+    # baseline may still be reported as the best FOUND, but never as
+    # "already optimal".
+    already_optimal = baseline_wins and not exhausted
+    if baseline_wins:
         best = BuildOption(
             value=baseline_value,
             delta=0.0,
@@ -2232,6 +2455,7 @@ def optimize_sheer(
         required_4pc=required,
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
+        budget_exhausted=exhausted,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,

@@ -391,6 +391,10 @@
              title="Reject combinations with set-less discs or singleton pieces — with a required 4pc set the result is always 4pc + 2pc">
         <input type="checkbox" id="opt-sets-only">
         2pc priority — every disc must complete a set bonus</label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0"
+             title="Search only the best 15 discs per slot (by standalone value; equipped and required-set discs always survive). Much faster on big inventories, but APPROXIMATE — the true optimum may use a disc outside the cut.">
+        <input type="checkbox" id="opt-fast">
+        Fast search — top 15 discs per slot (approximate)</label>
       <div id="opt-constraints"></div>
       <button class="mini" id="opt-add-constraint" style="margin-bottom:4px">
         + Minimum-stat constraint</button>
@@ -2534,6 +2538,7 @@ async function runOptimize() {
     required_4pc: $("opt-required").value || null,
     slot_main_stats: slotMains,
     sets_only: $("opt-sets-only").checked,
+    candidate_cap: $("opt-fast").checked ? 15 : 0,
   };
   const btn = $("optimize");
   const original = btn.textContent;
@@ -2543,6 +2548,7 @@ async function runOptimize() {
   const opt = body.optimize;
   const unrestricted = !opt.required_4pc
     && !opt.sets_only
+    && !opt.candidate_cap
     && !opt.locked_slots.length
     && !Object.keys(opt.slot_main_stats).length
     && !Object.keys(opt.min_stats).length;
@@ -2630,7 +2636,13 @@ function renderOptimize(data) {
     + (data.discs_excluded
         ? `, ${data.discs_excluded} disc(s) reserved by other agents' `
           + `loadouts excluded`
-        : "") + `.</p>`;
+        : "") + `.</p>`
+    + (data.budget_exhausted
+        ? `<p class="note" style="color:var(--error)">⚠ Search budget
+           exhausted — these are the best builds FOUND, not a proven
+           optimum. 🔒 locks, requirements, or Fast search narrow it to
+           an exact result.</p>`
+        : "");
 
   if (data.already_optimal) {
     out.innerHTML = `

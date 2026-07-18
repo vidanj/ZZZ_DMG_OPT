@@ -729,6 +729,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
                          for slot, main in slot_mains_raw.items()
                          if str(main)},
         sets_only=bool(opt_raw.get("sets_only")),
+        candidate_cap=int(opt_raw.get("candidate_cap") or 0),
     )
 
     # Discs reserved by another agent's loadout are off-limits: the
@@ -793,6 +794,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
             str(slot): main for slot, main in result.slot_main_stats.items()
         },
         "sets_only": result.sets_only,
+        "budget_exhausted": result.budget_exhausted,
         "best": build_option(result.best),
         "alternatives": [build_option(o) for o in result.alternatives],
         "combos_evaluated": result.combos_evaluated,
