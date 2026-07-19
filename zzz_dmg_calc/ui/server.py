@@ -740,16 +740,51 @@ def run_optimization(data: AppData, body: dict) -> dict:
     # Discs reserved by another agent's loadout are off-limits: the
     # candidate pool keeps only unreserved discs and the requesting
     # agent's own.
-    reserved_ids = {
-        disc_id
-        for l in data.loadouts.values()
-        if l.agent and l.agent != config.agent_key
-        for disc_id in l.disc_ids if disc_id
-    }
+    reserved_owner: dict[str, tuple[str, str]] = {}
+    for name, loadout in data.loadouts.items():
+        if loadout.agent and loadout.agent != config.agent_key:
+            for disc_id in loadout.disc_ids:
+                if disc_id:
+                    reserved_owner.setdefault(disc_id,
+                                              (name, loadout.agent))
     pool = {
         disc_id: disc for disc_id, disc in data.user_discs.items()
-        if disc_id not in reserved_ids
+        if disc_id not in reserved_owner
     }
+
+    # The EQUIPPED cards bypass the pool (current discs enter the search
+    # as virtual candidates) — a reserved disc lingering there, e.g.
+    # another character's loadout loaded for viewing, must be dropped
+    # before optimizing: this agent cannot actually equip it. Its slot
+    # simply starts empty and the search fills it from the legal pool.
+    reserved_discs = {
+        disc_id: data.user_discs[disc_id]
+        for disc_id in reserved_owner if disc_id in data.user_discs
+    }
+    kept_discs: list = []
+    dropped: list[dict] = []
+    for disc in config.discs:
+        owner = next((reserved_owner[i] for i, d in reserved_discs.items()
+                      if d == disc), None)
+        if owner is None:
+            kept_discs.append(disc)
+            continue
+        if disc.slot in options.locked_slots:
+            raise ValueError(
+                f"Slot {disc.slot} is locked, but its equipped disc is "
+                f"reserved by '{owner[0]}' ({owner[1]}'s loadout) — "
+                f"unlock the slot or free the disc"
+            )
+        dropped.append({"slot": disc.slot, "loadout": owner[0]})
+    if dropped:
+        counts: dict[str, int] = {}
+        for disc in kept_discs:
+            if disc.disc_set:
+                counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+        config = replace(config, discs=kept_discs, set_stacks={
+            key: stacks for key, stacks in config.set_stacks.items()
+            if counts.get(key, 0) >= 4
+        })
 
     if mode == "direct":
         result = optimize(
@@ -809,6 +844,9 @@ def run_optimization(data: AppData, body: dict) -> dict:
         },
         "discs_pruned": result.discs_pruned,
         "discs_excluded": len(data.user_discs) - len(pool),
+        # Equipped discs dropped because another agent's loadout reserves
+        # them (their slots were optimized from empty).
+        "reserved_equipped_dropped": dropped,
     }
 
 

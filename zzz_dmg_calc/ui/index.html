@@ -2657,6 +2657,13 @@ function renderOptimize(data) {
            exhausted — these are the best builds FOUND, not a proven
            optimum. 🔒 locks, requirements, or Fast search narrow it to
            an exact result.</p>`
+        : "")
+    + ((data.reserved_equipped_dropped || []).length
+        ? `<p class="note" style="color:var(--error)">⚠ Equipped disc(s)
+           reserved by other agents' loadouts were excluded:
+           ${data.reserved_equipped_dropped.map(d =>
+             `slot ${d.slot} ('${d.loadout}')`).join(", ")} — those slots
+           were optimized from empty.</p>`
         : "");
 
   if (data.already_optimal) {
