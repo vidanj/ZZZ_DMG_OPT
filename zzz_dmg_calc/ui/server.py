@@ -800,6 +800,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
         },
         "sets_only": result.sets_only,
         "budget_exhausted": result.budget_exhausted,
+        "min_panel_stats": result.min_panel_stats,
         "best": build_option(result.best),
         "alternatives": [build_option(o) for o in result.alternatives],
         "combos_evaluated": result.combos_evaluated,

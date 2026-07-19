@@ -277,6 +277,13 @@ class OptimizeOptions:
             slot (by solo value; the equipped disc and the required 4pc
             set survive the cut). APPROXIMATE by design: the true
             optimum may use a disc outside the cap. 0 = exact search.
+        min_panel_stats: like ``min_stats``, but checked against the
+            PANEL totals (agent base + core + engine + discs + set
+            stats) — no kit/team/combat brackets. This is where the
+            self-scaling kit inputs land automatically: Astra claiming
+            ``initial_atk`` 3,430 must reach panel ATK 3,430, and the
+            combat total (which contains the very flat ATK that claim
+            grants — circular) must not satisfy it.
     """
 
     objective: str = "average"
@@ -289,6 +296,7 @@ class OptimizeOptions:
     slot_main_stats: dict[int, str] = field(default_factory=dict)
     sets_only: bool = False
     candidate_cap: int = 0
+    min_panel_stats: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -347,6 +355,9 @@ class OptimizeResult:
     # The evaluation budget ran out: ``best``/``alternatives`` are the
     # best builds FOUND, with no optimality claim (anytime behavior).
     budget_exhausted: bool = False
+    # Panel-stat minimums enforced (auto-derived from the main agent's
+    # self-scaling kit inputs; see OptimizeOptions.min_panel_stats).
+    min_panel_stats: dict[str, float] = field(default_factory=dict)
 
 
 def _bucket_vector(stats: dict[str, float]) -> tuple[float, ...]:
@@ -462,18 +473,19 @@ def _validate_options(
     bad_slots = [s for s in options.locked_slots if s not in (1, 2, 3, 4, 5, 6)]
     if bad_slots:
         raise OptimizeError(f"Invalid locked slots: {sorted(bad_slots)}")
-    for stat, minimum in options.min_stats.items():
-        if stat not in constraint_stats:
-            raise OptimizeError(
-                f"Unknown constraint stat '{stat}'; "
-                f"options: {list(constraint_stats)}"
-            )
-        if isinstance(minimum, bool) or not isinstance(minimum, (int, float)) \
-                or minimum < 0:
-            raise OptimizeError(
-                f"Minimum for '{stat}' must be a number >= 0, "
-                f"got {minimum!r}"
-            )
+    for source in (options.min_stats, options.min_panel_stats):
+        for stat, minimum in source.items():
+            if stat not in constraint_stats:
+                raise OptimizeError(
+                    f"Unknown constraint stat '{stat}'; "
+                    f"options: {list(constraint_stats)}"
+                )
+            if isinstance(minimum, bool) \
+                    or not isinstance(minimum, (int, float)) or minimum < 0:
+                raise OptimizeError(
+                    f"Minimum for '{stat}' must be a number >= 0, "
+                    f"got {minimum!r}"
+                )
     required = options.required_4pc
     if required is not None and (
             not isinstance(required, str) or not required.strip()):
@@ -609,6 +621,78 @@ def _sets_coverage_ok(discs) -> bool:
     return all(count >= 2 for count in counts.values())
 
 
+def _panel_constants(agent: Agent, engine: Engine, consts: Constants) -> dict:
+    """Constants for the PANEL-stat compositions (mode-independent):
+    agent base + core boosts + engine base — the parts of the character
+    screen no disc changes. Kit/team/combat brackets are deliberately
+    absent (that is the point of panel constraints)."""
+    return {
+        "atk_base": agent.total_base_atk() + engine.base_atk,
+        "hp_base": agent.total_base_hp(),
+        "core_hp_pct": agent.core_bonus_hp_pct,
+        "def_base": agent.base_def,
+        "impact_base": agent.base_impact + agent.core_bonus_impact,
+        "er_base": agent.base_energy_regen + agent.core_bonus_energy_regen,
+        "crit_rate_base": consts.base_crit_rate + agent.core_bonus_crit_rate,
+        "crit_dmg_base": consts.base_crit_dmg + agent.core_bonus_crit_dmg,
+        "pen_ratio_core": agent.core_bonus_pen_ratio,
+        "ap_base": (agent.base_anomaly_proficiency
+                    + agent.core_bonus_anomaly_proficiency),
+        "am_base": (agent.base_anomaly_mastery
+                    + agent.core_bonus_anomaly_mastery),
+        "sf_atk_conv": consts.sheer_force_atk_conversion,
+        "sf_hp_conv": agent.sheer_force_hp_conversion,
+    }
+
+
+def _panel_feasible(
+    min_panel_stats: dict[str, float], panel: dict, buckets: list[float],
+) -> bool:
+    """Whether a bucket total meets every PANEL minimum (see
+    ``OptimizeOptions.min_panel_stats``). Compositions mirror
+    :func:`~.api.panel_stats`; assumed 4pc stacks that grant sheet stats
+    are the only (over-crediting) approximation. Monotone in every
+    bucket, so the search bounds stay exact."""
+    for stat, minimum in min_panel_stats.items():
+        if stat == "ATK":
+            total = (panel["atk_base"] * (1.0 + buckets[_B_ATK_PCT])
+                     + buckets[_B_ATK_FLAT])
+        elif stat == "HP":
+            total = (panel["hp_base"]
+                     * (1.0 + panel["core_hp_pct"] + buckets[_B_HP_PCT])
+                     + buckets[_B_HP_FLAT])
+        elif stat == "DEF":
+            total = (panel["def_base"] * (1.0 + buckets[_B_DEF_PCT])
+                     + buckets[_B_DEF_FLAT])
+        elif stat == "CRIT Rate":
+            total = panel["crit_rate_base"] + buckets[_B_CRIT_RATE]
+        elif stat == "CRIT DMG":
+            total = panel["crit_dmg_base"] + buckets[_B_CRIT_DMG]
+        elif stat == "PEN Ratio":
+            total = panel["pen_ratio_core"] + buckets[_B_PEN_RATIO]
+        elif stat == "PEN":
+            total = buckets[_B_PEN_FLAT]
+        elif stat == "Impact":
+            total = panel["impact_base"] * (1.0 + buckets[_B_IMPACT])
+        elif stat == "Energy Regen":
+            total = panel["er_base"] * (1.0 + buckets[_B_ER])
+        elif stat == "Anomaly Proficiency":
+            total = panel["ap_base"] + buckets[_B_AP]
+        elif stat == "Anomaly Mastery":
+            total = ((panel["am_base"] + buckets[_B_AM])
+                     * (1.0 + buckets[_B_AM_PCT]))
+        else:   # "Sheer Force" (keys validated against the mode's list)
+            atk = (panel["atk_base"] * (1.0 + buckets[_B_ATK_PCT])
+                   + buckets[_B_ATK_FLAT])
+            hp = (panel["hp_base"]
+                  * (1.0 + panel["core_hp_pct"] + buckets[_B_HP_PCT])
+                  + buckets[_B_HP_FLAT])
+            total = atk * panel["sf_atk_conv"] + hp * panel["sf_hp_conv"]
+        if total < minimum - 1e-12:
+            return False
+    return True
+
+
 #: Kit scaling inputs that ARE panel stats of their owner (agents.json
 #: scaling.input names -> the min-stat constraint that panel maps to).
 #: When the MAIN agent's active kit reads one, the user-entered value is
@@ -636,13 +720,17 @@ def _apply_scaling_input_minimums(
     agent: Agent, config: CalcConfig, options: OptimizeOptions,
     constraint_stats: tuple,
 ) -> OptimizeOptions:
-    """Fold the MAIN agent's self-scaling kit inputs into ``min_stats``.
+    """Fold the MAIN agent's self-scaling kit inputs into
+    ``min_panel_stats``.
 
     Collects the scaling inputs read by the agent's ACTIVE kit buffs
     (core passive / additional ability / mindscapes / potentials / own
     team buffs — mirroring ``_kit_contributions``) and, for each that
-    maps to a constrainable panel stat, raises the minimum to the
-    entered value. An explicit user minimum above the input wins.
+    maps to a constrainable stat, raises the PANEL minimum to the
+    entered value. Panel, not combat: an ``initial_*`` input is the
+    character-screen value BEFORE kit/team buffs — comparing against the
+    combat total would be circular (Astra's claimed panel ATK grants the
+    flat ATK that inflates the combat total).
     """
     active_buffs = []
     if config.core_passive_active and agent.core_passive is not None:
@@ -663,7 +751,7 @@ def _apply_scaling_input_minimums(
         if stacks and buff is not None:
             active_buffs.append(buff)
 
-    minimums = dict(options.min_stats)
+    minimums = dict(options.min_panel_stats)
     changed = False
     for buff in active_buffs:
         for effect in buff.effects:
@@ -678,7 +766,7 @@ def _apply_scaling_input_minimums(
             if float(value) > minimums.get(stat, 0.0):
                 minimums[stat] = float(value)
                 changed = True
-    return replace(options, min_stats=minimums) if changed else options
+    return replace(options, min_panel_stats=minimums) if changed else options
 
 
 def _baseline_mains_ok(
@@ -1136,8 +1224,8 @@ def optimize(
                                             CONSTRAINT_STATS)
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
-    dominance_indices = _dominance_indices(_DAMAGE_INDICES,
-                                           options.min_stats)
+    dominance_indices = _dominance_indices(
+        _DAMAGE_INDICES, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, agent.attribute, options,
         dominance_indices, _prune,
@@ -1176,6 +1264,7 @@ def optimize(
                              mode="direct", dealt_element=agent.attribute)
 
     base_buckets = _bucket_vector(engine.advanced_stat)
+    panel_consts = _panel_constants(agent, engine, consts)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
     base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
@@ -1268,7 +1357,12 @@ def optimize(
         return atk_total * crit_mult * bonus * defense * const_mult, atk_total
 
     def feasible(buckets: list[float], atk_total: float) -> bool:
-        """Whether a bucket total meets every ``min_stats`` minimum."""
+        """Whether a bucket total meets every minimum: combat-stat
+        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
+        where self-scaling kit inputs land — panel, never combat)."""
+        if options.min_panel_stats and not _panel_feasible(
+                options.min_panel_stats, panel_consts, buckets):
+            return False
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
                 total = atk_total
@@ -1440,6 +1534,8 @@ def optimize(
                          f"({disc_sets[required].name})")
         if options.min_stats:
             parts.append("the minimum-stat constraints")
+        if options.min_panel_stats:
+            parts.append("the claimed panel values (kit scaling inputs)")
         if options.slot_main_stats:
             parts.append("the required main stats")
         if options.sets_only:
@@ -1497,6 +1593,7 @@ def optimize(
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
+        min_panel_stats=dict(options.min_panel_stats),
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -1614,8 +1711,8 @@ def optimize_anomaly(
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
                       else _ANOMALY_DAMAGE_INDICES_NO_ATTR)
-    dominance_indices = _dominance_indices(damage_indices,
-                                           options.min_stats)
+    dominance_indices = _dominance_indices(
+        damage_indices, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, agent.attribute, options,
         dominance_indices, _prune,
@@ -1645,6 +1742,7 @@ def optimize_anomaly(
     )
 
     base_buckets = _bucket_vector(engine.advanced_stat)
+    panel_consts = _panel_constants(agent, engine, consts)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
     base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
@@ -1777,7 +1875,12 @@ def optimize_anomaly(
         return value, (atk_total, ap_total)
 
     def feasible(buckets: list[float], aux: tuple) -> bool:
-        """Whether a bucket total meets every ``min_stats`` minimum."""
+        """Whether a bucket total meets every minimum: combat-stat
+        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
+        where self-scaling kit inputs land — panel, never combat)."""
+        if options.min_panel_stats and not _panel_feasible(
+                options.min_panel_stats, panel_consts, buckets):
+            return False
         atk_total, ap_total = aux
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
@@ -1938,6 +2041,8 @@ def optimize_anomaly(
                          f"({disc_sets[required].name})")
         if options.min_stats:
             parts.append("the minimum-stat constraints")
+        if options.min_panel_stats:
+            parts.append("the claimed panel values (kit scaling inputs)")
         if options.slot_main_stats:
             parts.append("the required main stats")
         if options.sets_only:
@@ -1993,6 +2098,7 @@ def optimize_anomaly(
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
+        min_panel_stats=dict(options.min_panel_stats),
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -2083,8 +2189,8 @@ def optimize_sheer(
     damage_indices = _SHEER_DAMAGE_INDICES + (
         _SHEER_HP_INDICES if agent.sheer_force_hp_conversion > 0 else ()
     )
-    dominance_indices = _dominance_indices(damage_indices,
-                                           options.min_stats)
+    dominance_indices = _dominance_indices(
+        damage_indices, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, agent.attribute, options,
         dominance_indices, _prune,
@@ -2119,6 +2225,7 @@ def optimize_sheer(
                              mode="sheer", dealt_element=agent.attribute)
 
     base_buckets = _bucket_vector(engine.advanced_stat)
+    panel_consts = _panel_constants(agent, engine, consts)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
     base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
@@ -2227,7 +2334,12 @@ def optimize_sheer(
         return value, (atk_total, hp_total, sf)
 
     def feasible(buckets: list[float], aux: tuple) -> bool:
-        """Whether a bucket total meets every ``min_stats`` minimum."""
+        """Whether a bucket total meets every minimum: combat-stat
+        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
+        where self-scaling kit inputs land — panel, never combat)."""
+        if options.min_panel_stats and not _panel_feasible(
+                options.min_panel_stats, panel_consts, buckets):
+            return False
         atk_total, hp_total, sf = aux
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
@@ -2401,6 +2513,8 @@ def optimize_sheer(
                          f"({disc_sets[required].name})")
         if options.min_stats:
             parts.append("the minimum-stat constraints")
+        if options.min_panel_stats:
+            parts.append("the claimed panel values (kit scaling inputs)")
         if options.slot_main_stats:
             parts.append("the required main stats")
         if options.sets_only:
@@ -2456,6 +2570,7 @@ def optimize_sheer(
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
+        min_panel_stats=dict(options.min_panel_stats),
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,

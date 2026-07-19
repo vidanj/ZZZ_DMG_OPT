@@ -2627,6 +2627,11 @@ function constraintsNote(data) {
   for (const [stat, minimum] of Object.entries(data.min_stats || {}))
     parts.push(`${stat} ≥ ${pctStats.has(stat)
       ? (minimum * 100).toFixed(1) + "%" : minimum}`);
+  // Auto-derived from the kit's self-scaling inputs: PANEL values
+  // (before kit/team/combat buffs), so the claimed input stays honest.
+  for (const [stat, minimum] of Object.entries(data.min_panel_stats || {}))
+    parts.push(`panel ${stat} ≥ ${pctStats.has(stat)
+      ? (minimum * 100).toFixed(1) + "%" : minimum}`);
   if (!parts.length) return "";
   const infeasible = data.baseline_feasible === false
     ? ` <span class="delta-down">— your current build does not meet
