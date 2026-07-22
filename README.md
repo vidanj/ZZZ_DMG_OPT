@@ -8,6 +8,18 @@ into its prompts.
 > Zenless Zone Zero and all game content are trademarks of
 > miHoYo/HoYoverse. Code licensed under the [MIT License](LICENSE).
 
+## Use it online (no install)
+
+The web UI is published at **<https://vidanj.github.io/ZZZ_DMG_OPT/>** —
+the full calculator and optimizer running as Python-on-WebAssembly
+(Pyodide) **entirely in your browser**: nothing is uploaded anywhere, and
+your disc inventory and loadouts are saved in the browser's local storage
+on your device. The first visit downloads the runtime (~8 MB, cached
+afterwards); use the inventory's **Export / Import** buttons to back up
+your data or move it between browsers. Everything below about running it
+locally still works exactly the same and is the faster option for heavy
+optimizer searches.
+
 ## 1. Requirements
 
 - **Python 3.10 or newer** (developed on 3.13). No third-party packages —

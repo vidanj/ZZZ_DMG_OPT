@@ -1,0 +1,83 @@
+# Deploys the in-browser (Pyodide) build of the optimizer to GitHub
+# Pages on every push to master. See DOCS/web_hosting_plan.md.
+#
+# The site is static files only:
+#   index.html        the app (zzz_dmg_calc/ui/index.html, unmodified)
+#   worker.js         Pyodide worker (web/worker.js)
+#   zzz_dmg_calc.zip  the Python package + databases, minus personal
+#                     data (user_discs.json / loadouts.json) and caches
+#   pyodide/          the Python-on-WebAssembly runtime, self-hosted
+#                     (from the pyodide-core release; same-origin loads
+#                     survive networks that block cross-origin workers)
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble static site
+        run: |
+          python3 - <<'EOF'
+          import shutil
+          import zipfile
+          from pathlib import Path
+
+          site = Path("_site")
+          site.mkdir()
+          shutil.copy("zzz_dmg_calc/ui/index.html", site / "index.html")
+          shutil.copy("web/worker.js", site / "worker.js")
+
+          personal = {"user_discs.json", "loadouts.json"}
+          with zipfile.ZipFile(site / "zzz_dmg_calc.zip", "w",
+                               zipfile.ZIP_DEFLATED) as zf:
+              for path in sorted(Path("zzz_dmg_calc").rglob("*")):
+                  if path.is_dir() or "__pycache__" in path.parts:
+                      continue
+                  if path.name in personal:
+                      continue
+                  zf.write(path, path.as_posix())
+          names = zf.namelist()
+          assert not any(Path(n).name in personal for n in names), names
+          print(f"zip: {len(names)} files")
+          EOF
+
+      - name: Add self-hosted Pyodide runtime
+        env:
+          PYODIDE_VERSION: "314.0.2"
+        run: |
+          curl -sL -o pyodide-core.tar.bz2 \
+            "https://github.com/pyodide/pyodide/releases/download/${PYODIDE_VERSION}/pyodide-core-${PYODIDE_VERSION}.tar.bz2"
+          mkdir -p _site/pyodide
+          tar xjf pyodide-core.tar.bz2 -C _site/pyodide --strip-components=1 \
+            pyodide/pyodide.js pyodide/pyodide.mjs pyodide/pyodide.asm.mjs \
+            pyodide/pyodide.asm.wasm pyodide/pyodide-lock.json \
+            pyodide/python_stdlib.zip
+          ls -la _site/pyodide
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

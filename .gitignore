@@ -5,3 +5,7 @@ CLAUDE.md
 NOTES
 */__pycache__/
 */*/__pycache__/
+# Personal data — never ship in the public repo or the web build
+zzz_dmg_calc/data/user_discs.json
+zzz_dmg_calc/data/loadouts.json
+_site/

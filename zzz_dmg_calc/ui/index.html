@@ -186,9 +186,28 @@
   td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
   tr.avg td { color: var(--accent); }
   .placeholder { color: var(--muted); font-style: italic; }
+  /* Boot overlay — shown only in static-site mode while Pyodide loads */
+  #boot-overlay { position: fixed; inset: 0; background: #161616;
+    z-index: 100; display: flex; align-items: center; justify-content: center; }
+  #boot-overlay[hidden] { display: none; }
+  #boot-overlay .boot-box { text-align: center; max-width: 420px; padding: 24px; }
+  #boot-overlay .spinner { width: 36px; height: 36px; margin: 18px auto;
+    border: 4px solid #383838; border-top-color: var(--accent);
+    border-radius: 50%; animation: boot-spin 0.9s linear infinite; }
+  @keyframes boot-spin { to { transform: rotate(360deg); } }
+  #boot-overlay .boot-note { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
+<div id="boot-overlay" hidden>
+  <div class="boot-box">
+    <h2>ZZZ DMG Optimizer</h2>
+    <div class="spinner"></div>
+    <p id="boot-stage">Starting…</p>
+    <p class="boot-note">The calculator runs entirely in your browser —
+      your discs and loadouts never leave this device.</p>
+  </div>
+</div>
 <h1>ZZZ <span>DMG Optimizer</span> By Vid Anj</h1>
 
 <div class="layout">
@@ -437,6 +456,13 @@
       <h2 style="margin:0">Disc Inventory
         <span id="inv-count" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
       <div class="actions">
+        <button class="mini" id="inv-export" hidden
+                title="Download your inventory and loadouts as a JSON backup">
+          Export</button>
+        <button class="mini" id="inv-import" hidden
+                title="Restore inventory and loadouts from a JSON backup (replaces current data)">
+          Import</button>
+        <input type="file" id="inv-import-file" accept=".json,application/json" hidden>
         <button class="mini" id="inv-add">+ Add disc</button>
         <button class="mini" id="inv-close" title="Close (Esc)">✕</button>
       </div>
@@ -1534,12 +1560,19 @@ function loadLoadout(name) {
 // Disc inventory: save / search / equip / delete, and saving loadouts
 // ---------------------------------------------------------------------------
 
-async function postJSON(path, payload) {
-  const resp = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+// Single seam between the page and whatever runs the calculations: the
+// local Python server (HTTP) today, an in-browser Pyodide worker when
+// served as a static site. Every backend call goes through here.
+// Rejected input throws an Error whose .data carries the response
+// object (e.g. {error, exists}); transport failures throw without .data.
+async function callBackend(method, path, payload) {
+  if (pyWorker) return workerCall(method, path, payload);
+  const opts = { method };
+  if (payload !== undefined) {
+    opts.headers = { "Content-Type": "application/json" };
+    opts.body = JSON.stringify(payload);
+  }
+  const resp = await fetch(path, opts);
   const data = await resp.json();
   if (!resp.ok) {
     const err = new Error(data.error || `HTTP ${resp.status}`);
@@ -1547,6 +1580,140 @@ async function postJSON(path, payload) {
     throw err;
   }
   return data;
+}
+
+function postJSON(path, payload) {
+  return callBackend("POST", path, payload);
+}
+
+// --- Static-site mode --------------------------------------------------------
+// Served without the local Python server (GitHub Pages), the page boots
+// web/worker.js — Pyodide running the same zzz_dmg_calc engine — and
+// callBackend routes over postMessage instead of HTTP. The user's
+// inventory/loadout files are mirrored to localStorage after every
+// write and seeded back into the worker's filesystem on boot. See
+// DOCS/web_hosting_plan.md.
+
+const USER_FILES_KEYS = {
+  user_discs: "zzz-dmg-user-discs",
+  loadouts: "zzz-dmg-loadouts",
+};
+let pyWorker = null;          // null = talking HTTP to the local server
+let rpcId = 0;
+const rpcPending = new Map(); // id -> {resolve, reject}
+
+function mirrorUserFiles(files) {
+  if (!files) return;
+  for (const [name, key] of Object.entries(USER_FILES_KEYS)) {
+    if (files[name] == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, files[name]);
+  }
+}
+
+// Backup file: the two user files, parsed, under a recognizable header.
+function exportUserData() {
+  const read = (key) => {
+    const text = localStorage.getItem(key);
+    return text ? JSON.parse(text) : null;
+  };
+  const payload = {
+    format: "zzz-dmg-backup",
+    exported: new Date().toISOString(),
+    user_discs: read(USER_FILES_KEYS.user_discs),
+    loadouts: read(USER_FILES_KEYS.loadouts),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)],
+                        { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `zzz-dmg-backup-${payload.exported.slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importUserData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let backup;
+    try {
+      backup = JSON.parse(reader.result);
+    } catch (exc) {
+      invShowError(`Not a valid JSON file: ${exc.message}`);
+      return;
+    }
+    if (!backup || backup.format !== "zzz-dmg-backup") {
+      invShowError("Not a ZZZ DMG Optimizer backup file "
+                   + "(missing the zzz-dmg-backup header).");
+      return;
+    }
+    if (!confirm("Replace your current inventory and loadouts with this "
+                 + "backup? The page will reload.")) return;
+    for (const [name, key] of Object.entries(USER_FILES_KEYS)) {
+      if (backup[name]) localStorage.setItem(key, JSON.stringify(backup[name]));
+      else localStorage.removeItem(key);
+    }
+    location.reload();
+  };
+  reader.readAsText(file);
+}
+
+function workerCall(method, path, payload) {
+  return new Promise((resolve, reject) => {
+    const id = ++rpcId;
+    rpcPending.set(id, { resolve, reject });
+    pyWorker.postMessage({
+      id, method, path,
+      body: payload === undefined ? null : JSON.stringify(payload),
+    });
+  });
+}
+
+function bootPyodideWorker() {
+  const overlay = $("boot-overlay");
+  const stageLine = $("boot-stage");
+  overlay.hidden = false;
+  return new Promise((resolve, reject) => {
+    const fail = (message) => {
+      pyWorker = null;
+      overlay.hidden = true;
+      // Corrupted saved data can make boot fail during load: offer a way
+      // out that doesn't leave the page permanently broken.
+      const keys = Object.values(USER_FILES_KEYS);
+      if (keys.some(k => localStorage.getItem(k))
+          && confirm(`The calculator failed to start:\n${message}\n\n`
+                     + `Your saved inventory data may be corrupted. Reset `
+                     + `it (clears saved discs and loadouts) and retry?`)) {
+        keys.forEach(k => localStorage.removeItem(k));
+        location.reload();
+        return;
+      }
+      reject(new Error(message));
+    };
+    pyWorker = new Worker("worker.js", { type: "module" });
+    pyWorker.onerror = (ev) =>
+      fail(`Could not start the in-browser calculator: ${ev.message || ev}`);
+    pyWorker.onmessage = (ev) => {
+      const msg = ev.data;
+      if (msg.stage) { stageLine.textContent = msg.stage; return; }
+      if (msg.ready) { overlay.hidden = true; resolve(); return; }
+      if (msg.bootError) { fail(msg.bootError); return; }
+      const pending = rpcPending.get(msg.id);
+      if (!pending) return;
+      rpcPending.delete(msg.id);
+      mirrorUserFiles(msg.files);
+      if (msg.status === 200) pending.resolve(msg.body);
+      else {
+        const err = new Error(
+          (msg.body && msg.body.error) || `HTTP ${msg.status}`);
+        err.data = msg.body || {};
+        pending.reject(err);
+      }
+    };
+    pyWorker.postMessage({ init: true, files: {
+      user_discs: localStorage.getItem(USER_FILES_KEYS.user_discs),
+      loadouts: localStorage.getItem(USER_FILES_KEYS.loadouts),
+    } });
+  });
 }
 
 function flash(btn, text) {
@@ -1791,15 +1958,13 @@ function renderInvGrid() {
       if (!confirm(`Delete ${id} from the inventory?`)) return;
       invShowError("");
       try {
-        const resp = await fetch(`/discs/${encodeURIComponent(id)}`,
-                                 { method: "DELETE" });
-        const data = await resp.json();
-        if (!resp.ok) { invShowError(data.error || `HTTP ${resp.status}`); return; }
+        const data = await callBackend(
+          "DELETE", `/discs/${encodeURIComponent(id)}`);
         DB.user_discs = data.user_discs;
         if (invState.selected === id) invState.selected = null;
         renderInvGrid();
       } catch (exc) {
-        invShowError(String(exc));
+        invShowError(exc.data ? exc.message : String(exc));
       }
     });
     right.appendChild(del);
@@ -2161,20 +2326,15 @@ async function runCalc() {
     return;
   }
   try {
-    const resp = await fetch("/calculate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(config),
-    });
-    const data = await resp.json();
-    if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+    const data = await callBackend("POST", "/calculate", config);
     renderResults(data);
     lastResults = data;
     autoCalc = true;
     syncOptimizeObjectives(data.mode);
     $("optimize-wrap").style.display = "";
   } catch (exc) {
-    showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
+    if (exc.data) showError(exc.message);
+    else showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
   }
 }
 
@@ -2874,8 +3034,20 @@ function onAnyChange(ev) {
 }
 
 async function init() {
-  const resp = await fetch("/data");
-  DB = await resp.json();
+  try {
+    DB = await callBackend("GET", "/data");
+  } catch (exc) {
+    // A served error means the local server IS there — report it. A
+    // transport failure (404 page, no server) means static hosting:
+    // boot the in-browser Python worker and ask again through it.
+    if (exc.data) throw exc;
+    await bootPyodideWorker();
+    DB = await callBackend("GET", "/data");
+    // Backup/restore only matters when the data lives in this browser;
+    // the local app's files are on disk, owned by the user already.
+    $("inv-export").hidden = false;
+    $("inv-import").hidden = false;
+  }
   buildStaticSelects();
   buildDiscGrid();
   const saved = restoreState();
@@ -2910,6 +3082,15 @@ async function init() {
 
   // Inventory modal
   $("browse-inventory").addEventListener("click", () => openInventory());
+  $("inv-export").addEventListener("click", exportUserData);
+  $("inv-import").addEventListener("click", () => {
+    $("inv-import-file").value = "";
+    $("inv-import-file").click();
+  });
+  $("inv-import-file").addEventListener("change", ev => {
+    if (ev.target.files && ev.target.files[0])
+      importUserData(ev.target.files[0]);
+  });
   $("inv-close").addEventListener("click", closeInventory);
   $("inv-cancel").addEventListener("click", closeInventory);
   $("inv-equip").addEventListener("click", equipSelected);
@@ -2955,16 +3136,14 @@ async function init() {
         + `inventory and become free for any agent.`)) return;
     $("error").style.display = "none";
     try {
-      const resp = await fetch(`/loadouts/${encodeURIComponent(name)}`,
-                               { method: "DELETE" });
-      const data = await resp.json();
-      if (!resp.ok) { showError(data.error || `HTTP ${resp.status}`); return; }
+      const data = await callBackend(
+        "DELETE", `/loadouts/${encodeURIComponent(name)}`);
       DB.loadouts = data.loadouts;
       rebuildLoadoutSelect();
       $("save-feedback").textContent = `Loadout '${name}' deleted — its discs `
         + `are no longer reserved.`;
     } catch (exc) {
-      showError(String(exc));
+      showError(exc.data ? exc.message : String(exc));
     }
   });
   $("clear-discs").addEventListener("click", () => { clearDiscs(); onAnyChange(); });
