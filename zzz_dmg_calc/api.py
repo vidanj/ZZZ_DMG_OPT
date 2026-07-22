@@ -1073,6 +1073,18 @@ def calculate(
         crit_rate += engine_crit
         buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
                            "kind": "crit_rate", "value": engine_crit})
+    # Engine conditional parts routed to the CRIT DMG total (Heartstring
+    # Nocturne's unconditional +50..80%) — added before the crit zones.
+    for part in _engine_buff_bonuses(
+        engine, config.engine_buff_stacks, agent.attribute, rank,
+        mode="direct", bracket="crit_dmg", skill_tag=config.skill_tag,
+        counts_as_aftershock=config.counts_as_aftershock,
+    ):
+        crit_dmg += part["value"]
+        buff_items.append({
+            "source": f"{part['name']} (R{rank})",
+            "kind": "crit_dmg", "value": part["value"],
+        })
     crit_none = formulas.crit_mult_non_crit()
     crit_full = formulas.crit_mult_crit(crit_dmg)
     crit_avg = formulas.crit_mult_average(
@@ -1712,6 +1724,18 @@ def calculate_sheer(
         crit_rate += engine_crit
         buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
                            "kind": "crit_rate", "value": engine_crit})
+    # Engine conditional parts routed to the CRIT DMG total (Sheer hits
+    # crit normally, so the bracket applies here too).
+    for part in _engine_buff_bonuses(
+        engine, config.engine_buff_stacks, agent.attribute, rank,
+        mode="sheer", bracket="crit_dmg", skill_tag=config.skill_tag,
+        counts_as_aftershock=config.counts_as_aftershock,
+    ):
+        crit_dmg += part["value"]
+        buff_items.append({
+            "source": f"{part['name']} (R{rank})",
+            "kind": "crit_dmg", "value": part["value"],
+        })
     crit_none = formulas.crit_mult_non_crit()
     crit_full = formulas.crit_mult_crit(crit_dmg)
     crit_avg = formulas.crit_mult_average(

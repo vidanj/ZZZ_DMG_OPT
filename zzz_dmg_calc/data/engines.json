@@ -1,17 +1,29 @@
 {
   "_meta": {
-    "description": "W-Engine database (Lv. 60; refinement rank is a runtime input). The v1 DUMMY engine became the real deep_sea_visitor on 2026-07-14 (same stats; its Ice DMG passive stays note-only so the game-validated DUMMY regression baselines remain exact). More engines are added as a data-only change.",
+    "description": "W-Engine database (Lv. 60; refinement rank is a runtime input). The v1 DUMMY engine became the real deep_sea_visitor on 2026-07-14 (same stats); its Ice DMG passive was modeled as an auto conditional buff on 2026-07-22 (stacks default to 0 in the API, so the game-validated DUMMY regression baselines remain exact - the web UI defaults it ON). More engines are added as a data-only change.",
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket) or 'sheer_dmg' (the dedicated Sheer DMG bracket), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket), 'sheer_dmg' (the dedicated Sheer DMG bracket) or 'crit_dmg' (adds to the equipper's CRIT DMG total in crit-capable modes - Heartstring Nocturne), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
   },
   "engines": {
     "deep_sea_visitor": {
-      "name": "Deep Sea Visitor (R1)",
+      "name": "Deep Sea Visitor",
       "base_atk": 713,
       "advanced_stat": { "CRIT Rate": 0.24 },
-      "passive_note": "Ellen's signature (the former dummy_engine renamed 2026-07-14 - same stats, so every DUMMY-era game validation still holds). Lord of Seas R1: Ice DMG +25% (to +50% R5); Basic hit: CRIT Rate +10% for 8s; Ice-dealing Dash hit: a further +10% for 15s. NOT auto-applied (kept manual so the validated baselines stay exact): enter Ice DMG% as external DMG bonus and the CRIT parts as external CRIT Rate when active. Datamine wengine params [0.25, 0.1, 8, 0.1, 15] at R1."
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Lord of Seas: Ice DMG",
+          "element": "ice",
+          "per_stack_by_rank": [0.25, 0.315, 0.38, 0.445, 0.50],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "Unconditional passive: the equipper's Ice DMG +25% (R1) to +50% (R5) - always active in-game, so auto-applied (default ON). If you previously entered it manually as external DMG bonus, remove that entry or it double-counts."
+        }
+      },
+      "passive_note": "Ellen's signature (the former dummy_engine renamed 2026-07-14 - same stats, so every DUMMY-era game validation still holds; Ice DMG modeled as an auto conditional buff 2026-07-22, zenless-optimizer datamine wengine params R1 [0.25, 0.1, 8, 0.1, 15] to R5 [0.5, 0.2, 8, 0.2, 15]). CRIT parts stay manual: Basic hit grants CRIT Rate +10/12.5/15/17.5/20% for 8s; an Ice-dealing Dash hit a further +10/12.5/15/17.5/20% for 15s - enter as external CRIT Rate when active."
     },
     "severed_innocence": {
       "name": "Severed Innocence",
@@ -230,10 +242,23 @@
       "passive_note": "Anomaly Buildup +40% (R1) to +80% (R5) at max stacks affects buildup speed only, not proc damage. The Physical DMG% stacks are modeled via the refinement system (stacks asked at runtime)."
     },
     "heartstring_nocturne": {
-      "name": "Heartstring Nocturne (R1)",
+      "name": "Heartstring Nocturne",
       "base_atk": 713,
       "advanced_stat": { "CRIT Rate": 0.24 },
-      "passive_note": "R1 passive (CRIT DMG +50%; Heartstring stacks ignore part of enemy Fire RES) is NOT auto-applied; enter as external CRIT DMG / RES shred when active."
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Heartstring: CRIT DMG",
+          "element": null,
+          "bracket": "crit_dmg",
+          "per_stack_by_rank": [0.50, 0.575, 0.65, 0.725, 0.80],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "Unconditional passive: the equipper's CRIT DMG +50% (R1) to +80% (R5) - always active in-game, so auto-applied (default ON). If you previously entered it manually as external CRIT DMG, remove that entry or it double-counts."
+        }
+      },
+      "passive_note": "Refinement modeled 2026-07-22 (zenless-optimizer datamine wengine params R1 [0.5, 1, 0.125, 2, 30] to R5 [0.8, 1, 0.2, 2, 30]). Heartstring stacks stay manual: launching a Chain Attack or Ultimate grants 1 stack (max 2, 30s); each stack makes attacks ignore 12.5/14.5/16.5/18.5/20% of the enemy's Fire RES - enter as external RES shred when active."
     },
     "elegant_vanity": {
       "name": "Elegant Vanity",

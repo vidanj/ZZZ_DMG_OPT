@@ -1272,10 +1272,17 @@ def optimize(
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
     # Engine always-on CRIT Rate (Qingming Birdcage) joins the crit total
-    # exactly as in calculate().
+    # exactly as in calculate(); same for crit_dmg-bracket conditional
+    # parts (Heartstring Nocturne).
     crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
                        + engine.passive_crit(rank))
-    crit_dmg_const = config.external_crit_dmg + kit["crit_dmg"]
+    crit_dmg_const = (
+        config.external_crit_dmg + kit["crit_dmg"]
+        + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                             agent.attribute, rank, bracket="crit_dmg",
+                             skill_tag=config.skill_tag,
+                             counts_as_aftershock=config.counts_as_aftershock)
+    )
     # Kit/support PEN Ratio (e.g. Rina's squad PEN Ratio) — a constant that
     # calculate() folds into the DEF zone (build.pen_ratio + kit pen_ratio);
     # the fast path must too, or a support granting PEN Ratio under-values
@@ -2256,7 +2263,14 @@ def optimize_sheer(
     am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
     crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
                        + engine.passive_crit(rank))
-    crit_dmg_const = config.external_crit_dmg + kit["crit_dmg"]
+    crit_dmg_const = (
+        config.external_crit_dmg + kit["crit_dmg"]
+        + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                             agent.attribute, rank, mode="sheer",
+                             bracket="crit_dmg",
+                             skill_tag=config.skill_tag,
+                             counts_as_aftershock=config.counts_as_aftershock)
+    )
     bonus_const = (
         sum(config.external_dmg_bonuses)
         + sum(_engine_passive_bonuses(engine, agent.attribute, rank))

@@ -688,7 +688,9 @@ def run_optimization(data: AppData, body: dict) -> dict:
     and default differ — full-duration anomaly damage). The candidate
     pool excludes discs reserved by another agent's loadout (the
     requesting agent's own loadouts don't exclude anything); the response
-    reports the excluded count as ``discs_excluded``. The response
+    reports the excluded count as ``discs_excluded``. Passing
+    ``optimize.ignore_reserved`` (the page's "Bypass loadout locks"
+    checkbox) skips that exclusion for this search only. The response
     serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`; each
     build carries its discs (with inventory ids), the 4-piece stacks it
     was evaluated at (for Apply), and its full verified results table.
@@ -739,14 +741,18 @@ def run_optimization(data: AppData, body: dict) -> dict:
 
     # Discs reserved by another agent's loadout are off-limits: the
     # candidate pool keeps only unreserved discs and the requesting
-    # agent's own.
+    # agent's own. 'ignore_reserved' (the page's "Bypass loadout locks"
+    # checkbox, off by default) lifts the restriction for this search —
+    # the loadouts themselves are not modified.
+    ignore_reserved = bool(opt_raw.get("ignore_reserved"))
     reserved_owner: dict[str, tuple[str, str]] = {}
-    for name, loadout in data.loadouts.items():
-        if loadout.agent and loadout.agent != config.agent_key:
-            for disc_id in loadout.disc_ids:
-                if disc_id:
-                    reserved_owner.setdefault(disc_id,
-                                              (name, loadout.agent))
+    if not ignore_reserved:
+        for name, loadout in data.loadouts.items():
+            if loadout.agent and loadout.agent != config.agent_key:
+                for disc_id in loadout.disc_ids:
+                    if disc_id:
+                        reserved_owner.setdefault(disc_id,
+                                                  (name, loadout.agent))
     pool = {
         disc_id: disc for disc_id, disc in data.user_discs.items()
         if disc_id not in reserved_owner
@@ -847,6 +853,8 @@ def run_optimization(data: AppData, body: dict) -> dict:
         # Equipped discs dropped because another agent's loadout reserves
         # them (their slots were optimized from empty).
         "reserved_equipped_dropped": dropped,
+        # True when the search ran with loadout locks bypassed.
+        "reserved_bypassed": ignore_reserved,
     }
 
 

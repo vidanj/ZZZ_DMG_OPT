@@ -45,7 +45,9 @@ class EngineBuff:
     ordinary DMG% bracket; ``"anomaly_buff"`` joins the separate
     Anomaly/Disorder Buff Multiplier bracket (e.g. Joyau Doré's
     "Vortex and Windswept DMG"); ``"sheer_dmg"`` joins the dedicated
-    Sheer DMG bracket (Qingming Birdcage). ``modes`` optionally gates the
+    Sheer DMG bracket (Qingming Birdcage); ``"crit_dmg"`` adds to the
+    equipper's CRIT DMG total in crit-capable modes (Heartstring
+    Nocturne's unconditional +50..80%). ``modes`` optionally gates the
     buff to calculation modes (same semantics as agent kit effects: the
     element gate is checked in direct/anomaly/sheer modes only).
     ``skill_tags`` optionally gates it to hits of those damage types
@@ -343,10 +345,12 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                         f"Engine '{key}': buff is missing a valid 'name'"
                     )
                 bracket = buff_raw.get("bracket", "dmg_bonus")
-                if bracket not in ("dmg_bonus", "anomaly_buff", "sheer_dmg"):
+                if bracket not in ("dmg_bonus", "anomaly_buff", "sheer_dmg",
+                                   "crit_dmg"):
                     raise EngineError(
                         f"Engine '{key}': buff 'bracket' must be 'dmg_bonus', "
-                        f"'anomaly_buff' or 'sheer_dmg', got {bracket!r}"
+                        f"'anomaly_buff', 'sheer_dmg' or 'crit_dmg', "
+                        f"got {bracket!r}"
                     )
                 modes = buff_raw.get("modes")
                 if modes is not None:

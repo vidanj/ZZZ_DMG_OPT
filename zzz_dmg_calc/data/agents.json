@@ -282,8 +282,11 @@
         "name": "Catwalk",
         "max_stacks": 2,
         "condition": { "teammate_shares_attribute_or_faction": true },
-        "effects": [ { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "ex_special" } ],
-        "note": "Requires a teammate sharing her Attribute (physical) or Faction (Cunning Hares). After any squad member inflicts Assault, her next EX Special Attack deals +35% DMG per stack (max 2) - only applies when the damage type is EX Special Attack. Verified 2026-07-03 (Game8)."
+        "effects": [
+          { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "ex_special" },
+          { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "dodge_counter" }
+        ],
+        "note": "Requires a teammate sharing her Attribute (physical) or Faction (Cunning Hares). After any squad member inflicts Assault, +35% DMG per stack (max 2). Verified 2026-07-03 (Game8) for the EX Special half. USER JUDGMENT: the Dodge Counter half exists ONLY with Potential Awakening unlocked (Cat's Gratitude rework, PROVISIONAL - nanoka 3.1.12: trigger also gains 'after Dodge: Disappearing Tail', duration 30s, and coverage extends to Dodge Counter hits) - without Awakening, do not count Catwalk stacks on a dodge_counter-tagged hit."
       },
       "mindscapes": {
         "1": {
@@ -315,6 +318,46 @@
           "max_stacks": 3,
           "effects": [ { "kind": "crit_dmg", "value": 0.18 } ],
           "note": "Launching a Chain Attack or Ultimate grants +18% CRIT DMG, stacking up to 3 times; expires out of combat."
+        }
+      },
+      "potential": {
+        "name": "Potential Awakening: Cat's Gratitude",
+        "note": "PROVISIONAL (nanoka 3.1.12 datamine 2026-07-22, display-text values - not in frzyc yet; re-verify raw params when they land). Unlocking ANY level reworks her kit: core Stealthy Paws duration 6s -> 40s (same +60%, on/off toggle unchanged); Catwalk also covers Dodge Counter hits (modeled on Catwalk, see its note) and triggers off Dodge: Disappearing Tail; new Purr Energy resource (1/s, cap 60 - not damage-relevant); [Pawpad Ambush] state (40s after Dodge Counter: Fluffy Piercing Claw, refreshable): ALL her hits count as back attacks - tick M1's RES-ignore and Steel Cushion's back-attack buff freely while active - and hits trigger [Super Mean Pawprint]: an EXTRA HIT of 30% ATK Physical DMG once per 1s (extra-hit recipe: add a separate calculation with skill_multiplier 0.30 per proc). Levels replace each other - activate ONLY the level this copy has unlocked.",
+        "levels": {
+          "1": {
+            "name": "Cat's Gratitude I",
+            "note": "Kit rework only (see the potential note) - no stat buff of its own, documentation-only."
+          },
+          "2": {
+            "name": "Cat's Gratitude II (Nightborne Instinct)",
+            "max_stacks": 1,
+            "effects": [ { "kind": "crit_dmg", "value": 0.20 } ],
+            "note": "While [Pawpad Ambush] is active: CRIT DMG +20%. Near-permanent uptime (40s, refreshed by Fluffy Piercing Claw). PROVISIONAL."
+          },
+          "3": {
+            "name": "Cat's Gratitude III (Nightborne Instinct)",
+            "max_stacks": 1,
+            "effects": [ { "kind": "crit_dmg", "value": 0.30 } ],
+            "note": "While [Pawpad Ambush] is active: CRIT DMG +30%. Near-permanent uptime (40s, refreshed by Fluffy Piercing Claw). PROVISIONAL."
+          },
+          "4": {
+            "name": "Cat's Gratitude IV (Nightborne Instinct)",
+            "max_stacks": 1,
+            "effects": [ { "kind": "crit_dmg", "value": 0.40 } ],
+            "note": "While [Pawpad Ambush] is active: CRIT DMG +40%. Near-permanent uptime (40s, refreshed by Fluffy Piercing Claw). PROVISIONAL."
+          },
+          "5": {
+            "name": "Cat's Gratitude V (Nightborne Instinct)",
+            "max_stacks": 1,
+            "effects": [ { "kind": "crit_dmg", "value": 0.50 } ],
+            "note": "While [Pawpad Ambush] is active: CRIT DMG +50%. Near-permanent uptime (40s, refreshed by Fluffy Piercing Claw). PROVISIONAL."
+          },
+          "6": {
+            "name": "Cat's Gratitude VI (Nightborne Instinct)",
+            "max_stacks": 1,
+            "effects": [ { "kind": "crit_dmg", "value": 0.60 } ],
+            "note": "While [Pawpad Ambush] is active: CRIT DMG +60%. Near-permanent uptime (40s, refreshed by Fluffy Piercing Claw). PROVISIONAL."
+          }
         }
       },
       "default_engine": "steel_cushion"
