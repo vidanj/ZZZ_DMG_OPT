@@ -274,6 +274,36 @@ def anomaly_buff_mult(bonuses: Iterable[float]) -> float:
     return 1.0 + sum(bonuses)
 
 
+def refringe_mult(coefficients: Iterable[float]) -> float:
+    """Lumiflux REFRINGE zone: ``1 + Σ(coefficients)``.
+
+    When a Lumiflux agent (Remielle) has applied Lumiflux Buildup to the
+    target, a teammate's incoming Anomaly is *Refringed*: its Anomaly
+    Effect Strength — the whole snapshot bundle of ATK, PEN, AP and DMG
+    bonuses — is enhanced by the provider's **Refringe Coefficient**
+    (0.02% per point of the provider's Anomaly Proficiency).
+
+    Kept as its own multiplicative zone rather than folded into
+    :func:`anomaly_buff_mult`: Refringe scales the Effect Strength itself,
+    so a Refringe provider and ordinary "Attribute Anomaly DMG +X%" buffs
+    compound rather than dilute each other in one additive bracket. Only
+    one Lumiflux agent can Refringe a given anomaly, so in practice this
+    receives a single provider's contributions.
+
+    The coefficient's own parts ARE additive (fixed percentage-point
+    boosts, not multipliers): base ``0.0002 × AP``, ``+0.10`` with three
+    Anomaly squad members, ``+0.20`` at the provider's M2. It reaches
+    everything derived from the Refringed anomaly — Disorder, Vortex,
+    Abloom and the provider's own Luminize.
+
+    ⚠️ PROVISIONAL — no in-game calibration exists (shipped 2026-07-29).
+
+    Args:
+        coefficients: Each provider's coefficient part as a fraction.
+    """
+    return 1.0 + sum(coefficients)
+
+
 # ---------------------------------------------------------------------------
 # Sheer Force zones (Phase 5 Rupture — see DOCS/rupture_plan.md)
 # ---------------------------------------------------------------------------

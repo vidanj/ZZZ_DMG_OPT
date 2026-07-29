@@ -46,7 +46,7 @@ from urllib.parse import unquote
 
 try:
     from ..api import (
-        CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        CalcConfig, LuminizeConfig, SupportConfig, calculate, calculate_anomaly,
         calculate_sheer, panel_stats,
     )
     from ..agent import Agent, load_agents
@@ -70,7 +70,7 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from zzz_dmg_calc.api import (
-        CalcConfig, SupportConfig, calculate, calculate_anomaly,
+        CalcConfig, LuminizeConfig, SupportConfig, calculate, calculate_anomaly,
         calculate_sheer, panel_stats,
     )
     from zzz_dmg_calc.agent import Agent, load_agents
@@ -222,6 +222,18 @@ def frontend_payload(data: AppData) -> dict:
                         "buff": kit_buff(m.buff),
                     }
                     for level, m in sorted(a.mindscapes.items())
+                },
+                "luminize": None if a.luminize is None else {
+                    "ap_scaling": a.luminize.ap_scaling,
+                    "m4_multiplier": a.luminize.m4_multiplier,
+                    "max_voidflares": a.luminize.max_voidflares,
+                    "note": a.luminize.note,
+                    "skills": {
+                        k: {"name": sk.name, "multiplier": sk.multiplier,
+                            "consumes_voidflares": sk.consumes_voidflares,
+                            "note": sk.note}
+                        for k, sk in a.luminize.skills.items()
+                    },
                 },
                 "potential_name": a.potential_name,
                 "potential_note": a.potential_note,
@@ -406,7 +418,8 @@ def _number(body: dict, key: str, default: float = 0.0) -> float:
 
 #: Calculation modes the UI may request. ``rupture`` runs the Sheer
 #: Force pipeline (:func:`~zzz_dmg_calc.api.calculate_sheer`).
-CALC_MODES = ("direct", "anomaly", "disorder", "vortex", "rupture")
+CALC_MODES = ("direct", "anomaly", "disorder", "vortex", "rupture",
+              "luminize")
 
 #: Share of the buildup the anomaly floor treats as unbuffed (teammate
 #: dilution / buff downtime): results show the [floor, optimal] range,
@@ -426,6 +439,39 @@ def _body_mode(body: dict) -> str:
             f"Unknown mode '{mode}'; options: {list(CALC_MODES)}"
         )
     return mode
+
+
+def _parse_luminize(body: dict) -> LuminizeConfig:
+    """The request's ``luminize`` block -> :class:`LuminizeConfig`.
+
+    Raises:
+        ValueError: missing/invalid fields (the API layer validates the
+            game rules — unknown skill, provider without a table, ...).
+    """
+    raw = body.get("luminize") or {}
+    if not isinstance(raw, dict):
+        raise ValueError("'luminize' must be a JSON object")
+    skill = str(raw.get("skill") or "")
+    if not skill:
+        raise ValueError(
+            "Luminize mode needs a 'skill' (which of Remielle's skills "
+            "fires the Luminize)"
+        )
+    bonuses = raw.get("anomaly_dmg_bonuses")
+    if bonuses is None:
+        single = raw.get("anomaly_dmg_bonus")
+        bonuses = [float(single)] if single else []
+    if not isinstance(bonuses, list):
+        raise ValueError("'luminize.anomaly_dmg_bonuses' must be a list")
+    return LuminizeConfig(
+        skill=skill,
+        anomaly_proficiency=_number(raw, "anomaly_proficiency"),
+        provider_key=str(raw.get("provider_key") or "remielle"),
+        m4=bool(raw.get("m4")),
+        voidflares=int(raw.get("voidflares") or 1),
+        anomaly_dmg_bonuses=[float(v) for v in bonuses if v],
+        res_ignore=bool(raw.get("res_ignore")),
+    )
 
 
 def _build_config(body: dict) -> CalcConfig:
@@ -515,6 +561,10 @@ def _build_config(body: dict) -> CalcConfig:
 
     return CalcConfig(
         agent_key=str(body.get("agent_key", "")),
+        # Lumiflux Attribute Mutation (Remielle): the element her damage
+        # counts as. Sent for Lumiflux agents only — the API rejects it
+        # for anyone else, so an empty/absent field must stay None.
+        mutated_element=(str(body.get("mutated_element") or "") or None),
         engine_key=body.get("engine_key") or None,
         engine_rank=(
             None if engine_rank_raw in (None, "") else int(engine_rank_raw)
@@ -586,6 +636,8 @@ def _build_config(body: dict) -> CalcConfig:
             (str(body.get("abloom_element") or "") or None)
             if mode == "anomaly" else None
         ),
+        # --- Luminize (Lumiflux) -------------------------------------------
+        luminize=_parse_luminize(body) if mode == "luminize" else None,
         # --- Sheer/Rupture inputs (mode-gated) ------------------------------
         sheer_force_flat=(
             _number(body, "sheer_force_flat") if mode == "rupture" else 0.0

@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 2 section, 'Disc set bonuses')",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter)."
+    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). 'bonus_4pc_auto_anomaly_dmg' is the same idea for the separate Anomaly/Disorder Buff Multiplier bracket instead of the DMG% one (Feathered Fate's Attribute Anomaly DMG +15%), applied in anomaly modes only; 'bonus_4pc_auto_attribute' restricts THAT part to a wearer of the named attribute (Feathered Fate: 'lumiflux'), so the same set gives a non-Lumiflux wearer only its AP halves. Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter)."
   },
   "sets": {
     "WOODPECKER_ELECTRO": {
@@ -35,7 +35,7 @@
     "SHOCKSTAR_DISCO": {
       "name": "Shockstar Disco",
       "bonus_2pc": { "Impact%": 0.06 },
-      "notes": "Stunner set, verified 2026-07-03 (Game8). Neither piece affects the damage formula: 2pc Impact +6% and 4pc Daze +20% (Basic/Dash/Dodge Counter) speed up stuns only - relevance convention: documented, nothing modeled."
+      "notes": "Stunner set, CONFIRMED 2026-07-29 against nanoka equipment 31200 (Impact +6% / Daze +20%). Neither piece affects the damage formula: 2pc Impact +6% and 4pc Daze +20% (Basic/Dash/Dodge Counter) speed up stuns only - relevance convention: documented, nothing modeled."
     },
     "KING_OF_THE_SUMMIT": {
       "name": "King of the Summit",
@@ -102,6 +102,22 @@
         "note": "Whenever a squad member inflicts Assault: the equipper deals +35% DMG to the target for 12s. Generic DMG% (zenless-optimizer brackets it with the ordinary DMG% bonuses) - RAMP-UP, effectively always up after the first Assault, so auto-applied (range's floor covers the ramp)."
       },
       "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Physical agents (assume-it-matches, like Wuthering Salon). Disorder-mode caveat: the calculator only applies build DMG% when the dealt element matches the attacker's attribute, so the 4pc is dropped from Disorder bursts dealt as another element - enter it manually there if active."
+    },
+    "FEATHERED_FATE": {
+      "name": "Feathered Fate",
+      "bonus_2pc": {
+        "Anomaly Proficiency": 30
+      },
+      "bonus_4pc": {
+        "stat": "Anomaly Proficiency",
+        "per_stack": 50,
+        "max_stacks": 1,
+        "auto": true,
+        "note": "On entering the battlefield or being switched in: Anomaly Proficiency +50 for 15s. The buff KEEPS RUNNING while the equipper is off-field, and it is refreshed on every swap-in, so it is up whenever it matters - RAMP-UP, auto-applied."
+      },
+      "bonus_4pc_auto_anomaly_dmg": 0.15,
+      "bonus_4pc_auto_attribute": "lumiflux",
+      "notes": "Lumiflux anomaly set, patch 3.1 (added 2026-07-29; nanoka equipment id 34100, text matches word for word; Lin-0/Mobalytics calls it the only 4-piece worth using on Remielle). The 4pc's SECOND half - Attribute Anomaly DMG +15% - is granted ONLY to a Lumiflux equipper (currently Remielle alone), so it carries 'bonus_4pc_auto_attribute': 'lumiflux' and lands in the separate Anomaly Buff Multiplier bracket, not the ordinary DMG% one. Its 15s timer does not tick down during Phase Flow and refreshes on swap-in, so it is auto-applied (Lin-0: 'as it's refreshed on swap in, it'll be up for when it matters'; note the tooltip says off-field but it really means INACTIVE - she counts as on-field while attacking in Phase Flow). Worn by any other agent the set is just its AP parts. Lin-0's 2pc partners: Freedom Blues or Chaos Jazz above the 4,000 ATK threshold, Hormone Punk or Astral Voice below it."
     },
     "FREEDOM_BLUES": {
       "name": "Freedom Blues",

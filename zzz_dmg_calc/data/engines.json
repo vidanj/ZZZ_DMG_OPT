@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 4 section)",
     "verified": "2026-07-01",
     "game_patch": "3.0",
-    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket), 'sheer_dmg' (the dedicated Sheer DMG bracket) or 'crit_dmg' (adds to the equipper's CRIT DMG total in crit-capable modes - Heartstring Nocturne), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
+    "conventions": "advanced_stat uses the same stat names and fraction convention as discs.json (0.24 = 24%). passive_note documents effects the user must enter manually as external buffs. Optional 'refinement' models rank-scaled passives: 'rank' is only the DEFAULT rank - the UI/CLI let the user pick R1..max_rank at runtime. 'passive_dmg_by_rank' entries are ALWAYS-ON DMG% parts ({element, values[max_rank]}), applied automatically when the dealt element matches. 'passive_ap_by_rank' is an ALWAYS-ON flat AP part (Joyau Dore), auto-applied to the equipper in anomaly modes. 'conditional_buff' is a stacking buff (per_stack_by_rank, element-gated) with active stacks asked at runtime; max_stacks 1 = plain on/off (UI checkbox); optional 'bracket' routes it to 'dmg_bonus' (default), 'anomaly_buff' (the separate Anomaly/Disorder Buff Multiplier bracket), 'sheer_dmg' (the dedicated Sheer DMG bracket), 'crit_dmg' (adds to the equipper's CRIT DMG total in crit-capable modes - Heartstring Nocturne) or 'anomaly_proficiency' (FLAT AP per stack added to the equipper's AP total, anomaly modes only - Weeping Gemini; per-stack values are plain numbers, not fractions), optional 'modes' gates it to calculation modes (direct/anomaly/disorder/vortex/sheer; the element gate is checked in direct/anomaly/sheer modes only), optional 'skill_tags' gates it to hits of those damage types (Qingming Birdcage's Ult/EX part). 'conditional_buffs' (list) models engines whose ONE stack counter drives several parts - all share CalcConfig.engine_buff_stacks. 'passive_crit_by_rank' is an ALWAYS-ON CRIT Rate part (Qingming Birdcage), auto-applied to the equipper in crit-capable modes. 'squad_buffs' kinds match the agent-kit effect kinds (crit_dmg, atk_pct, anomaly_proficiency, hp_pct, ...)."
   },
   "engines": {
     "deep_sea_visitor": {
@@ -119,6 +119,55 @@
       "advanced_stat": { "Impact%": 0.18 },
       "passive_note": "Koleda's signature, assigned as Nangong Yu's DEFAULT engine (user choice 2026-07-15; zenless-optimizer datamine, wengine params [0.6, 0.1, 10, 2] at R1; atk_base 46 -> Lv. 60 base 684, Impact% 7.2 x 2.5 = 18). Passive 'Passionate Construction' has NO damage-formula effect: off-field Energy Regen +0.6/s (R1) to +1.2/s (R5) is resource-only, and the EX Special Impact +10%/stack x2 (R1; 20% R5) affects Daze buildup only - nothing to model or enter."
     },
+    "ode_of_resurrected_wings": {
+      "name": "Ode of Resurrected Wings",
+      "base_atk": 743,
+      "advanced_stat": { "ATK%": 0.36 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [96, 105, 115, 125, 135],
+        "conditional_buff": {
+          "name": "Paradise Lost: equipper Anomaly DMG",
+          "bracket": "anomaly_buff",
+          "modes": ["anomaly", "disorder", "vortex"],
+          "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "After the equipper triggers a Refringe reaction: their Anomaly DMG +20% (R1) to +32% (R5) for 30s, refreshed on repeat - permanent in Remielle's loop (every teammate anomaly on a Lumiflux-marked target Refringes), so RAMP-UP, auto-applied. Joins the Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL, same treatment as Joyau Dore)."
+        },
+        "squad_buffs": [
+          {
+            "name": "Paradise Lost: squad DMG",
+            "kind": "dmg_bonus",
+            "values": [0.30, 0.345, 0.39, 0.435, 0.48],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "Same Refringe trigger: ALL squad members' DMG +30% (R1) to +48% (R5) for 30s - the engine's headline buff and the reason it is a team-wide uplift. RAMP-UP, auto-applied. Ordinary DMG% bracket. Only one instance per squad."
+          }
+        ]
+      },
+      "passive_note": "Remielle's signature (S-rank Anomaly engine, added 2026-07-29; nanoka 3.1 weapon 14158, display-text values - frzyc has no entry yet, so PROVISIONAL). Stats cross-checked with Lin-0/Mobalytics 2026-07-29 (he calls it the first engine with a 36% ATK mainstat and a higher Base ATK value than most): base 50 -> Lv. 60 base ATK 743 (the higher 'Void Hunter' S-rank tier, same as Qingming Birdcage) and ATK% 14.4 x 2.5 = 36 - the first engine carrying BOTH the raised base ATK and a raised secondary. The unconditional Anomaly Proficiency +96 (R1) to +135 (R5) is auto-applied via passive_ap_by_rank (anomaly modes); it also feeds Remielle's Refringe Coefficient, which is NOT modeled (see her agent entry). Both Refringe-triggered parts ARE modeled (equipper Anomaly DMG conditional + squad DMG squad buff)."
+    },
+    "weeping_gemini": {
+      "name": "Weeping Gemini",
+      "base_atk": 594,
+      "advanced_stat": { "ATK%": 0.25 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Twin Sorrow: Anomaly Proficiency stacks",
+          "bracket": "anomaly_proficiency",
+          "modes": ["anomaly", "disorder", "vortex"],
+          "per_stack_by_rank": [30, 34, 38, 42, 48],
+          "max_stacks": 4,
+          "auto": true,
+          "note": "Whenever ANY squad member inflicts an Attribute Anomaly: the equipper gains +30 AP (R1) to +48 AP (R5) per stack, max 4 (+120 R1 / +192 R5); stacks expire when the target recovers from Stun or dies (durations tracked separately). Trivially kept at 4 in an anomaly squad - RAMP-UP, auto-applied at max. FIRST engine using the 'anomaly_proficiency' bracket: per-stack values are FLAT AP (plain numbers, not fractions), added to the equipper's AP total in anomaly modes only. Enter fewer stacks for a slower squad."
+        }
+      },
+      "passive_note": "A-RANK Anomaly engine (added 2026-07-29, zenless-optimizer datamine WeepingGemini.json: rarity A, atk_base 40 -> Lv. 60 base 594, atk_ 10 x 2.5 = 25; phase params R1 [30, 4] to R5 [48, 4]; nanoka 3.1 weapon 13008 R1-R5 text matches). A-rank engines are commonly owned at R5 (+192 AP at 4 stacks) - a strong budget option for any anomaly agent, Remielle included."
+    },
     "the_restrained": {
       "name": "The Restrained",
       "base_atk": 684,
@@ -179,7 +228,7 @@
           "note": "Equipper's DMG increases when hitting the enemy from behind. Nekomata M1: while the enemy is Stunned, all her attacks count as back attacks."
         }
       },
-      "passive_note": "Both passive parts are modeled: Physical DMG% applies automatically at the selected rank; toggle the back-attack bonus when the hit lands from behind. Verified 2026-07-02 (Game8/zzz.gg): Lv.60 base ATK 684, CRIT Rate 24%."
+      "passive_note": "Both passive parts are modeled: Physical DMG% applies automatically at the selected rank; toggle the back-attack bonus when the hit lands from behind. CONFIRMED 2026-07-29 against frzyc SteelCushion.json (atk_base 46 -> Lv. 60 base 684, crit_ 0.096 x 2.5 = 24%, phase params [0.2, 0.25] at R1 .. [0.4, 0.5] at R5)."
     },
     "half_sugar_bunny": {
       "name": "Half-Sugar Bunny",
@@ -203,7 +252,7 @@
           }
         ]
       },
-      "passive_note": "Zhao's signature (verified 2026-07-03, Game8). Squad Max HP% and Energy Regen parts are not modeled (no damage effect). Squad buffs apply via the Team card when a support wears it."
+      "passive_note": "Zhao's signature (CONFIRMED 2026-07-29 against frzyc HalfSugarBunny.json: atk_base 48 -> 713, hp_ 0.12 x 2.5 = 30%, squad ATK% 0.10-0.16 and squad CRIT DMG 0.30-0.48 per rank). Squad Max HP% and Energy Regen parts are not modeled (no damage effect). Squad buffs apply via the Team card when a support wears it."
     },
     "yesterday_calls": {
       "name": "Yesterday Calls",
@@ -217,11 +266,11 @@
             "name": "Yesterday Calls: squad CRIT DMG (3 Daze stacks)",
             "kind": "crit_dmg",
             "values": [0.30, 0.345, 0.39, 0.435, 0.48],
-            "note": "At 3 stacks of the equipper's EX-Special Daze buff: squad CRIT DMG for 40s. R1 30% / R5 48% verified (Game8); R2-R4 interpolated on the standard refinement progression."
+            "note": "At 3 stacks of the equipper's EX-Special Daze buff: squad CRIT DMG for 40s. R1 30% / R5 48% AND the R2-R4 steps (34.5 / 39 / 43.5%) all CONFIRMED 2026-07-29 against frzyc YesterdayCalls.json - the earlier linear interpolation was exactly right."
           }
         ]
       },
-      "passive_note": "Dialyn's signature (verified 2026-07-03, Game8). Off-field Energy Regen and the Daze +9-14.5%/stack parts affect buildup only, not proc damage - not modeled."
+      "passive_note": "Dialyn's signature (CONFIRMED 2026-07-29 against frzyc YesterdayCalls.json: atk_base 48 -> 713, crit_ 0.096 x 2.5 = 24%, params [1.5, 0.09, 10, 3, 3, 0.3, 40] at R1). Off-field Energy Regen and the Daze +9-14.5%/stack parts affect buildup only, not proc damage - not modeled."
     },
     "sharpened_stinger": {
       "name": "Sharpened Stinger (R2)",
@@ -512,7 +561,7 @@
           }
         ]
       },
-      "passive_note": "Yuzuha's signature (added 2026-07-03: Game8 + zenless-optimizer datamine, params [30, 40, 60, 40] at R1). The self Anomaly Mastery +30..48 (40s, on her Physical EX Special/Ultimate) is NOT auto-applied - AM only matters through HER AM-scaled Additional Ability: include it in the 'anomaly_mastery' input you enter for that team buff. Advanced stat Energy Regen +60% at Lv. 60."
+      "passive_note": "Yuzuha's signature (added 2026-07-03, zenless-optimizer datamine, params [30, 40, 60, 40] at R1). The self Anomaly Mastery +30..48 (40s, on her Physical EX Special/Ultimate) is NOT auto-applied - AM only matters through HER AM-scaled Additional Ability: include it in the 'anomaly_mastery' input you enter for that team buff. Advanced stat Energy Regen +60% at Lv. 60."
     },
     "tusks_of_fury": {
       "name": "Tusks of Fury",

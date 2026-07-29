@@ -49,9 +49,9 @@ from .agent import Agent, load_agents
 from .anomalies import AnomalyData, load_anomalies
 from .api import (
     POLARITY_DISORDER_FRACTION, VIVIAN_ABLOOM_M2_FACTOR, VIVIAN_ABLOOM_MV,
-    AnomalyResults, CalcConfig, CalcResults, calculate, calculate_anomaly,
-    calculate_sheer, _engine_buff_bonus, _engine_passive_bonuses,
-    _kit_contributions, _resolve_engine_rank,
+    AnomalyResults, CalcConfig, CalcResults, attack_element, calculate,
+    calculate_anomaly, calculate_sheer, _engine_buff_bonus,
+    _engine_passive_bonuses, _kit_contributions, _resolve_engine_rank,
 )
 from .constants import Constants, load_constants
 from .discs import (
@@ -711,6 +711,7 @@ _SCALING_INPUT_STAT = {
     "initial_energy_regen": "Energy Regen",
     "impact": "Impact",
     "anomaly_mastery": "Anomaly Mastery",
+    "anomaly_proficiency": "Anomaly Proficiency",
     "pen_ratio": "PEN Ratio",
     "sheer_force": "Sheer Force",
 }
@@ -786,13 +787,18 @@ def _fold_sets(
     buckets: list[float], counts: dict[str, int],
     set_2pc: dict[str, tuple[float, ...]],
     set_4pc: dict[str, tuple[float, ...]],
-    set_tag_bonus: dict[str, float],
-) -> float:
+    set_tag_bonus: dict[str, tuple[float, float]],
+) -> tuple[float, float]:
     """Add set bonuses for ``counts`` into ``buckets`` in place; return the
-    tagged-DMG% total (skill-tag 4pc DMG and, in anomaly mode, auto 4pc
-    DMG additives) that lands in the additive DMG% bracket at >= 4 pieces.
+    4-piece bracket totals that are NOT build stats.
+
+    Two channels, because they land in different multiplier zones:
+    ``(dmg, anomaly)`` — the additive DMG% bracket (skill-tag 4pc DMG and,
+    in anomaly mode, auto 4pc DMG additives) and the separate Anomaly
+    Buff Multiplier bracket (Feathered Fate's Lumiflux-gated part).
     """
     tagged = 0.0
+    tagged_anom = 0.0
     for key, count in counts.items():
         if count >= 2:
             for k, v in enumerate(set_2pc[key]):
@@ -800,8 +806,10 @@ def _fold_sets(
         if count >= 4:
             for k, v in enumerate(set_4pc[key]):
                 buckets[k] += v
-            tagged += set_tag_bonus[key]
-    return tagged
+            dmg, anom = set_tag_bonus[key]
+            tagged += dmg
+            tagged_anom += anom
+    return tagged, tagged_anom
 
 
 def _search(
@@ -813,7 +821,7 @@ def _search(
     feasible,
     set_2pc: dict[str, tuple[float, ...]],
     set_4pc: dict[str, tuple[float, ...]],
-    set_tag_bonus: dict[str, float],
+    set_tag_bonus: dict[str, tuple[float, float]],
     candidate_sets: set[str],
     required: str | None,
     pairs_only: bool,
@@ -859,7 +867,7 @@ def _search(
         merged = list(base_buckets)
         for k, v in enumerate(cand.buckets):
             merged[k] += v
-        return evaluate(merged, 0.0)[0]
+        return evaluate(merged, (0.0, 0.0))[0]
 
     for slot in slots:
         head = candidates[slot][:1] if equipped.get(slot) is not None else []
@@ -908,8 +916,10 @@ def _search(
                       reverse=True)[:3]
         four = max((set_4pc[key][k] for key in candidate_sets), default=0.0)
         static_set_ub[k] = sum(twos) + four
-    static_tag_ub = max(
-        (set_tag_bonus[key] for key in candidate_sets), default=0.0
+    # Per-channel upper bound (value rises monotonically in both).
+    static_tag_ub = (
+        max((set_tag_bonus[key][0] for key in candidate_sets), default=0.0),
+        max((set_tag_bonus[key][1] for key in candidate_sets), default=0.0),
     )
 
     heap: list[tuple[float, int, tuple[_Candidate, ...]]] = []
@@ -964,7 +974,7 @@ def _search(
         then cap componentwise by the static top-3+4pc bound."""
         suffix_sets = suffix_set_max[i]
         ub = [0.0] * n_buckets
-        tag_ub = 0.0
+        tag_ub = [0.0, 0.0]
         for key, limit in suffix_sets.items():
             count = limit + work_counts.get(key, 0)
             if count >= 2:
@@ -973,7 +983,8 @@ def _search(
             if count >= 4:
                 for k, v in set_4pc_sparse[key]:
                     ub[k] += v
-                tag_ub += set_tag_bonus[key]
+                tag_ub[0] += set_tag_bonus[key][0]
+                tag_ub[1] += set_tag_bonus[key][1]
         for key, count in work_counts.items():
             if key in suffix_sets:
                 continue        # already counted above
@@ -983,11 +994,13 @@ def _search(
             if count >= 4:
                 for k, v in set_4pc_sparse[key]:
                     ub[k] += v
-                tag_ub += set_tag_bonus[key]
+                tag_ub[0] += set_tag_bonus[key][0]
+                tag_ub[1] += set_tag_bonus[key][1]
         for k in range(n_buckets):
             if ub[k] > static_set_ub[k]:
                 ub[k] = static_set_ub[k]
-        return ub, min(tag_ub, static_tag_ub)
+        return ub, (min(tag_ub[0], static_tag_ub[0]),
+                    min(tag_ub[1], static_tag_ub[1]))
 
     def combo_value(combo) -> tuple[float, bool]:
         """One full build's (value, acceptable) — the leaf math, reused
@@ -1217,6 +1230,9 @@ def optimize(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Lumiflux (Attribute Mutation): the element this agent's damage
+    # is dealt as — her own attribute for everyone else.
+    attr = attack_element(agent, config)
     # Self-scaling kit inputs (the MAIN's own panel values) become
     # minimum-stat constraints — the buff amount is a constant, so no
     # build may fall short of the panel the user claimed.
@@ -1227,7 +1243,7 @@ def optimize(
     dominance_indices = _dominance_indices(
         _DAMAGE_INDICES, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, agent.attribute, options,
+        equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
     )
 
@@ -1261,7 +1277,7 @@ def optimize(
     # them from every fast-path build.
     kit = _kit_contributions(agent, replace(config, discs=[]),
                              agents, disc_sets, engines,
-                             mode="direct", dealt_element=agent.attribute)
+                             mode="direct", dealt_element=attr)
 
     base_buckets = _bucket_vector(engine.advanced_stat)
     panel_consts = _panel_constants(agent, engine, consts)
@@ -1279,7 +1295,7 @@ def optimize(
     crit_dmg_const = (
         config.external_crit_dmg + kit["crit_dmg"]
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank, bracket="crit_dmg",
+                             attr, rank, bracket="crit_dmg",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
     )
@@ -1305,9 +1321,9 @@ def optimize(
     er_base = agent.base_energy_regen + agent.core_bonus_energy_regen
     bonus_const = (
         sum(config.external_dmg_bonuses)
-        + sum(_engine_passive_bonuses(engine, agent.attribute, rank))
+        + sum(_engine_passive_bonuses(engine, attr, rank))
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank,
+                             attr, rank,
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
         + sum(kit["dmg_bonus"])
@@ -1315,7 +1331,7 @@ def optimize(
     level_coef = consts.level_coefficient(agent.level)
     crit_cap = consts.crit_rate_cap
     res = formulas.res_mult(
-        boss.res_for(agent.attribute),
+        boss.res_for(attr),
         res_ignore=config.external_res_shred + kit["res_shred"],
     )
     taken = formulas.dmg_taken_mult(
@@ -1334,7 +1350,7 @@ def optimize(
     crit_variant = options.objective.replace("_stunned", "")
     const_mult = res * taken * stun * config.skill_multiplier
 
-    def evaluate(buckets: list[float], tagged: float) -> tuple[float, float]:
+    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, float]:
         """Fast path: (objective value, final ATK) of one bucket total."""
         atk_pre_combat = (
             agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
@@ -1355,7 +1371,9 @@ def optimize(
                 crit_rate = (base_crit_rate + buckets[_B_CRIT_RATE]
                              + crit_rate_const)
                 crit_mult = 1.0 + min(max(crit_rate, 0.0), crit_cap) * crit_dmg
-        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged
+        # Only the DMG% channel matters here: the anomaly-bracket
+        # channel exists in anomaly modes only.
+        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged[0]
         eff_def = formulas.effective_def(
             boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
             buckets[_B_PEN_FLAT], def_red=def_red_const
@@ -1422,7 +1440,7 @@ def optimize(
     set_2pc: dict[str, tuple[float, ...]] = {}
     set_4pc: dict[str, tuple[float, ...]] = {}
     set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, float] = {}
+    set_tag_bonus: dict[str, tuple[float, float]] = {}
     candidate_sets = {
         c.disc.disc_set
         for slot_list in candidates.values() for c in slot_list
@@ -1456,7 +1474,7 @@ def optimize(
         if entry.auto_4pc_dmg and (
                 not entry.auto_4pc_dmg_needs_teammate or teammate_present):
             auto = entry.auto_4pc_dmg
-        set_tag_bonus[key] = tag_skill + auto
+        set_tag_bonus[key] = (tag_skill + auto, 0.0)
 
     def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
         """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
@@ -1469,15 +1487,15 @@ def optimize(
     # --- Baseline feasibility (constraints may exclude the baseline) ------
     base_bb = list(base_buckets)
     for disc in config.discs:
-        for k, v in enumerate(_disc_buckets(disc, disc_data, agent.attribute)):
+        for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_atk = evaluate(base_bb, 0.0)
+    _, baseline_atk = evaluate(base_bb, (0.0, 0.0))
     baseline_feasible = (
         feasible(base_bb, baseline_atk)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
-                               agent.attribute)
+                               attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
@@ -1684,6 +1702,9 @@ def optimize_anomaly(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Lumiflux (Attribute Mutation): the element this agent's damage
+    # is dealt as — her own attribute for everyone else.
+    attr = attack_element(agent, config)
     # Self-scaling kit inputs (the MAIN's own panel values) become
     # minimum-stat constraints — the buff amount is a constant, so no
     # build may fall short of the panel the user claimed.
@@ -1705,15 +1726,22 @@ def optimize_anomaly(
         rule = anomaly_data.disorder[replaced_key]
         kind, dealt_element, hits = "disorder", replaced_key, 1
     elif config.abloom:
-        abloom_key = (config.abloom_element or agent.attribute).lower()
+        abloom_key = (config.abloom_element or attr).lower()
         anomaly = anomaly_data.anomalies[abloom_key]
         kind, dealt_element, hits = "anomaly", abloom_key, 1
     else:
-        anomaly = anomaly_data.anomalies[agent.attribute]
-        kind, dealt_element, hits = "anomaly", agent.attribute, anomaly.hits
+        anomaly = anomaly_data.anomalies[attr]
+        kind, dealt_element, hits = "anomaly", attr, anomaly.hits
+    if config.luminize is not None:
+        # LUMINIZE: the instance keeps the stored anomaly's element (this
+        # attacker's own attribute) but replaces its proc count — one per
+        # stored Voidflare. The multiplier is substituted further down.
+        hits = config.luminize.voidflares
     # Build Attribute DMG% (disc + set + engine advanced) only counts when
     # the burst deals the agent's OWN attribute — mirrors calculate_anomaly.
-    attr_dmg_applies = (dealt_element == agent.attribute)
+    # In Luminize mode it does apply: the DMG% comes from THIS agent, the
+    # one whose Refringed anomaly the Voidflare stored.
+    attr_dmg_applies = (dealt_element == attr)
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
@@ -1721,7 +1749,7 @@ def optimize_anomaly(
     dominance_indices = _dominance_indices(
         damage_indices, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, agent.attribute, options,
+        equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
     )
 
@@ -1764,7 +1792,12 @@ def optimize_anomaly(
                 + agent.core_bonus_anomaly_proficiency
                 + engine.passive_ap(rank)
                 + kit["anomaly_proficiency"]
-                + config.external_anomaly_proficiency)
+                + config.external_anomaly_proficiency
+                # Engine conditional flat AP (Weeping Gemini's stacks) —
+                # constant here, exactly as in calculate_anomaly's segments.
+                + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                                     dealt_element, rank, mode=kind,
+                                     bracket="anomaly_proficiency"))
     am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
     # HP/DEF/Impact/Energy-Regen panel pieces, read only by the min-stat
     # constraints (inert for anomaly damage).
@@ -1786,21 +1819,29 @@ def optimize_anomaly(
     )
 
     # Separate Anomaly/Disorder "Buff Multiplier" bracket (constant).
-    abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
-    engine_abuff = _engine_buff_bonus(
-        engine, config.engine_buff_stacks, dealt_element, rank,
-        mode=kind, bracket="anomaly_buff",
-    )
-    if engine_abuff:
-        abuff_entries.append(engine_abuff)
+    # Luminize takes it from the PROVIDER instead — the attacker's own
+    # anomaly-DMG sources never reach it (mirrors calculate_anomaly).
+    if config.luminize is not None:
+        abuff_entries = list(config.luminize.anomaly_dmg_bonuses)
+    else:
+        abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
+        engine_abuff = _engine_buff_bonus(
+            engine, config.engine_buff_stacks, dealt_element, rank,
+            mode=kind, bracket="anomaly_buff",
+        )
+        if engine_abuff:
+            abuff_entries.append(engine_abuff)
     abuff = formulas.anomaly_buff_mult(abuff_entries)
 
     level_mult = consts.anomaly_level_multiplier(agent.level)
     level_coef = consts.level_coefficient(agent.level)
     crit_cap = consts.crit_rate_cap
+    luminize_res = 0.50 if (config.luminize is not None
+                            and config.luminize.res_ignore) else 0.0
     res = formulas.res_mult(
         boss.res_for(dealt_element),
-        res_ignore=config.external_res_shred + kit["res_shred"],
+        res_ignore=(config.external_res_shred + kit["res_shred"]
+                    + luminize_res),
     )
     taken = formulas.dmg_taken_mult(
         list(config.external_dmg_taken) + kit["dmg_taken"]
@@ -1817,11 +1858,22 @@ def optimize_anomaly(
     )
     # "full" multiplies the per-proc value by the anomaly's proc count.
     hits_factor = hits if options.objective.startswith("full") else 1
-    outer = level_mult * res * taken * stun * hits_factor
+    # Refringe (Lumiflux teammate) is a kit constant in its own zone —
+    # disc-independent, so it folds straight into the outer product.
+    refringe = formulas.refringe_mult([kit["refringe"]])
+    outer = level_mult * res * taken * stun * hits_factor * refringe
 
     # --- Per-proc / burst multiplier (constant, or AP-scaled per build) ----
     disorder_additive = config.external_disorder_mult_add + kit["disorder_mult_add"]
-    if kind == "vortex":
+    if config.luminize is not None:
+        # Constant: it depends on the PROVIDER's AP, not on this build.
+        provider = agents[config.luminize.provider_key]
+        luminize_mult = provider.luminize.multiplier(
+            config.luminize.skill, config.luminize.anomaly_proficiency,
+            m4=config.luminize.m4)
+        def mult_of_ap(ap: float) -> float:
+            return luminize_mult
+    elif kind == "vortex":
         const_mult = formulas.burst_conversion_mult(
             rule.mult, rule.time_mult, rule.window,
             config.disorder_elapsed_seconds, extra_mult=disorder_additive,
@@ -1857,7 +1909,7 @@ def optimize_anomaly(
         def mult_of_ap(ap: float) -> float:
             return const_mult
 
-    def evaluate(buckets: list[float], tagged: float) -> tuple[float, tuple]:
+    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, tuple]:
         """Fast path: (objective value, (final ATK, total AP)) of a build."""
         atk_pre_combat = (
             agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
@@ -1869,16 +1921,19 @@ def optimize_anomaly(
             + kit_flat_atk
         )
         ap_total = ap_const + buckets[_B_AP]
-        bonus = 1.0 + bonus_const + tagged
+        bonus = 1.0 + bonus_const + tagged[0]
         if attr_dmg_applies:
             bonus += buckets[_B_ATTR_DMG]
+        # A 4pc part in the separate Anomaly Buff bracket (Feathered Fate
+        # on a Lumiflux wearer) joins abuff, not the DMG% bracket.
+        set_abuff = abuff + tagged[1]
         eff_def = formulas.effective_def(
             boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
             buckets[_B_PEN_FLAT], def_red=def_red_const,
         )
         defense = level_coef / (level_coef + eff_def)
         value = (mult_of_ap(ap_total) * atk_total * formulas.ap_mult(ap_total)
-                 * bonus * abuff * defense * outer)
+                 * bonus * set_abuff * defense * outer)
         return value, (atk_total, ap_total)
 
     def feasible(buckets: list[float], aux: tuple) -> bool:
@@ -1941,7 +1996,7 @@ def optimize_anomaly(
     set_2pc: dict[str, tuple[float, ...]] = {}
     set_4pc: dict[str, tuple[float, ...]] = {}
     set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, float] = {}
+    set_tag_bonus: dict[str, tuple[float, float]] = {}
     candidate_sets = {
         c.disc.disc_set
         for slot_list in candidates.values() for c in slot_list
@@ -1972,7 +2027,16 @@ def optimize_anomaly(
         if entry.auto_4pc_dmg and (
                 not entry.auto_4pc_dmg_needs_teammate or teammate_present):
             auto = entry.auto_4pc_dmg
-        set_tag_bonus[key] = tag_skill + auto
+        # Second channel: a 4pc part in the separate Anomaly Buff
+        # bracket, optionally gated to the wearer's attribute
+        # (Feathered Fate is Lumiflux-only). Mirrors
+        # _kit_contributions exactly, or the section-4 re-check fails.
+        anom = 0.0
+        if entry.auto_4pc_anomaly_dmg and (
+                entry.auto_4pc_attribute is None
+                or entry.auto_4pc_attribute == agent.attribute):
+            anom = entry.auto_4pc_anomaly_dmg
+        set_tag_bonus[key] = (tag_skill + auto, anom)
 
     def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
         """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
@@ -1985,15 +2049,15 @@ def optimize_anomaly(
     # --- Baseline feasibility (constraints may exclude the baseline) ------
     base_bb = list(base_buckets)
     for disc in config.discs:
-        for k, v in enumerate(_disc_buckets(disc, disc_data, agent.attribute)):
+        for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_aux = evaluate(base_bb, 0.0)
+    _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
     baseline_feasible = (
         feasible(base_bb, baseline_aux)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
-                               agent.attribute)
+                               attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
@@ -2181,6 +2245,9 @@ def optimize_sheer(
     baseline_value = getattr(baseline_results, options.objective)
     equipped = {d.slot: d for d in config.discs}
     agent = agents[config.agent_key]
+    # Lumiflux (Attribute Mutation): the element this agent's damage
+    # is dealt as — her own attribute for everyone else.
+    attr = attack_element(agent, config)
     # Self-scaling kit inputs (the MAIN's own panel values) become
     # minimum-stat constraints — the buff amount is a constant, so no
     # build may fall short of the panel the user claimed.
@@ -2199,7 +2266,7 @@ def optimize_sheer(
     dominance_indices = _dominance_indices(
         damage_indices, {**options.min_stats, **options.min_panel_stats})
     candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, agent.attribute, options,
+        equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
     )
 
@@ -2229,7 +2296,7 @@ def optimize_sheer(
     # kit/engine effects stay element-checked in sheer mode.
     kit = _kit_contributions(agent, replace(config, discs=[]),
                              agents, disc_sets, engines,
-                             mode="sheer", dealt_element=agent.attribute)
+                             mode="sheer", dealt_element=attr)
 
     base_buckets = _bucket_vector(engine.advanced_stat)
     panel_consts = _panel_constants(agent, engine, consts)
@@ -2266,16 +2333,16 @@ def optimize_sheer(
     crit_dmg_const = (
         config.external_crit_dmg + kit["crit_dmg"]
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank, mode="sheer",
+                             attr, rank, mode="sheer",
                              bracket="crit_dmg",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
     )
     bonus_const = (
         sum(config.external_dmg_bonuses)
-        + sum(_engine_passive_bonuses(engine, agent.attribute, rank))
+        + sum(_engine_passive_bonuses(engine, attr, rank))
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank, mode="sheer",
+                             attr, rank, mode="sheer",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
         + sum(kit["dmg_bonus"])
@@ -2288,14 +2355,14 @@ def optimize_sheer(
         sum(config.external_sheer_dmg)
         + sum(kit["sheer_dmg"])
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             agent.attribute, rank, mode="sheer",
+                             attr, rank, mode="sheer",
                              bracket="sheer_dmg",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
     )
     crit_cap = consts.crit_rate_cap
     res = formulas.res_mult(
-        boss.res_for(agent.attribute),
+        boss.res_for(attr),
         res_ignore=config.external_res_shred + kit["res_shred"],
     )
     taken = formulas.dmg_taken_mult(
@@ -2316,7 +2383,7 @@ def optimize_sheer(
     # defense = 1.0), so no level coefficient / PEN factors appear here.
     const_mult = res * taken * stun * config.skill_multiplier
 
-    def evaluate(buckets: list[float], tagged: float) -> tuple[float, tuple]:
+    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, tuple]:
         """Fast path: (objective value, (final ATK, HP, Sheer Force))."""
         atk_pre_combat = (
             agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
@@ -2342,7 +2409,9 @@ def optimize_sheer(
                 crit_rate = (base_crit_rate + buckets[_B_CRIT_RATE]
                              + crit_rate_const)
                 crit_mult = 1.0 + min(max(crit_rate, 0.0), crit_cap) * crit_dmg
-        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged
+        # Only the DMG% channel matters here: the anomaly-bracket
+        # channel exists in anomaly modes only.
+        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged[0]
         sheer_mult = 1.0 + sheer_const + buckets[_B_SHEER_DMG]
         value = sf * crit_mult * bonus * sheer_mult * const_mult
         return value, (atk_total, hp_total, sf)
@@ -2408,7 +2477,7 @@ def optimize_sheer(
     set_2pc: dict[str, tuple[float, ...]] = {}
     set_4pc: dict[str, tuple[float, ...]] = {}
     set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, float] = {}
+    set_tag_bonus: dict[str, tuple[float, float]] = {}
     candidate_sets = {
         c.disc.disc_set
         for slot_list in candidates.values() for c in slot_list
@@ -2441,7 +2510,7 @@ def optimize_sheer(
         if entry.auto_4pc_dmg and (
                 not entry.auto_4pc_dmg_needs_teammate or teammate_present):
             auto = entry.auto_4pc_dmg
-        set_tag_bonus[key] = tag_skill + auto
+        set_tag_bonus[key] = (tag_skill + auto, 0.0)
 
     def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
         """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
@@ -2454,15 +2523,15 @@ def optimize_sheer(
     # --- Baseline feasibility (constraints may exclude the baseline) ------
     base_bb = list(base_buckets)
     for disc in config.discs:
-        for k, v in enumerate(_disc_buckets(disc, disc_data, agent.attribute)):
+        for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_aux = evaluate(base_bb, 0.0)
+    _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
     baseline_feasible = (
         feasible(base_bb, baseline_aux)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
-                               agent.attribute)
+                               attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 

@@ -28,14 +28,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import formulas
-from .agent import Agent, aggregate_build, load_agents
+from .agent import LUMIFLUX, Agent, aggregate_build, load_agents
 from .anomalies import AnomalyData, load_anomalies
 from .constants import Constants, load_constants
 from .discs import (
     Disc, DiscData, DiscSet, load_disc_data, load_disc_sets,
     set_tagged_dmg_bonuses,
 )
-from .enemies import Boss, load_bosses
+from .enemies import ELEMENTS, Boss, load_bosses
 from .engines import Engine, load_engines
 
 
@@ -104,6 +104,67 @@ class SupportConfig:
     engine_key: str | None = None
     engine_rank: int | None = None
     engine_buffs: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class LuminizeConfig:
+    """LUMINIZE MODE (Lumiflux, 3.1) — Remielle's own damage.
+
+    A Luminize is an Attribute Anomaly instance fired from a stored
+    Voidflare. It scales off the **stored anomaly's** Effect Strength —
+    the ATK, DMG% and PEN of the TEAMMATE who triggered it — while its
+    multiplier and its Anomaly DMG Bonus come from Remielle. So the
+    calculation runs with that teammate as ``CalcConfig.agent_key``, and
+    this block supplies Remielle's side.
+
+    Set it on :attr:`CalcConfig.luminize` and the anomaly pipeline:
+
+    1. replaces the anomaly multiplier with
+       ``skill MV × (1 + 0.002 × anomaly_proficiency)``, ×1.12 at ``m4``;
+    2. **hands the Anomaly-DMG bracket to Remielle** — every attacker-side
+       ``anomaly_buff`` contribution (their kit, their engine, manual
+       entries) is dropped and replaced by :attr:`anomaly_dmg_bonuses`,
+       because only *general* Anomaly DMG bonuses reach a Luminize and
+       they come from her (Lin-0: Vivian's Corruption bonus would not
+       apply, Yuzuha's general one would);
+    3. reports ``hits = voidflares`` so ``full`` is the whole volley.
+
+    Refringe still applies once — the stored Voidflare holds the already
+    Refringed Effect Strength — so keep Remielle in ``supports`` with her
+    Refringe buffs ticked.
+
+    Attributes:
+        skill: Key into the agent's ``luminize.skills`` table
+            (``ultimate`` / ``assist`` / ``fleeting_grace`` /
+            ``rainbows_end``).
+        anomaly_proficiency: REMIELLE's panel AP — drives the multiplier.
+        provider_key: Roster key of the Lumiflux agent (default
+            ``"remielle"``); its ``luminize`` block supplies the table.
+        m4: Her M4 is unlocked (×1.12 on the Luminize multiplier).
+        voidflares: Stored Voidflares consumed/reused by the skill (1-3);
+            ``full`` = one instance × this. M6 doubles the count on her
+            enhanced Basics — pass 6 for that. **Assumes every one was
+            stored by ``CalcConfig.agent_key``**: a Voidflare holds the
+            Effect Strength *and element* of the anomaly that made it, so
+            a volley whose Voidflares came from different teammates is
+            several different instances. Model that as one run per source
+            agent with ``voidflares=1``, summed.
+        anomaly_dmg_bonuses: REMIELLE's own general Anomaly DMG bonuses as
+            fractions (Ode of Resurrected Wings +20%, Feathered Fate 4pc
+            +15%). These are the ONLY entries in the Anomaly-DMG bracket
+            for this instance.
+        res_ignore: Her M1 (Naive Oath) — Luminize ignores 50% of the
+            target's All-Attribute RES. Added on top of the config's
+            ``external_res_shred``.
+    """
+
+    skill: str
+    anomaly_proficiency: float
+    provider_key: str = "remielle"
+    m4: bool = False
+    voidflares: int = 1
+    anomaly_dmg_bonuses: list[float] = field(default_factory=list)
+    res_ignore: bool = False
 
 
 @dataclass
@@ -274,6 +335,18 @@ class CalcConfig:
         external_sheer_dmg: Entries of the dedicated Sheer DMG bracket
             (fractions) — "Sheer DMG +X%" effects not already modeled.
             Sheer mode only; bracket placement PROVISIONAL.
+        luminize: LUMINIZE MODE (:class:`LuminizeConfig`) — Remielle's
+            own damage, computed with the TEAMMATE who triggered the
+            stored anomaly as ``agent_key``. Anomaly modes only;
+            mutually exclusive with ``anomaly_mult_override`` and
+            ``abloom`` (it sets the multiplier itself).
+        mutated_element: LUMIFLUX ATTRIBUTE MUTATION (Remielle): the
+            element her Lumiflux damage is TREATED as — official rule:
+            the attribute of the next agent in the squad. REQUIRED when
+            the agent's attribute is ``lumiflux`` (every mode: it drives
+            enemy RES, element-gated buffs, the slot-5 Attribute-DMG%
+            match, and which anomaly her hits build); rejected for any
+            other agent. One of the six real elements.
         unbuffed_share: Fraction of the buildup treated as UNBUFFED —
             contributed at the attacker's plain panel (kit/team buffs,
             engine conditional stacks, set 4pc stacks, external buffs and
@@ -327,6 +400,8 @@ class CalcConfig:
     unbuffed_share: float = 0.0
     sheer_force_flat: float = 0.0
     external_sheer_dmg: list[float] = field(default_factory=list)
+    mutated_element: str | None = None
+    luminize: "LuminizeConfig | None" = None
 
 
 @dataclass(frozen=True)
@@ -384,6 +459,7 @@ class AnomalyResults:
     anomaly_mult: float       # the composed per-proc/burst multiplier used
     dmg_bonus_mult: float
     anomaly_buff_mult: float  # separate Anomaly/Disorder Buff Multiplier bracket
+    refringe_mult: float      # Lumiflux Refringe zone (1.0 when unrefringed)
     def_mult: float
     res_mult: float
     dmg_taken_mult: float
@@ -391,6 +467,9 @@ class AnomalyResults:
     # Every active conditional buff as {source, kind, value} — the front
     # ends render this as an itemized "Active buffs" summary.
     buff_breakdown: tuple = ()
+    # Luminize mode: the display name of the skill that fired the
+    # instance ("" in every other mode).
+    luminize_skill: str = ""
 
 
 @dataclass(frozen=True)
@@ -469,6 +548,41 @@ def _resolve_engine_rank(engine: Engine, override: int | None) -> int:
             f"1..{engine.max_rank}, got {override!r}"
         )
     return override
+
+
+def attack_element(agent: Agent, config: CalcConfig) -> str:
+    """The element the agent's damage is dealt as.
+
+    Every agent but a Lumiflux one deals their own attribute. A Lumiflux
+    agent (Remielle — Attribute Mutation) deals the attribute of the next
+    agent in the squad, a runtime choice: ``config.mutated_element``.
+
+    Raises:
+        CalcError: a Lumiflux agent without a ``mutated_element``, an
+            unknown element, or a ``mutated_element`` set for a
+            non-Lumiflux agent (it would be silently ignored otherwise).
+    """
+    if agent.attribute == LUMIFLUX:
+        if config.mutated_element is None:
+            raise CalcError(
+                f"Agent '{agent.name}' has the Lumiflux attribute — her "
+                f"damage counts as the NEXT squad agent's attribute "
+                f"(Attribute Mutation). Set 'mutated_element' to one of "
+                f"{list(ELEMENTS)}"
+            )
+        key = str(config.mutated_element).lower()
+        if key not in ELEMENTS:
+            raise CalcError(
+                f"'mutated_element' must be one of {list(ELEMENTS)}, "
+                f"got {config.mutated_element!r}"
+            )
+        return key
+    if config.mutated_element is not None:
+        raise CalcError(
+            f"'mutated_element' only applies to Lumiflux agents — "
+            f"{agent.name} always deals {agent.attribute} damage"
+        )
+    return agent.attribute
 
 
 def _tag_matches(gate_tag: str, hit_tag: str | None,
@@ -605,8 +719,9 @@ def _kit_contributions(
 
     Returns a dict with keys ``crit_rate``, ``crit_dmg``, ``res_shred``,
     ``flat_atk``, ``atk_pct``, ``anomaly_proficiency``,
-    ``disorder_mult_add`` (floats) and ``dmg_bonus``, ``dmg_taken``,
-    ``daze_bonus``, ``anomaly_buff`` (lists of bracket entries).
+    ``disorder_mult_add``, ``refringe`` (floats) and ``dmg_bonus``,
+    ``dmg_taken``, ``daze_bonus``, ``anomaly_buff`` (lists of bracket
+    entries).
 
     Raises:
         CalcError: unmodeled/unknown buffs or mindscapes, stacks out of
@@ -617,6 +732,7 @@ def _kit_contributions(
               "flat_atk": 0.0, "atk_pct": 0.0, "pen_ratio": 0.0,
               "anomaly_proficiency": 0.0, "disorder_mult_add": 0.0,
               "sheer_force": 0.0, "hp_pct": 0.0, "def_red": 0.0,
+              "refringe": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
               "anomaly_buff": [], "sheer_dmg": [],
               "items": []}
@@ -795,15 +911,27 @@ def _kit_contributions(
             auto_pieces[disc.disc_set] = auto_pieces.get(disc.disc_set, 0) + 1
     for set_key, count in auto_pieces.items():
         entry = disc_sets.get(set_key)
-        if entry is None or count < 4 or not entry.auto_4pc_dmg:
+        if entry is None or count < 4:
             continue
-        # Some auto 4pc DMG parts need a TEAMMATE to trigger (Phaethon's
-        # Melody: "when a teammate — not the equipper — uses an EX
-        # Special"). Solo (no supports) it can't fire.
-        if entry.auto_4pc_dmg_needs_teammate and not config.supports:
-            continue
-        totals["dmg_bonus"].append(entry.auto_4pc_dmg)
-        record(f"{entry.name} 4pc (auto)", "dmg_bonus", entry.auto_4pc_dmg)
+        if entry.auto_4pc_dmg:
+            # Some auto 4pc DMG parts need a TEAMMATE to trigger (Phaethon's
+            # Melody: "when a teammate — not the equipper — uses an EX
+            # Special"). Solo (no supports) it can't fire.
+            if not (entry.auto_4pc_dmg_needs_teammate and not config.supports):
+                totals["dmg_bonus"].append(entry.auto_4pc_dmg)
+                record(f"{entry.name} 4pc (auto)", "dmg_bonus",
+                       entry.auto_4pc_dmg)
+        # Anomaly-bracket half of a 4pc, optionally gated to a wearer
+        # attribute (Feathered Fate: Attribute Anomaly DMG +15%, Lumiflux
+        # equippers only). Anomaly modes only — the bracket doesn't exist
+        # in direct/sheer.
+        if (entry.auto_4pc_anomaly_dmg
+                and mode in ("anomaly", "disorder", "vortex")
+                and (entry.auto_4pc_attribute is None
+                     or entry.auto_4pc_attribute == agent.attribute)):
+            totals["anomaly_buff"].append(entry.auto_4pc_anomaly_dmg)
+            record(f"{entry.name} 4pc (auto)", "anomaly_buff",
+                   entry.auto_4pc_anomaly_dmg)
 
     # --- On-field agent's OWN engine squad buffs (the wearer is a squad
     # member too, so they receive their own engine's squad buffs — e.g.
@@ -1042,15 +1170,20 @@ def calculate(
             f"options: {sorted(consts.skill_tags)}"
         )
 
+    # Lumiflux (Attribute Mutation): resolve the dealt element once; it
+    # drives the disc element match, every element gate and the boss RES.
+    attr = attack_element(agent, config)
+
     build = aggregate_build(
         agent, engine, config.discs, disc_data, consts,
         disc_sets=disc_sets, set_stacks=config.set_stacks,
+        attack_element=attr,
     )
 
     rank = _resolve_engine_rank(engine, config.engine_rank)
     kit = _kit_contributions(
         agent, config, agents, disc_sets, engines,
-        mode="direct", dealt_element=agent.attribute,
+        mode="direct", dealt_element=attr,
     )
     buff_items = kit["items"]
 
@@ -1076,7 +1209,7 @@ def calculate(
     # Engine conditional parts routed to the CRIT DMG total (Heartstring
     # Nocturne's unconditional +50..80%) — added before the crit zones.
     for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, agent.attribute, rank,
+        engine, config.engine_buff_stacks, attr, rank,
         mode="direct", bracket="crit_dmg", skill_tag=config.skill_tag,
         counts_as_aftershock=config.counts_as_aftershock,
     ):
@@ -1092,12 +1225,12 @@ def calculate(
     )
 
     bonus_entries = build.dmg_bonuses + list(config.external_dmg_bonuses)
-    for passive_value in _engine_passive_bonuses(engine, agent.attribute, rank):
+    for passive_value in _engine_passive_bonuses(engine, attr, rank):
         bonus_entries.append(passive_value)
         buff_items.append({"source": f"{engine.name} passive (R{rank})",
                            "kind": "dmg_bonus", "value": passive_value})
     for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, agent.attribute, rank,
+        engine, config.engine_buff_stacks, attr, rank,
         mode="direct", skill_tag=config.skill_tag,
         counts_as_aftershock=config.counts_as_aftershock,
     ):
@@ -1123,7 +1256,7 @@ def calculate(
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
 
     res = formulas.res_mult(
-        boss.res_for(agent.attribute),
+        boss.res_for(attr),
         res_ignore=config.external_res_shred + kit["res_shred"],
     )
 
@@ -1242,9 +1375,14 @@ def calculate_anomaly(
         )
     boss = bosses[config.boss_name]
 
+    # Lumiflux (Attribute Mutation): the agent's own hits — and therefore
+    # the anomaly gauge they build — count as the mutated element.
+    attr = attack_element(agent, config)
+
     build = aggregate_build(
         agent, engine, config.discs, disc_data, consts,
         disc_sets=disc_sets, set_stacks=config.set_stacks,
+        attack_element=attr,
     )
 
     rank = _resolve_engine_rank(engine, config.engine_rank)
@@ -1266,6 +1404,59 @@ def calculate_anomaly(
                 "'abloom' auto-computes the multiplier - don't also set "
                 "anomaly_mult_override (that's Velina's fixed-MV Ablooms)"
             )
+
+    # --- LUMINIZE MODE: resolve Remielle's multiplier from her data -----
+    luminize_mult = None
+    luminize_name = ""
+    if config.luminize is not None:
+        lum = config.luminize
+        if config.disorder_replaced is not None or config.vortex_infused is not None:
+            raise CalcError(
+                "Luminize is a plain Attribute Anomaly instance - not "
+                "compatible with disorder/vortex mode"
+            )
+        if config.abloom or config.anomaly_mult_override is not None:
+            raise CalcError(
+                "Luminize sets its own multiplier - don't also set "
+                "'abloom' or 'anomaly_mult_override'"
+            )
+        provider = agents.get(lum.provider_key)
+        if provider is None:
+            raise CalcError(
+                f"Unknown Luminize provider '{lum.provider_key}'; "
+                f"options: {sorted(agents)}"
+            )
+        if provider.luminize is None:
+            raise CalcError(
+                f"Agent '{provider.name}' has no Luminize table - the mode "
+                f"is for Lumiflux agents (Remielle)"
+            )
+        if provider.key == config.agent_key:
+            raise CalcError(
+                f"Luminize mode runs with the TEAMMATE whose anomaly is "
+                f"stored in the Voidflare as the attacker, not with "
+                f"{provider.name} herself - her instance scales off that "
+                f"teammate's ATK / DMG% / PEN"
+            )
+        max_vf = provider.luminize.max_voidflares
+        if (isinstance(lum.voidflares, bool)
+                or not isinstance(lum.voidflares, int)
+                or not 1 <= lum.voidflares <= max_vf * 2):
+            raise CalcError(
+                f"Luminize 'voidflares' must be an integer 1..{max_vf} "
+                f"(up to {max_vf * 2} with her M6, which fires each "
+                f"enhanced Basic's Luminizes twice), got {lum.voidflares!r}"
+            )
+        if any(v < 0 for v in lum.anomaly_dmg_bonuses):
+            raise CalcError(
+                "Luminize 'anomaly_dmg_bonuses' entries must be >= 0"
+            )
+        try:
+            luminize_mult = provider.luminize.multiplier(
+                lum.skill, lum.anomaly_proficiency, m4=lum.m4)
+        except Exception as exc:
+            raise CalcError(str(exc)) from None
+        luminize_name = provider.luminize.skills[lum.skill].name
     # Additive burst-multiplier buffs (kit sources join below, once the
     # calculation mode is known and the kit is aggregated).
     extra_burst = config.external_disorder_mult_add
@@ -1298,7 +1489,7 @@ def calculate_anomaly(
         # exception: it fires on the enemy's EXISTING anomaly — including
         # her own Shock (same element) — without replacing it, so it may be
         # same-element.
-        if replaced_key == agent.attribute and not config.polarity_disorder:
+        if replaced_key == attr and not config.polarity_disorder:
             raise CalcError(
                 "Disorder needs a different element: the replaced anomaly "
                 "matches the agent's own attribute (use polarity_disorder "
@@ -1321,7 +1512,7 @@ def calculate_anomaly(
         # Vivian's Abloom: AP-scaled instance of the anomaly on the target.
         # The multiplier depends on AP, so it is finalised after the
         # buildup-weighted AP is known (below); here we set up the element.
-        abloom_key = (config.abloom_element or agent.attribute).lower()
+        abloom_key = (config.abloom_element or attr).lower()
         if abloom_key not in VIVIAN_ABLOOM_MV:
             raise CalcError(
                 f"No Abloom MV for element '{abloom_key}'; options: "
@@ -1338,7 +1529,7 @@ def calculate_anomaly(
         per_proc_mult = None            # set after weighted_ap
         hits = 1                        # one Abloom instance
     else:
-        anomaly = anomaly_data.anomalies[agent.attribute]
+        anomaly = anomaly_data.anomalies[attr]
         try:
             anomaly.require_supported()
         except Exception as exc:
@@ -1356,9 +1547,16 @@ def calculate_anomaly(
         name = anomaly.name
         if override is not None:
             name += f" (Abloom / mult x{override:g})"
-        dealt_element = agent.attribute
+        dealt_element = attr
         per_proc_mult = override if override is not None else anomaly.mult
         hits = anomaly.hits
+        if luminize_mult is not None:
+            # The instance keeps the stored anomaly's ELEMENT but not its
+            # type: it is Luminize DMG, so the element's own proc count
+            # and multiplier are both replaced.
+            name = f"Luminize - {luminize_name} [{dealt_element}]"
+            per_proc_mult = luminize_mult
+            hits = config.luminize.voidflares
 
     # --- Kit conditionals + supports (constant over the buildup) ----------
     kit = _kit_contributions(
@@ -1431,17 +1629,52 @@ def calculate_anomaly(
     # count, treated as constant over the buffed buildup), and manual
     # entries. Snapshots with the attacker state, so it joins the
     # per-segment product (the unbuffed slice runs without it).
-    abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
+    if config.luminize is not None:
+        # A Luminize takes its Anomaly DMG Bonus from REMIELLE, and only
+        # GENERAL ones reach it (Lin-0: Vivian's Corruption-specific bonus
+        # would not apply, Yuzuha's general one would). So the attacker's
+        # whole anomaly-buff bracket — their kit, their engine, manual
+        # entries — is dropped and replaced by hers. Dropping it silently
+        # would be a trap, so each discarded entry is recorded.
+        for item in kit["items"]:
+            if item["kind"] == "anomaly_buff":
+                item["kind"] = "anomaly_buff (excluded: attacker's)"
+        abuff_entries = list(config.luminize.anomaly_dmg_bonuses)
+        for value in abuff_entries:
+            kit["items"].append({
+                "source": f"{config.luminize.provider_key} (Luminize)",
+                "kind": "anomaly_buff", "value": value,
+            })
+    else:
+        abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
+        for part in _engine_buff_bonuses(
+            engine, config.engine_buff_stacks, dealt_element, rank,
+            mode=kind, bracket="anomaly_buff",
+        ):
+            abuff_entries.append(part["value"])
+            kit["items"].append({
+                "source": f"{part['name']} (R{rank})",
+                "kind": "anomaly_buff", "value": part["value"],
+            })
+    abuff = formulas.anomaly_buff_mult(abuff_entries)
+
+    # REFRINGE (Lumiflux): a Lumiflux teammate enhances this anomaly's
+    # Effect Strength by their coefficient. Its own multiplicative zone,
+    # so it compounds with the anomaly-buff bracket instead of diluting
+    # into it. It scales the finished anomaly, so it multiplies outside
+    # the per-segment snapshot product.
+    refringe = formulas.refringe_mult([kit["refringe"]])
+
+    # Engine conditional flat AP (Weeping Gemini): applied per segment
+    # below; recorded here (top-level stacks) for the buff breakdown.
     for part in _engine_buff_bonuses(
         engine, config.engine_buff_stacks, dealt_element, rank,
-        mode=kind, bracket="anomaly_buff",
+        mode=kind, bracket="anomaly_proficiency",
     ):
-        abuff_entries.append(part["value"])
         kit["items"].append({
             "source": f"{part['name']} (R{rank})",
-            "kind": "anomaly_buff", "value": part["value"],
+            "kind": "anomaly_proficiency", "value": part["value"],
         })
-    abuff = formulas.anomaly_buff_mult(abuff_entries)
 
     # ``unbuffed_share`` of the buildup runs at the plain panel (teammate
     # dilution / buff downtime); the described segments share the rest.
@@ -1460,6 +1693,7 @@ def calculate_anomaly(
             seg_build = aggregate_build(
                 agent, engine, config.discs, disc_data, consts,
                 disc_sets=disc_sets, set_stacks=seg.set_stacks,
+                attack_element=attr,
             )
             # Kit/team ATK buffs join the panel bracket / flat bucket the
             # same way as in the direct-hit path (validation #4).
@@ -1472,6 +1706,11 @@ def calculate_anomaly(
                 seg_build.anomaly_proficiency
                 + engine.passive_ap(rank)          # e.g. Joyau Doré +70..110
                 + kit["anomaly_proficiency"]       # squad AP buffs
+                # Engine conditional AP (Weeping Gemini's stacking AP) —
+                # snapshot-weighted like every attacker-side stat.
+                + _engine_buff_bonus(
+                    engine, seg.engine_buff_stacks, dealt_element, rank,
+                    mode=kind, bracket="anomaly_proficiency")
             )
         seg_ap_total = (
             seg.anomaly_proficiency_override
@@ -1479,7 +1718,7 @@ def calculate_anomaly(
             else seg_ap_base + seg.external_anomaly_proficiency
         )
         bonus_entries = list(seg.external_dmg_bonuses) + kit["dmg_bonus"]
-        if dealt_element == agent.attribute:
+        if dealt_element == attr:
             bonus_entries = build.dmg_bonuses + bonus_entries
         bonus_entries.extend(
             _engine_passive_bonuses(engine, dealt_element, rank)
@@ -1506,12 +1745,13 @@ def calculate_anomaly(
         bare_build = aggregate_build(
             agent, engine, config.discs, disc_data, consts,
             disc_sets=disc_sets, set_stacks={},
+            attack_element=attr,
         )
         bare_atk = bare_build.atk
         bare_ap = bare_build.anomaly_proficiency + engine.passive_ap(rank)
         bare_entries = (
             list(bare_build.dmg_bonuses)
-            if dealt_element == agent.attribute else []
+            if dealt_element == attr else []
         )
         bare_entries.extend(_engine_passive_bonuses(engine, dealt_element, rank))
         bare_bonus = formulas.dmg_bonus_mult(bare_entries)
@@ -1530,7 +1770,7 @@ def calculate_anomaly(
         # Vivian's Abloom multiplier = base_mult × (MV/100) × (AP/10),
         # ×1.30 with her M2 (mindscapes[2]). AP-scaled, so finalised here
         # with the buildup-weighted AP. ⚠️ PROVISIONAL (uncalibrated).
-        abloom_key = (config.abloom_element or agent.attribute).lower()
+        abloom_key = (config.abloom_element or attr).lower()
         mv = VIVIAN_ABLOOM_MV[abloom_key]
         m2 = VIVIAN_ABLOOM_M2_FACTOR if config.mindscapes.get(2) else 1.0
         per_proc_mult = (anomaly_data.anomalies[abloom_key].mult
@@ -1552,9 +1792,20 @@ def calculate_anomaly(
         boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat,
         def_red=kit["def_red"])
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
+    # Her M1 (Naive Oath) ignores 50% All-Attribute RES on Luminize only,
+    # and she is the SUPPORT here, so it cannot come from the attacker's
+    # mindscape toggles.
+    luminize_res = 0.50 if (config.luminize is not None
+                            and config.luminize.res_ignore) else 0.0
+    if luminize_res:
+        kit["items"].append({
+            "source": f"{config.luminize.provider_key} M1 (Luminize)",
+            "kind": "res_shred", "value": luminize_res,
+        })
     res = formulas.res_mult(
         boss.res_for(dealt_element),
-        res_ignore=config.external_res_shred + kit["res_shred"],
+        res_ignore=(config.external_res_shred + kit["res_shred"]
+                    + luminize_res),
     )
     taken = formulas.dmg_taken_mult(
         list(config.external_dmg_taken) + kit["dmg_taken"]
@@ -1580,7 +1831,7 @@ def calculate_anomaly(
         # weighted_product already contains ATK x AP x DMG% x buff-bracket
         # per segment — the exact snapshot math; the breakdown fields
         # report weighted averages / full-state values for display only.
-        return (mult * weighted_product * level_mult
+        return (mult * weighted_product * level_mult * refringe
                 * defense * res * taken * stun)
 
     return AnomalyResults(
@@ -1599,11 +1850,13 @@ def calculate_anomaly(
         anomaly_mult=per_proc_mult,
         dmg_bonus_mult=bonus,
         anomaly_buff_mult=abuff,
+        refringe_mult=refringe,
         def_mult=defense,
         res_mult=res,
         dmg_taken_mult=taken,
         stun_mult=stun_on,
         buff_breakdown=tuple(kit["items"]),
+        luminize_skill=luminize_name,
     )
 
 
@@ -1686,15 +1939,18 @@ def calculate_sheer(
     if config.sheer_force_flat < 0:
         raise CalcError("sheer_force_flat must be >= 0")
 
+    attr = attack_element(agent, config)
+
     build = aggregate_build(
         agent, engine, config.discs, disc_data, consts,
         disc_sets=disc_sets, set_stacks=config.set_stacks,
+        attack_element=attr,
     )
 
     rank = _resolve_engine_rank(engine, config.engine_rank)
     kit = _kit_contributions(
         agent, config, agents, disc_sets, engines,
-        mode="sheer", dealt_element=agent.attribute,
+        mode="sheer", dealt_element=attr,
     )
     buff_items = kit["items"]
 
@@ -1727,7 +1983,7 @@ def calculate_sheer(
     # Engine conditional parts routed to the CRIT DMG total (Sheer hits
     # crit normally, so the bracket applies here too).
     for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, agent.attribute, rank,
+        engine, config.engine_buff_stacks, attr, rank,
         mode="sheer", bracket="crit_dmg", skill_tag=config.skill_tag,
         counts_as_aftershock=config.counts_as_aftershock,
     ):
@@ -1743,12 +1999,12 @@ def calculate_sheer(
     )
 
     bonus_entries = build.dmg_bonuses + list(config.external_dmg_bonuses)
-    for passive_value in _engine_passive_bonuses(engine, agent.attribute, rank):
+    for passive_value in _engine_passive_bonuses(engine, attr, rank):
         bonus_entries.append(passive_value)
         buff_items.append({"source": f"{engine.name} passive (R{rank})",
                            "kind": "dmg_bonus", "value": passive_value})
     for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, agent.attribute, rank,
+        engine, config.engine_buff_stacks, attr, rank,
         mode="sheer", skill_tag=config.skill_tag,
         counts_as_aftershock=config.counts_as_aftershock,
     ):
@@ -1772,7 +2028,7 @@ def calculate_sheer(
     sheer_entries = (build.sheer_dmg_bonuses
                      + list(config.external_sheer_dmg) + kit["sheer_dmg"])
     for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, agent.attribute, rank,
+        engine, config.engine_buff_stacks, attr, rank,
         mode="sheer", bracket="sheer_dmg", skill_tag=config.skill_tag,
         counts_as_aftershock=config.counts_as_aftershock,
     ):
@@ -1789,7 +2045,7 @@ def calculate_sheer(
     defense = 1.0
 
     res = formulas.res_mult(
-        boss.res_for(agent.attribute),
+        boss.res_for(attr),
         res_ignore=config.external_res_shred + kit["res_shred"],
     )
     taken = formulas.dmg_taken_mult(
@@ -1839,6 +2095,6 @@ def calculate_sheer(
         res_mult=res,
         dmg_taken_mult=taken,
         stun_mult=stun_on,
-        element=agent.attribute,
+        element=attr,
         buff_breakdown=tuple(buff_items),
     )

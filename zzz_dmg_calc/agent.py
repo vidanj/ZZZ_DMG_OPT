@@ -59,15 +59,29 @@ class AgentError(ValueError):
 #: bracket. ``def_red`` reduces enemy DEF (multiplicative with PEN Ratio in
 #: the DEF zone — Sheer damage ignores DEF, so it matters in direct/anomaly
 #: modes only).
+#: Lumiflux kind (3.1, Remielle): ``refringe`` enhances a *teammate's*
+#: Anomaly Effect Strength and forms its OWN multiplicative zone (see
+#: :func:`~.formulas.refringe_mult`), kept apart from the additive
+#: ``anomaly_buff`` bracket so a Refringe provider and ordinary
+#: "Anomaly DMG +X%" buffs never dilute each other.
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
                     "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
                     "anomaly_buff", "disorder_mult_add",
                     "anomaly_proficiency", "pen_ratio",
-                    "sheer_force", "hp_pct", "sheer_dmg", "def_red")
+                    "sheer_force", "hp_pct", "sheer_dmg", "def_red",
+                    "refringe")
 
 #: Calculation modes an effect may be gated to via its ``modes`` list.
 #: An effect without ``modes`` applies in every mode (original behavior).
 KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
+
+#: The Lumiflux attribute (Remielle, 3.1): a special attribute OUTSIDE the
+#: enemy-RES element list. Lumiflux damage undergoes ATTRIBUTE MUTATION —
+#: it is treated as the attribute of the next agent in the squad — so a
+#: Lumiflux agent's calculations take a runtime ``mutated_element`` (one of
+#: ELEMENTS) instead of reading the attribute directly. Bosses never need a
+#: "lumiflux" RES entry.
+LUMIFLUX = "lumiflux"
 
 #: Stat kinds ``core_skill_bonuses`` may carry (datamined coreStats at max
 #: core rank). ``base_atk``/``base_hp`` are flat additions to the percent-
@@ -187,6 +201,56 @@ class Mindscape:
 
 
 @dataclass(frozen=True)
+class LuminizeSkill:
+    """One Remielle skill that fires Luminize instances.
+
+    ``multiplier`` is the skill's own value at max skill level; the
+    Luminize instance's multiplier is that times
+    ``(1 + ap_scaling × her AP)`` — see :class:`LuminizeData`.
+    """
+
+    key: str
+    name: str
+    multiplier: float
+    consumes_voidflares: bool = False
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class LuminizeData:
+    """A Lumiflux agent's Luminize table (``luminize`` block).
+
+    Present only on agents whose stored-anomaly payload is modeled as its
+    own calculation mode (Remielle). ``ap_scaling`` is MULTIPLICATIVE on
+    the skill multiplier, not additive.
+    """
+
+    ap_scaling: float
+    m4_multiplier: float
+    max_voidflares: int
+    skills: dict[str, LuminizeSkill] = field(default_factory=dict)
+    note: str = ""
+
+    def multiplier(self, skill_key: str, anomaly_proficiency: float,
+                   m4: bool = False) -> float:
+        """The Luminize instance's anomaly multiplier.
+
+        Raises:
+            AgentError: unknown skill key or negative AP.
+        """
+        skill = self.skills.get(skill_key)
+        if skill is None:
+            raise AgentError(
+                f"Unknown Luminize skill {skill_key!r}; "
+                f"options: {sorted(self.skills)}"
+            )
+        if anomaly_proficiency < 0:
+            raise AgentError("Anomaly Proficiency must be >= 0")
+        mult = skill.multiplier * (1.0 + self.ap_scaling * anomaly_proficiency)
+        return mult * (self.m4_multiplier if m4 else 1.0)
+
+
+@dataclass(frozen=True)
 class Agent:
     """Preset agent at Lv. 60 with max core skill.
 
@@ -246,6 +310,9 @@ class Agent:
     potential_name: str = ""
     potential_note: str = ""
     potentials: dict[int, Mindscape] = field(default_factory=dict)
+    # Lumiflux only: the Luminize skill table (Remielle). ``None`` for
+    # every other agent — the Luminize mode refuses to run without it.
+    luminize: LuminizeData | None = None
 
     def total_base_atk(self) -> float:
         """Agent-side base ATK bucket: own base + flat core skill ATK."""
@@ -507,6 +574,68 @@ def _parse_potential(raw, agent_key: str) -> tuple[str, str, dict[int, Mindscape
     return name, str(raw.get("note", "")), levels
 
 
+def _parse_luminize(raw, agent_key: str) -> LuminizeData | None:
+    """Validate the optional 'luminize' block (Lumiflux agents)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise AgentError(f"Agent '{agent_key}': 'luminize' must be an object")
+
+    def number(key: str, minimum: float = 0.0) -> float:
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise AgentError(
+                f"Agent '{agent_key}': luminize '{key}' must be a number"
+            )
+        if value < minimum:
+            raise AgentError(
+                f"Agent '{agent_key}': luminize '{key}' must be >= {minimum}"
+            )
+        return float(value)
+
+    skills_raw = raw.get("skills")
+    if not isinstance(skills_raw, dict) or not skills_raw:
+        raise AgentError(
+            f"Agent '{agent_key}': luminize 'skills' must be a non-empty "
+            f"object of key -> skill"
+        )
+    skills: dict[str, LuminizeSkill] = {}
+    for key, entry in skills_raw.items():
+        if not isinstance(entry, dict):
+            raise AgentError(
+                f"Agent '{agent_key}': luminize skill '{key}' must be an object"
+            )
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise AgentError(
+                f"Agent '{agent_key}': luminize skill '{key}' needs a 'name'"
+            )
+        mult = entry.get("multiplier")
+        if isinstance(mult, bool) or not isinstance(mult, (int, float)) or mult <= 0:
+            raise AgentError(
+                f"Agent '{agent_key}': luminize skill '{key}' needs a "
+                f"positive 'multiplier'"
+            )
+        skills[key] = LuminizeSkill(
+            key=key, name=name, multiplier=float(mult),
+            consumes_voidflares=bool(entry.get("consumes_voidflares", False)),
+            note=str(entry.get("note", "")),
+        )
+    max_vf = raw.get("max_voidflares", 3)
+    if isinstance(max_vf, bool) or not isinstance(max_vf, int) or max_vf < 1:
+        raise AgentError(
+            f"Agent '{agent_key}': luminize 'max_voidflares' must be an "
+            f"integer >= 1"
+        )
+    return LuminizeData(
+        ap_scaling=number("ap_scaling"),
+        m4_multiplier=number("m4_multiplier", minimum=1.0),
+        max_voidflares=max_vf,
+        skills=skills,
+        note=str(raw.get("note", "")),
+    )
+
+
 def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
     """Load and validate the preset agent list.
 
@@ -542,10 +671,10 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             raise AgentError(f"Agent '{key}' is missing a valid 'name'")
 
         attribute = entry.get("attribute")
-        if attribute not in ELEMENTS:
+        if attribute not in ELEMENTS and attribute != LUMIFLUX:
             raise AgentError(
-                f"Agent '{key}': 'attribute' must be one of {list(ELEMENTS)}, "
-                f"got {attribute!r}"
+                f"Agent '{key}': 'attribute' must be one of "
+                f"{[*ELEMENTS, LUMIFLUX]}, got {attribute!r}"
             )
 
         core = entry.get("core_skill_bonuses", {})
@@ -636,6 +765,7 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             potential_name=potential_name,
             potential_note=potential_note,
             potentials=potentials,
+            luminize=_parse_luminize(entry.get("luminize"), key),
         )
     return agents
 
@@ -704,6 +834,7 @@ def aggregate_build(
     consts: Constants,
     disc_sets: dict[str, DiscSet] | None = None,
     set_stacks: dict[str, int] | None = None,
+    attack_element: str | None = None,
 ) -> BuildStats:
     """Aggregate agent + engine + discs (+ set bonuses) into build stats.
 
@@ -721,6 +852,13 @@ def aggregate_build(
             ``set_stacks`` active stacks (see :func:`~.discs.set_bonus_stats`).
             ``None`` skips set bonuses entirely.
         set_stacks: set key -> active stacks for 4-piece effects.
+        attack_element: The element the agent's damage is DEALT as, for
+            the slot-5 Attribute-DMG% element match. ``None`` = the
+            agent's own attribute (every agent but Lumiflux ones). A
+            Lumiflux agent (Attribute Mutation) passes the runtime
+            ``mutated_element`` here — with none given, "lumiflux" never
+            matches a disc element, so element-tagged Attribute DMG% is
+            tracked as off-element (the panel path).
 
     Raises:
         AgentError: on duplicate disc slots.
@@ -731,6 +869,9 @@ def aggregate_build(
         if disc.slot in seen_slots:
             raise AgentError(f"Duplicate disc slot {disc.slot}")
         seen_slots.add(disc.slot)
+
+    dealt_element = (attack_element if attack_element is not None
+                     else agent.attribute)
 
     build = BuildStats(
         atk=0.0,
@@ -758,7 +899,7 @@ def aggregate_build(
     for disc in discs:
         for stat, value in disc_stats(disc, disc_data).items():
             if (stat == "Attribute DMG%" and disc.element is not None
-                    and disc.element != agent.attribute):
+                    and disc.element != dealt_element):
                 # Off-element disc: the DMG% buffs a different element, so
                 # it contributes nothing to this agent (tracked, not lost).
                 build.other["Attribute DMG% (off-element)"] = (

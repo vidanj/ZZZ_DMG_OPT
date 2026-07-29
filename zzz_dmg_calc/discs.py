@@ -323,6 +323,13 @@ class DiscSet:
             covers the ramp / uptime. 0 = none.
         squad_4pc: Team-facing 4-piece part (worn by a support, buffs the
             on-field agent), or ``None``.
+        auto_4pc_anomaly_dmg: An always-assumed-on 4-piece part that joins
+            the separate Anomaly/Disorder Buff Multiplier bracket rather
+            than the ordinary DMG% one (Feathered Fate's "Attribute
+            Anomaly DMG +15%"). 0 = none.
+        auto_4pc_attribute: Restricts ``auto_4pc_anomaly_dmg`` to a wearer
+            of that attribute — Feathered Fate grants its anomaly half
+            only to a ``lumiflux`` equipper. ``None`` = any wearer.
     """
 
     key: str
@@ -333,6 +340,8 @@ class DiscSet:
     auto_4pc_dmg: float = 0.0
     auto_4pc_dmg_needs_teammate: bool = False
     squad_4pc: SquadBonus4pc | None = None
+    auto_4pc_anomaly_dmg: float = 0.0
+    auto_4pc_attribute: str | None = None
     notes: str = ""
 
 
@@ -471,6 +480,23 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 f"Set '{key}': 'bonus_4pc_auto_dmg' must be a non-negative number"
             )
 
+        auto_4pc_anom = entry.get("bonus_4pc_auto_anomaly_dmg", 0.0)
+        if (isinstance(auto_4pc_anom, bool)
+                or not isinstance(auto_4pc_anom, (int, float))
+                or auto_4pc_anom < 0):
+            raise DiscError(
+                f"Set '{key}': 'bonus_4pc_auto_anomaly_dmg' must be a "
+                f"non-negative number"
+            )
+        auto_4pc_attribute = entry.get("bonus_4pc_auto_attribute")
+        if auto_4pc_attribute is not None and (
+                not isinstance(auto_4pc_attribute, str)
+                or not auto_4pc_attribute.strip()):
+            raise DiscError(
+                f"Set '{key}': 'bonus_4pc_auto_attribute' must be an "
+                f"attribute name (e.g. 'lumiflux')"
+            )
+
         sets[key] = DiscSet(
             key=key,
             name=name,
@@ -481,6 +507,8 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             auto_4pc_dmg_needs_teammate=bool(
                 entry.get("bonus_4pc_auto_dmg_needs_teammate", False)),
             squad_4pc=squad_4pc,
+            auto_4pc_anomaly_dmg=float(auto_4pc_anom),
+            auto_4pc_attribute=auto_4pc_attribute,
             notes=str(entry.get("notes", "")),
         )
     return sets

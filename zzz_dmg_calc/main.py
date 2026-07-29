@@ -20,17 +20,17 @@ from __future__ import annotations
 
 try:
     from .api import (
-        BuildupSegment, CalcConfig, SupportConfig, calculate,
-        calculate_anomaly, calculate_sheer,
+        BuildupSegment, CalcConfig, LuminizeConfig, SupportConfig,
+        calculate, calculate_anomaly, calculate_sheer,
     )
-    from .agent import load_agents
+    from .agent import LUMIFLUX, load_agents
     from .anomalies import load_anomalies
     from .constants import load_constants
     from .discs import (
         Disc, DiscError, load_disc_data, load_disc_sets, load_loadouts,
         set_bonus_stats, validate_disc,
     )
-    from .enemies import load_bosses
+    from .enemies import ELEMENTS, load_bosses
     from .engines import load_engines
 except ImportError:
     # Executed directly as a script (``py main.py``): there is no parent
@@ -41,17 +41,17 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from zzz_dmg_calc.api import (
-        BuildupSegment, CalcConfig, SupportConfig, calculate,
-        calculate_anomaly, calculate_sheer,
+        BuildupSegment, CalcConfig, LuminizeConfig, SupportConfig,
+        calculate, calculate_anomaly, calculate_sheer,
     )
-    from zzz_dmg_calc.agent import load_agents
+    from zzz_dmg_calc.agent import LUMIFLUX, load_agents
     from zzz_dmg_calc.anomalies import load_anomalies
     from zzz_dmg_calc.constants import load_constants
     from zzz_dmg_calc.discs import (
         Disc, DiscError, load_disc_data, load_disc_sets, load_loadouts,
         set_bonus_stats, validate_disc,
     )
-    from zzz_dmg_calc.enemies import load_bosses
+    from zzz_dmg_calc.enemies import ELEMENTS, load_bosses
     from zzz_dmg_calc.engines import load_engines
 
 
@@ -163,6 +163,17 @@ def run() -> None:
     }
     agent_key = agent_key_by_label[_choose("Agent", list(agent_key_by_label))]
 
+    # 2a. ATTRIBUTE MUTATION (Lumiflux agents, e.g. Remielle): her damage
+    # counts as the attribute of the NEXT agent in the squad, so every
+    # element-dependent zone (boss RES, Attribute DMG% discs, element-gated
+    # buffs, which anomaly she builds) needs that choice up front.
+    mutated_element = None
+    if agents[agent_key].attribute == LUMIFLUX:
+        print(f"\n{agents[agent_key].name} is a LUMIFLUX agent: her damage "
+              f"counts as the Attribute of the NEXT agent in your squad "
+              f"(Attribute Mutation).")
+        mutated_element = _choose("Mutated attribute", list(ELEMENTS))
+
     # 2b. W-Engine (Enter = agent's default)
     default_engine = agents[agent_key].default_engine
     print(f"\nW-Engine (default: {engines[default_engine].name}):")
@@ -196,9 +207,13 @@ def run() -> None:
     # Birdcage); the first part carries the counter's max/auto defaults.
     buff = engine.conditional_buff
     for part in engine.conditional_buffs:
-        print(f"\n{part.name} (R{engine_rank}: "
-              f"+{part.per_stack(engine_rank):.0%} "
-              f"{part.element or 'DMG'} per stack)")
+        # The anomaly_proficiency bracket carries FLAT AP per stack
+        # (Weeping Gemini), every other bracket a fraction.
+        per = (f"+{part.per_stack(engine_rank):g} Anomaly Proficiency"
+               if part.bracket == "anomaly_proficiency"
+               else f"+{part.per_stack(engine_rank):.0%} "
+                    f"{part.element or 'DMG'}")
+        print(f"\n{part.name} (R{engine_rank}: {per} per stack)")
         if part.note:
             print(f"  Note: {part.note}")
     if engine.passive_crit_by_rank:
@@ -295,18 +310,27 @@ def run() -> None:
     # agents — their skills scale off Sheer Force, not ATK.
     print("\nCalculation mode:")
     mode_options = ["Direct hit", "Anomaly proc", "Disorder", "Vortex"]
+    # Luminize needs a Lumiflux provider and a DIFFERENT on-field agent:
+    # the instance scales off the teammate whose anomaly was stored.
+    luminize_provider = next(
+        (a for a in agents.values() if a.luminize is not None), None)
+    if luminize_provider is not None and agent_key != luminize_provider.key:
+        mode_options.append(f"Luminize ({luminize_provider.name}'s damage)")
     if agents[agent_key].specialty == "rupture":
         mode_options.insert(0, "Sheer (Rupture)")
         print(f"  Note: {agents[agent_key].name} is a Rupture agent - her "
               f"skills deal SHEER damage (Sheer Force x MV, ignores enemy "
               f"DEF). Pick 'Sheer (Rupture)'.")
     mode = _choose("Mode", mode_options)
-    mode_key = {"Direct hit": "direct", "Anomaly proc": "anomaly",
-                "Disorder": "disorder", "Vortex": "vortex",
-                "Sheer (Rupture)": "sheer"}[mode]
+    is_luminize = mode.startswith("Luminize")
+    mode_key = ("luminize" if is_luminize else
+                {"Direct hit": "direct", "Anomaly proc": "anomaly",
+                 "Disorder": "disorder", "Vortex": "vortex",
+                 "Sheer (Rupture)": "sheer"}[mode])
 
     anomaly_data = load_anomalies()
-    agent_attr = agents[agent_key].attribute
+    # The element she actually deals: her attribute, or the mutated one.
+    agent_attr = mutated_element or agents[agent_key].attribute
 
     skill = 1.0
     skill_tag = None
@@ -322,6 +346,50 @@ def run() -> None:
     polarity_special_level = 12
     sheer_force_flat = 0.0
     sheer_dmg_ext = 0.0
+    luminize_cfg = None
+    if is_luminize:
+        prov = luminize_provider
+        print(f"\nLUMINIZE: {prov.name}'s own damage. Her instance scales "
+              f"off the STORED anomaly, so the on-field agent you picked "
+              f"({agents[agent_key].name}) is the teammate whose Refringed "
+              f"anomaly the Voidflare holds - their ATK / DMG% / PEN drive "
+              f"it. Keep {prov.name} as a support with her Refringe buffs "
+              f"on; her own Anomaly DMG bonus replaces the attacker's.")
+        labels = {f"{sk.name} ({sk.multiplier:.0%})": key
+                  for key, sk in prov.luminize.skills.items()}
+        skill_key = labels[_choose("Luminize skill", sorted(labels))]
+        lum_ap = _ask_float(f"{prov.name}'s Anomaly Proficiency (panel)",
+                            1200.0)
+        print(f"  NOTE: the count below assumes every Voidflare was "
+              f"stored by {agents[agent_key].name}. Ones stored by other "
+              f"teammates hold different Effect Strengths and elements - "
+              f"for a mixed volley enter 1, run once per source agent, and "
+              f"add the results.")
+        lum_vf = int(_ask_float(
+            f"Stored Voidflares from {agents[agent_key].name} "
+            f"(1-{prov.luminize.max_voidflares}; up to "
+            f"{prov.luminize.max_voidflares * 2} with her M6)",
+            prov.luminize.max_voidflares))
+        lum_m4 = input(f"  {prov.name} at M4 (Luminize mult x"
+                       f"{prov.luminize.m4_multiplier})? [y/N]: "
+                       ).strip().lower() == "y"
+        lum_m1 = input("  At M1 (Luminize ignores 50% All-Attribute RES)? "
+                       "[y/N]: ").strip().lower() == "y"
+        print(f"  {prov.name}'s OWN general Anomaly DMG bonuses (the "
+              f"attacker's are excluded automatically). Sources: Ode of "
+              f"Resurrected Wings 20/23/26/29/32% by rank, Feathered Fate "
+              f"4pc +15% (its Lumiflux-only half), M1 +10% ONLY for "
+              f"teammates' anomalies - not her own Luminize. Signature at "
+              f"R1 with Feathered Fate = 35. Anomaly-type-specific buffs "
+              f"(Corruption/Windswept/Disorder DMG) never apply.")
+        lum_abuff = _ask_percent(f"{prov.name}'s Anomaly DMG bonuses total")
+        luminize_cfg = LuminizeConfig(
+            skill=skill_key, anomaly_proficiency=lum_ap,
+            provider_key=prov.key, m4=lum_m4, voidflares=lum_vf,
+            anomaly_dmg_bonuses=[lum_abuff] if lum_abuff else [],
+            res_ignore=lum_m1)
+        print(f"  Luminize multiplier: x"
+              f"{prov.luminize.multiplier(skill_key, lum_ap, m4=lum_m4):.3f}")
     if mode in ("Direct hit", "Sheer (Rupture)"):
         if mode == "Sheer (Rupture)":
             print("\nSHEER damage: base = Sheer Force x MV (SF = 30% ATK "
@@ -632,10 +700,12 @@ def run() -> None:
                 "are modeled)")
     else:
         print("\nExternal buffs (press Enter to skip):")
-        if buff is not None and buff.bracket == "anomaly_buff":
-            # Separate-bracket engine buffs (Joyau Doré) are held constant
-            # over the buildup: one stacks value, not per segment. Ramp-up
-            # (auto) buffs default to max — the range covers uptime.
+        if buff is not None and buff.bracket in ("anomaly_buff",
+                                                 "anomaly_proficiency"):
+            # Separate-bracket engine buffs (Joyau Doré's Anomaly DMG,
+            # Weeping Gemini's flat AP) are held constant over the buildup:
+            # one stacks value, not per segment. Ramp-up (auto) buffs
+            # default to max — the range covers uptime.
             tag = " [auto]" if buff.auto else ""
             engine_buff_stacks = _ask_float(
                 f"Active {buff.name}{tag} stacks (0-{buff.max_stacks}, "
@@ -659,11 +729,15 @@ def run() -> None:
             if share <= 0:
                 break
             share = min(share, remaining)
-            seg_stacks = 0.0
-            if buff is not None and buff.bracket == "dmg_bonus":
+            # Segments carry their own engine-buff stacks. The AP bracket
+            # was already asked as a constant above — carry that value in
+            # as the default so an explicit segment can't silently zero it.
+            seg_stacks = engine_buff_stacks
+            if buff is not None and buff.bracket in ("dmg_bonus",
+                                                     "anomaly_proficiency"):
                 seg_stacks = _ask_float(
                     f"  {buff.name} stacks during this segment "
-                    f"(0-{buff.max_stacks})", 0
+                    f"(0-{buff.max_stacks})", engine_buff_stacks
                 )
             seg_dmg = _ask_percent("  Extra DMG% during this segment")
             seg_ap = _ask_float("  Extra flat AP during this segment", 0.0)
@@ -721,6 +795,8 @@ def run() -> None:
         external_disorder_mult_add=disorder_mult_add,
         sheer_force_flat=sheer_force_flat,
         external_sheer_dmg=[sheer_dmg_ext] if sheer_dmg_ext else [],
+        mutated_element=mutated_element,
+        luminize=luminize_cfg,
     )
 
     # 7. Output table
@@ -798,8 +874,11 @@ def run() -> None:
         print(f"Final ATK: {r.atk_final:,.1f}   AP: {r.anomaly_proficiency:g} "
               f"(x{r.ap_mult:.3f})   Level mult: x{r.anomaly_level_mult:g}")
         print(f"Burst/proc mult: x{r.anomaly_mult:.3f}")
+        refringe = (f"Refringe x{r.refringe_mult:.3f} | "
+                    if r.refringe_mult != 1.0 else "")
         print(f"Zones: DMG% x{r.dmg_bonus_mult:.3f} | "
               f"Anomaly buff x{r.anomaly_buff_mult:.3f} | "
+              f"{refringe}"
               f"DEF x{r.def_mult:.4f} | RES x{r.res_mult:.2f} | "
               f"Taken x{r.dmg_taken_mult:.2f} | Stun x{r.stun_mult:.2f}")
         print("(anomalies cannot crit)")

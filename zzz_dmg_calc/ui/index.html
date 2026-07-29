@@ -42,6 +42,9 @@
     font: inherit;
   }
   select:focus, input:focus { outline: 1px solid var(--accent-dim); }
+  /* Must outrank layout rules like .row's display:grid, or the
+     `hidden` attribute silently does nothing. */
+  [hidden] { display: none !important; }
   .row { display: grid; gap: 10px; margin-bottom: 10px; }
   .row.c2 { grid-template-columns: 1fr 1fr; }
   .row.c3 { grid-template-columns: 1fr 1fr 1fr; }
@@ -223,6 +226,10 @@
         <div><label>Rank</label><select id="engine-rank"></select></div>
       </div>
     </div>
+    <div class="row c3" style="margin-top:10px" id="mutation-wrap" hidden>
+      <div><label id="mutation-label">Mutated attribute (next agent in the squad)</label>
+        <select id="mutated-element"></select></div>
+    </div>
     <div class="row c3" style="margin-top:10px">
       <div><label>Calculation mode</label>
         <select id="mode">
@@ -231,9 +238,46 @@
           <option value="disorder">Disorder burst</option>
           <option value="vortex">Vortex burst (Windswept + 2nd anomaly)</option>
           <option value="rupture">Sheer damage (Rupture)</option>
+          <option value="luminize">Luminize (Remielle's own damage)</option>
         </select></div>
     </div>
     <div class="hint" id="mode-hint"></div>
+
+    <div id="luminize-inputs" style="display:none">
+      <p class="note" id="luminize-explainer"></p>
+      <div class="row c3">
+        <div><label>Luminize skill</label>
+          <select id="luminize-skill"></select></div>
+        <div><label title="Her PANEL Anomaly Proficiency. The Luminize multiplier is the skill's value x (1 + 0.2% x AP) — multiplicative, so AP is her single biggest damage stat.">Remielle's Anomaly Proficiency</label>
+          <input type="number" id="luminize-ap" value="1200" min="0" step="1"></div>
+        <div><label title="One Luminize fires per stored Voidflare (max 3). Her M6 fires each enhanced Basic's Luminizes twice — enter up to 6 for that. Voidflares stored by DIFFERENT teammates carry different Effect Strengths and elements, and this count assumes all of them came from the agent selected above. For a mixed volley, set it to 1 and run once per source agent, then add the results.">Stored Voidflares (all from this agent)</label>
+          <input type="number" id="luminize-voidflares" value="3" min="1" max="6" step="1"></div>
+      </div>
+      <div class="row c3">
+        <div><label title="Only GENERAL 'Attribute Anomaly DMG +X%' bonuses reach a Luminize, and they come from Remielle — the attacker's are excluded automatically. Add up whatever she is carrying and enter the total.">Remielle's Anomaly DMG bonuses (%)</label>
+          <input type="number" id="luminize-anomaly-dmg" value="0" step="1">
+          <p class="note" style="margin-top:4px">Total of what
+            <b>Remielle</b> carries — the attacker's are excluded for you:
+            <b>Ode of Resurrected Wings</b> 20/23/26/29/32% by rank (R1–R5),
+            <b>Feathered Fate</b> 4pc +15% (its Lumiflux-only half),
+            <b>M1 Naive Oath</b> +10% <i>only for teammates' anomalies, not
+            her own Luminize</i>. Signature at R1 with Feathered Fate =
+            <b>35</b>. Anomaly-type-specific buffs (Corruption DMG,
+            Windswept DMG, Disorder DMG…) never apply.</p></div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                        color:var(--text);font-size:13px"
+                 title="The Luminize multiplier gains x1.12.">
+            <input type="checkbox" id="luminize-m4"> M4 (The Long Goodbye)
+          </label></div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                        color:var(--text);font-size:13px"
+                 title="Naive Oath: her Luminize ignores 50% of the target's All-Attribute RES. She is the support here, so it cannot come from the attacker's mindscape toggles.">
+            <input type="checkbox" id="luminize-m1"> M1 (50% RES ignore)
+          </label></div>
+      </div>
+    </div>
     <div class="hint" id="matchup"></div>
     <div class="hint" id="engine-auto" style="color:var(--accent)"></div>
     <div class="note" id="engine-note"></div>
@@ -385,6 +429,7 @@
   <div id="optimize-wrap" style="display:none">
     <div class="card" style="margin-top:14px">
       <h2>Optimizer <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(searches your saved discs for a better build)</span></h2>
+      <p class="note" id="opt-luminize-note" style="display:none"></p>
       <div class="row c3">
         <div><label>Optimize for</label>
           <select id="opt-objective">
@@ -531,6 +576,15 @@ function option(value, text) {
   return o;
 }
 
+/* Sort [value, label] pairs by their visible label so the long
+   pickers (agents, engines, bosses, ...) are searchable by eye.
+   Fixed-order lists — skill tags, calculation modes, refinement
+   ranks, disc slots — keep their authored order on purpose. */
+function byLabel(entries) {
+  return [...entries].sort(
+    (a, b) => String(a[1]).localeCompare(String(b[1])));
+}
+
 function fillSelect(sel, entries) {   // entries: [value, label][]
   sel.innerHTML = "";
   for (const [v, t] of entries) sel.appendChild(option(v, t));
@@ -543,29 +597,33 @@ function sortedSets(entries = Object.entries(DB.sets)) {
 }
 
 function buildStaticSelects() {
-  fillSelect($("boss"), DB.bosses.map(b => [b.name, b.name]));
-  fillSelect($("agent"), Object.entries(DB.agents).map(
-    ([k, a]) => [k, `${a.name} [${a.attribute}]`]));
-  fillSelect($("engine"), Object.entries(DB.engines).map(
-    ([k, e]) => [k, `${e.name} — ${e.base_atk} ATK`]));
+  fillSelect($("boss"), byLabel(DB.bosses.map(b => [b.name, b.name])));
+  fillSelect($("agent"), byLabel(Object.entries(DB.agents).map(
+    ([k, a]) => [k, `${a.name} [${a.attribute}]`])));
+  fillSelect($("engine"), byLabel(Object.entries(DB.engines).map(
+    ([k, e]) => [k, `${e.name} — ${e.base_atk} ATK`])));
   fillSelect($("skill-tag"), [["", "Untyped / not relevant"],
     ...Object.entries(DB.skill_tags).map(([k, label]) => [k, label])]);
+  fillSelect($("mutated-element"),
+             byLabel(elementsList().map(e => [e, e])));
+  $("mutated-element").value = "physical";   // neutral on most bosses
   fillSelect($("opt-required"), [["", "(none — any sets)"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
   for (const slot of [4, 5, 6])
     fillSelect($(`opt-main-${slot}`), [["", "(any)"],
-      ...Object.keys(DB.disc.main_stats[String(slot)]).map(m => [m, m])]);
+      ...byLabel(Object.keys(DB.disc.main_stats[String(slot)])
+        .map(m => [m, m]))]);
   rebuildLoadoutSelect();
 }
 
 function rebuildLoadoutSelect(selected) {
   const names = Object.keys(DB.loadouts);
   fillSelect($("loadout"), names.length
-    ? names.map(n => {
+    ? byLabel(names.map(n => {
         const l = DB.loadouts[n];
         const who = l.agent ? `[${agentName(l.agent)}] ` : "";
         return [n, `${who}${n} — ${l.description}`];
-      })
+      }))
     : [["", "(no saved loadouts)"]]);
   if (selected) $("loadout").value = selected;
 }
@@ -602,14 +660,14 @@ function buildDiscGrid() {
       <label style="margin-top:6px">Substats (stat / +N)</label>
       <div class="subrows"></div>`;
     const mainSel = card.querySelector(".main");
-    fillSelect(mainSel, mains.map(m =>
-      [m, `${m} (${fmtStat(m, DB.disc.main_stats[String(slot)][m])})`]));
+    fillSelect(mainSel, byLabel(mains.map(m =>
+      [m, `${m} (${fmtStat(m, DB.disc.main_stats[String(slot)][m])})`])));
     const setSel = card.querySelector(".set");
     fillSelect(setSel, [["", "No set / not modeled"],
       ...sortedSets().map(([k, s]) => [k, s.name])]);
     fillSelect(card.querySelector(".element"),
       [["", "(not set — matches any agent)"],
-       ...elementsList().map(e => [e, e])]);
+       ...byLabel(elementsList().map(e => [e, e]))]);
     const rows = card.querySelector(".subrows");
     for (let i = 0; i < DB.disc.substats_per_disc; i++) {
       const row = document.createElement("div");
@@ -645,6 +703,37 @@ function elementsList() {
   return Object.keys(DB.bosses[0].res);
 }
 
+/* LUMIFLUX ATTRIBUTE MUTATION (Remielle): "lumiflux" is not a real enemy-RES
+   element — her damage counts as the attribute of the NEXT agent in the
+   squad, picked in the #mutated-element dropdown. Everything element-driven
+   (boss RES, Attribute DMG% discs, element-gated buffs, which anomaly she
+   builds) must ask for THIS, never agent.attribute. */
+const LUMIFLUX = "lumiflux";
+
+function isLumiflux(agent) { return agent.attribute === LUMIFLUX; }
+
+function dealtElement() {
+  const agent = DB.agents[$("agent").value];
+  return isLumiflux(agent) ? ($("mutated-element").value || "physical")
+                           : agent.attribute;
+}
+
+/* Show the mutation picker only for Lumiflux agents. */
+function refreshMutationControl() {
+  const agent = DB.agents[$("agent").value];
+  const wrap = $("mutation-wrap");
+  const on = isLumiflux(agent);
+  wrap.hidden = !on;
+  // Hidden AND disabled: for every other agent the control is inert, and
+  // collectConfig sends mutated_element: null (the API rejects the field
+  // outright for a non-Lumiflux agent, so a stale value can never leak).
+  $("mutated-element").disabled = !on;
+  if (!on) return;
+  $("mutation-label").textContent =
+    `${agent.name} is a LUMIFLUX agent — her damage counts as the Attribute `
+    + `of the NEXT agent in your squad`;
+}
+
 /* The element dropdown only applies to an Attribute DMG% main (the disc
    drop is element-specific — a Fire DMG% disc doesn't buff an ice agent).
    ``defaultToAgent`` fills the current agent's element when the user just
@@ -655,7 +744,7 @@ function refreshElementControl(card, defaultToAgent = false) {
   const sel = card.querySelector(".element");
   if (!isAttr) sel.value = "";
   else if (defaultToAgent && !sel.value)
-    sel.value = DB.agents[$("agent").value].attribute;
+    sel.value = dealtElement();
 }
 
 /* Substat dropdowns list every legal substat except the disc's main stat;
@@ -666,8 +755,8 @@ function refreshSubstatOptions(card) {
   for (const sel of card.querySelectorAll(".substat")) {
     const keep = sel.value;
     fillSelect(sel, [["", "—"],
-      ...Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
-        .map(s => [s, s])]);
+      ...byLabel(Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
+        .map(s => [s, s]))]);
     if (keep && keep !== main) sel.value = keep;
   }
 }
@@ -774,11 +863,13 @@ function updateDerived(resetRank = false) {
   const engine = DB.engines[$("engine").value];
   const boss = currentBoss();
 
-  const res = boss.res[agent.attribute];
+  const element = dealtElement();
+  const res = boss.res[element];
   const mult = 1 - res;
   const kind = res < 0 ? "weakness" : res > 0 ? "resists" : "neutral";
+  const mutated = isLumiflux(agent) ? " (mutated)" : "";
   $("matchup").innerHTML =
-    `${boss.name} vs <b>${agent.attribute}</b>: RES ${(res * 100).toFixed(0)}% ` +
+    `${boss.name} vs <b>${element}</b>${mutated}: RES ${(res * 100).toFixed(0)}% ` +
     `(${kind}, ×${mult.toFixed(2)}) · DEF ${boss.base_def} · ` +
     `default stun ×${boss.stun_dmg_multiplier}`;
   $("stun").placeholder = `boss default: ${boss.stun_dmg_multiplier * 100}`;
@@ -871,12 +962,15 @@ function renderEngineBuff(engine, rank) {
   const autoTag = buff.auto ? " (auto)" : "";
   const per = buffs.map(b => {
     const tags = b.skill_tags ? ` on ${b.skill_tags.join("/")}` : "";
+    const value = b.per_stack_by_rank[rank - 1];
+    // Flat-AP bracket (Weeping Gemini): a plain number, not a percentage.
+    if (b.bracket === "anomaly_proficiency")
+      return `+${value} Anomaly Proficiency${tags}`;
     const bracket = b.bracket === "sheer_dmg" ? " Sheer"
       : b.bracket === "anomaly_buff" ? " (buff bracket)" : "";
     const word = b.bracket === "crit_dmg" ? "CRIT DMG"
       : `${b.element || "DMG"}${bracket}`;
-    return `+${+(b.per_stack_by_rank[rank - 1] * 100).toFixed(1)}% `
-      + `${word}${tags}`;
+    return `+${+(value * 100).toFixed(1)}% ${word}${tags}`;
   }).join(" & ");
   const note = buffs.map(b => b.note).filter(Boolean).join(" | ");
   wrap.style.display = "";
@@ -915,9 +1009,45 @@ function engineBuffValue() {
 
 function calcMode() { return $("mode").value || "direct"; }
 
+/* Luminize mode: fill the skill picker from the provider's table and
+   explain whose build is actually being calculated. */
+function renderLuminize([provKey, prov]) {
+  const sel = $("luminize-skill");
+  const kept = sel.value;
+  fillSelect(sel, byLabel(Object.entries(prov.luminize.skills).map(
+    ([k, sk]) => [k, `${sk.name} — ${+(sk.multiplier * 100).toFixed(0)}%`])));
+  if (kept && [...sel.options].some(o => o.value === kept)) sel.value = kept;
+  else sel.value = "ultimate";
+  const attacker = DB.agents[$("agent").value];
+  $("luminize-explainer").innerHTML =
+    `A Luminize scales off the <b>stored anomaly</b>, so the agent selected `
+    + `above (<b>${attacker.name}</b>) is the teammate whose Refringed `
+    + `anomaly the Voidflare holds — their ATK, DMG% and PEN drive it, `
+    + `while the multiplier and the Anomaly DMG bonus come from `
+    + `${prov.name}. Keep ${prov.name} in the Team card with her Refringe `
+    + `buffs ticked. Her own anomaly-DMG buffs replace the attacker's, `
+    + `which are excluded automatically.<br>The Voidflare count assumes `
+    + `every one was stored by <b>${attacker.name}</b>. Voidflares from `
+    + `different teammates hold different Effect Strengths and elements — `
+    + `for a mixed volley set the count to 1, run once per source agent, `
+    + `and add the results.`;
+}
+
+function luminizePayload() {
+  return {
+    skill: $("luminize-skill").value,
+    anomaly_proficiency: parseFloat($("luminize-ap").value) || 0,
+    voidflares: parseInt($("luminize-voidflares").value, 10) || 1,
+    m4: $("luminize-m4").checked,
+    res_ignore: $("luminize-m1").checked,
+    anomaly_dmg_bonuses: [pct("luminize-anomaly-dmg")].filter(Boolean),
+  };
+}
+
 function updateModeUI() {
   const agent = DB.agents[$("agent").value];
-  const anomaly = DB.anomalies[agent.attribute];
+  const element = dealtElement();
+  const anomaly = DB.anomalies[element];
 
   // Sheer (Rupture) is only meaningful for Rupture-specialty agents —
   // their skills scale off Sheer Force. Gate the option; fall back to
@@ -928,6 +1058,15 @@ function updateModeUI() {
   if (!rupture && $("mode").value === "rupture") $("mode").value = "direct";
 
   const mode = calcMode();
+  const luminize = mode === "luminize";
+  // Luminize mode needs a Lumiflux provider on the roster and a DIFFERENT
+  // agent as the attacker (the instance scales off the teammate whose
+  // Refringed anomaly the Voidflare stored).
+  const provider = Object.entries(DB.agents)
+    .find(([, a]) => a.luminize);
+  const lumOpt = [...$("mode").options].find(o => o.value === "luminize");
+  if (lumOpt) lumOpt.disabled = !provider || isLumiflux(agent);
+  if (luminize && lumOpt && lumOpt.disabled) $("mode").value = "direct";
   // Sheer damage is direct-hit-shaped: skill MV, damage type and crits all
   // apply; the anomaly-family inputs do not.
   const directLike = mode === "direct" || mode === "rupture";
@@ -937,6 +1076,15 @@ function updateModeUI() {
   show("crit-rate-wrap", directLike);
   show("crit-dmg-wrap", directLike);
   show("sheer-inputs", mode === "rupture");
+  show("luminize-inputs", luminize);
+  if (luminize && provider) renderLuminize(provider);
+  // Its multiplier is computed from her table, so the manual overrides
+  // and the Abloom recipe have no meaning here.
+  if (luminize) {
+    show("anom-mv-wrap", false);
+    show("abloom-wrap", false);
+    $("abloom-element-wrap").style.display = "none";
+  }
   show("anomaly-inputs-1", !directLike);
   show("anomaly-inputs-2", !directLike);
   // Vivian Abloom: auto AP-scaled multiplier (mutually exclusive with the
@@ -947,10 +1095,10 @@ function updateModeUI() {
   $("abloom-element-wrap").style.display = abloomOn ? "" : "none";
   show("anom-mv-wrap", mode === "anomaly" && !abloomOn);
   if (mode === "anomaly" && $("abloom-element").options.length === 0) {
-    fillSelect($("abloom-element"), Object.entries(DB.anomalies)
+    fillSelect($("abloom-element"), byLabel(Object.entries(DB.anomalies)
       .filter(([, a]) => a.supported)
-      .map(([el, a]) => [el, `${a.name} [${el}]`]));
-    $("abloom-element").value = agent.attribute;
+      .map(([el, a]) => [el, `${a.name} [${el}]`])));
+    $("abloom-element").value = element;
   }
   show("conv-element-wrap", mode === "disorder" || mode === "vortex");
   show("anom-elapsed-wrap", mode === "disorder" || mode === "vortex");
@@ -969,15 +1117,15 @@ function updateModeUI() {
       ? "Anomaly present on the enemy" : "Anomaly being REPLACED";
     $("anom-elapsed-label").textContent =
       "Seconds since that anomaly was applied";
-    fillSelect(sel, Object.entries(DB.anomalies)
-      .filter(([el, a]) => a.supported && (polarity || el !== agent.attribute))
-      .map(([el, a]) => [el, `${a.name} [${el}]`]));
+    fillSelect(sel, byLabel(Object.entries(DB.anomalies)
+      .filter(([el, a]) => a.supported && (polarity || el !== element))
+      .map(([el, a]) => [el, `${a.name} [${el}]`])));
   } else if (mode === "vortex") {
     $("conv-element-label").textContent = "Anomaly INFUSED into the Windswept";
     $("anom-elapsed-label").textContent =
       "Seconds since the infused anomaly was applied";
-    fillSelect(sel, Object.keys(DB.vortex)
-      .map(el => [el, `${DB.anomalies[el].name} [${el}]`]));
+    fillSelect(sel, byLabel(Object.keys(DB.vortex)
+      .map(el => [el, `${DB.anomalies[el].name} [${el}]`])));
   }
   if (kept && [...sel.options].some(o => o.value === kept)) sel.value = kept;
 
@@ -993,7 +1141,7 @@ function updateModeUI() {
     hint = `${agent.name} is a Rupture agent — her skills deal SHEER `
       + `damage. Pick "Sheer damage (Rupture)" for her hits.`;
   } else if (mode === "anomaly") {
-    hint = `${anomaly.name} [${agent.attribute}] — `
+    hint = `${anomaly.name} [${element}] — `
       + (anomaly.supported
         ? `${+(anomaly.mult * 100).toFixed(0)}% × ATK`
           + (anomaly.hits > 1 ? ` per tick, ×${anomaly.hits} over ${anomaly.duration}s`
@@ -1032,6 +1180,7 @@ const KIT_KIND_LABELS = {
   pen_ratio: "PEN Ratio",
   sheer_force: "flat Sheer Force", hp_pct: "Max HP%",
   sheer_dmg: "Sheer DMG (dedicated bracket)", def_red: "enemy DEF reduction",
+  refringe: "Refringe (Lumiflux zone)",
 };
 
 //: Kit kinds whose values are plain numbers, not fractions.
@@ -1305,8 +1454,8 @@ function renderSupportSlot(slot, saved) {
     if (otherSel && otherSel.value) taken.add(otherSel.value);
   }
   fillSelect(sel, [["", "None"],
-    ...Object.entries(DB.agents).filter(([k]) => !taken.has(k))
-      .map(([k, a]) => [k, `${a.name} [${a.attribute}]`])]);
+    ...byLabel(Object.entries(DB.agents).filter(([k]) => !taken.has(k))
+      .map(([k, a]) => [k, `${a.name} [${a.attribute}]`]))]);
   if (prev && DB.agents[prev.agent] && !taken.has(prev.agent))
     sel.value = prev.agent;
   sel.addEventListener("change", () => {
@@ -1529,6 +1678,7 @@ function renderSupports(savedList) {
 
 function onAgentChange() {
   $("engine").value = DB.agents[$("agent").value].default_engine;
+  refreshMutationControl();
   updateDerived(true);
   // Re-render support slots: a slot holding the new on-field agent is
   // cleared (they can't support themselves), others keep their state.
@@ -1846,11 +1996,11 @@ function renderInvFilters() {
         .flatMap(t => Object.keys(t)))];
   const keptMain = $("inv-main").value;
   fillSelect($("inv-main"), [["", "Any main stat"],
-    ...mains.map(m => [m, m])]);
+    ...byLabel(mains.map(m => [m, m]))]);
   if (mains.includes(keptMain)) $("inv-main").value = keptMain;
   fillSelect($("inv-element"), [["", "Any element"],
     ["__none", "(not set — legacy)"],
-    ...elementsList().map(e => [e, e])]);
+    ...byLabel(elementsList().map(e => [e, e]))]);
   $("inv-element-wrap").hidden = $("inv-main").value !== "Attribute DMG%";
 
   const chips = $("inv-chips");
@@ -2094,15 +2244,15 @@ function renderAddForm() {
   // A set picked in the search filter is the likely set of the new disc.
   const setFilter = $("inv-set").value;
   if (setFilter && setFilter !== "__none") $("add-set").value = setFilter;
-  fillSelect($("add-element"), elementsList().map(e => [e, e]));
+  fillSelect($("add-element"), byLabel(elementsList().map(e => [e, e])));
   renderAddMains();
 }
 
 function renderAddMains() {
   const slot = $("add-slot").value;
   const mains = Object.keys(DB.disc.main_stats[slot]);
-  fillSelect($("add-main"), mains.map(m =>
-    [m, `${m} (${fmtStat(m, DB.disc.main_stats[slot][m])})`]));
+  fillSelect($("add-main"), byLabel(mains.map(m =>
+    [m, `${m} (${fmtStat(m, DB.disc.main_stats[slot][m])})`])));
   renderAddSubs();
 }
 
@@ -2110,7 +2260,7 @@ function renderAddSubs() {
   const main = $("add-main").value;
   $("add-element-wrap").hidden = main !== "Attribute DMG%";
   if (main === "Attribute DMG%")
-    $("add-element").value = DB.agents[$("agent").value].attribute;
+    $("add-element").value = dealtElement();
   const subs = $("add-subs");
   subs.innerHTML = "";
   for (let i = 0; i < DB.disc.substats_per_disc; i++) {
@@ -2119,8 +2269,8 @@ function renderAddSubs() {
     const sel = document.createElement("select");
     sel.className = "add-substat";
     fillSelect(sel, [["", "—"],
-      ...Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
-        .map(s => [s, s])]);
+      ...byLabel(Object.keys(DB.disc.substat_rolls).filter(s => s !== main)
+        .map(s => [s, s]))]);
     const n = document.createElement("input");
     n.type = "number"; n.className = "add-upgrades";
     n.min = 0; n.max = DB.disc.max_rolls_per_substat - 1;
@@ -2316,6 +2466,9 @@ function collectConfig() {
   return {
     mode,
     agent_key: $("agent").value,
+    // Lumiflux only — the API rejects it for any other agent.
+    mutated_element: isLumiflux(DB.agents[$("agent").value])
+      ? $("mutated-element").value : null,
     engine_key: $("engine").value,
     engine_rank: currentRank(),
     boss_name: $("boss").value,
@@ -2328,6 +2481,8 @@ function collectConfig() {
     // Sheer/Rupture inputs (the server only reads them in rupture mode).
     sheer_force_flat: parseFloat($("sheer-flat").value) || 0,
     external_sheer_dmg: pct("sheer-dmg-ext"),
+    // Luminize (the server only reads it in luminize mode).
+    luminize: luminizePayload(),
     // Anomaly-mode inputs (the server only reads what the mode uses).
     // Blank = normal proc; a value is the Abloom's own multiplier.
     anomaly_mult_override: ($("anom-mv").value.trim() === "" ? null
@@ -2534,18 +2689,27 @@ function renderAnomalyResults(r) {
   const cell = key => f
     ? `${fmtNum(f[key])} – ${fmtNum(r[key])}`
     : fmtNum(r[key]);
+  const lum = !!r.luminize_skill;
+  const perLabel = lum ? "Per Voidflare" : "Per tick/proc";
+  const allLabel = lum ? `All ${r.hits} Voidflares`
+                       : `Full duration (×${r.hits})`;
   const rows = r.hits > 1
-    ? `<tr><td>Per tick/proc</td><td class="num">${cell("per_proc")}</td>
+    ? `<tr><td>${perLabel}</td><td class="num">${cell("per_proc")}</td>
          <td class="num">${cell("per_proc_stunned")}</td></tr>
-       <tr class="avg"><td>Full duration (×${r.hits})</td>
+       <tr class="avg"><td>${allLabel}</td>
          <td class="num">${cell("full")}</td>
          <td class="num">${cell("full_stunned")}</td></tr>`
-    : `<tr class="avg"><td>Burst</td><td class="num">${cell("per_proc")}</td>
+    : `<tr class="avg"><td>${lum ? "One Voidflare" : "Burst"}</td>
+         <td class="num">${cell("per_proc")}</td>
          <td class="num">${cell("per_proc_stunned")}</td></tr>`;
   $("out").className = "";
   $("out").innerHTML = `
     <div class="stat-line"><span>${r.anomaly_name} — dealt as</span>
       <b>${r.element}</b></div>
+    ${lum ? `<p class="note" style="margin:0 0 6px">Scaled off
+       <b>${DB.agents[$("agent").value].name}</b>'s stats (the stored
+       anomaly); the multiplier and Anomaly DMG bonus are Remielle's.</p>`
+     : ""}
     <div class="stat-line"><span>Final ATK</span><b>${fmtNum(r.atk_final)}</b></div>
     <div class="stat-line"><span>Anomaly Proficiency</span>
       <b>${+r.anomaly_proficiency.toFixed(1)} (×${r.ap_mult.toFixed(3)})</b></div>
@@ -2553,6 +2717,9 @@ function renderAnomalyResults(r) {
     <div class="stat-line"><span>Burst/proc multiplier</span><b>×${r.anomaly_mult.toFixed(3)}</b></div>
     <div class="stat-line"><span>DMG% zone</span><b>×${r.dmg_bonus_mult.toFixed(3)}</b></div>
     <div class="stat-line"><span>Anomaly buff zone</span><b>×${r.anomaly_buff_mult.toFixed(3)}</b></div>
+    ${r.refringe_mult && r.refringe_mult !== 1
+      ? `<div class="stat-line"><span>Refringe zone</span><b>×${r.refringe_mult.toFixed(3)}</b></div>`
+      : ""}
     <div class="stat-line"><span>DEF zone</span><b>×${r.def_mult.toFixed(4)}</b></div>
     <div class="stat-line"><span>RES zone</span><b>×${r.res_mult.toFixed(2)}</b></div>
     <div class="stat-line"><span>DMG taken zone</span><b>×${r.dmg_taken_mult.toFixed(2)}</b></div>
@@ -2629,13 +2796,43 @@ const OBJECTIVE_OPTIONS = {
 // crit-table fields, so the rupture family reuses the direct labels but
 // keeps its own key (its constraint stats differ — see CONSTRAINT_DEFS).
 OBJECTIVE_OPTIONS.rupture = OBJECTIVE_OPTIONS.direct;
+// Luminize shares the anomaly objectives, but a "proc" is one stored
+// Voidflare and "full duration" is the whole volley — say so.
+OBJECTIVE_OPTIONS.luminize = [
+  ["full", "All stored Voidflares (normal)"],
+  ["per_proc", "One Voidflare (normal)"],
+  ["full_stunned", "All stored Voidflares (stunned)"],
+  ["per_proc_stunned", "One Voidflare (stunned)"],
+];
+
+/* In Luminize mode the optimizer tunes the TEAMMATE's discs, not
+   Remielle's — her contribution is a fixed multiplier on top. Say so
+   plainly, because "optimize" otherwise reads as "optimize Remielle". */
+function renderOptimizerLuminizeNote(mode) {
+  const note = $("opt-luminize-note");
+  if (mode !== "luminize") { note.style.display = "none"; return; }
+  const attacker = DB.agents[$("agent").value];
+  const prov = Object.values(DB.agents).find(a => a.luminize);
+  note.style.display = "";
+  note.innerHTML =
+    `<b>Luminize mode:</b> this optimizes <b>${attacker.name}'s</b> discs, `
+    + `not ${prov ? prov.name : "Remielle"}'s. That is the right thing to `
+    + `tune — a Luminize inherits the stored anomaly's ATK, DMG% and PEN, `
+    + `so a bigger anomaly on ${attacker.name} is a bigger Luminize. `
+    + `${prov ? prov.name : "Remielle"}'s own side (the multiplier, her `
+    + `Anomaly DMG bonus, Refringe) is a constant here and is unaffected by `
+    + `the search. Builds found this way also raise ${attacker.name}'s own `
+    + `anomaly damage, so it is not a trade-off.`;
+}
 
 /* Repopulate the "Optimize for" dropdown for the mode just calculated:
    crit fields (direct/rupture) or the anomaly family (default full
    duration). Keeps the current selection when it stays valid, and swaps
    the constraint rows' stat lists to the new family's. */
 function syncOptimizeObjectives(mode) {
-  const family = mode === "direct" || mode === "rupture" ? mode : "anomaly";
+  const family = mode === "direct" || mode === "rupture" || mode === "luminize"
+    ? mode : "anomaly";
+  renderOptimizerLuminizeNote(mode);
   const sel = $("opt-objective");
   if (sel.dataset.family === family) return;
   const prev = sel.value;
@@ -2689,6 +2886,7 @@ const BASE_CONSTRAINT_DEFS = [
 const CONSTRAINT_DEFS = {
   direct: BASE_CONSTRAINT_DEFS,
   anomaly: BASE_CONSTRAINT_DEFS,
+  luminize: BASE_CONSTRAINT_DEFS,
   rupture: [...BASE_CONSTRAINT_DEFS, ["Sheer Force", "Sheer Force", false]],
 };
 
@@ -3108,6 +3306,7 @@ async function init() {
   buildStaticSelects();
   buildDiscGrid();
   const saved = restoreState();
+  refreshMutationControl();
   updateDerived();
   renderKit();
   renderSupports();
@@ -3124,6 +3323,10 @@ async function init() {
   }
 
   $("agent").addEventListener("change", onAgentChange);
+  $("mutated-element").addEventListener("change", () => {
+    updateDerived();      // matchup line follows the mutated element
+    updateModeUI();       // so do the anomaly hint and element lists
+  });
   $("boss").addEventListener("change", () => updateDerived());
   $("engine").addEventListener("change", () => { updateDerived(true); });
   $("engine-rank").addEventListener("change", () => updateDerived());

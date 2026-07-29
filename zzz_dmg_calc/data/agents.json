@@ -1,10 +1,10 @@
 {
   "_meta": {
-    "description": "Preset agent list. The v1 DUMMY became the real Ellen Joe on 2026-07-14 (same key-for-key stats, game-validated; kit + Potential added). Optional 'potential' block (Potential Awakening, mindscape-like): {name, note, levels {'1'..'6'}} - levels REPLACE each other (activate at most one); effects may carry 'at_max_stacks': true to fire only at the buff's full stack count, unmultiplied. Roster includes the Phase 5 anomaly teams. Phase 5 agents' stats are stored as published (see sources.md Phase 5 caveat: some tables may already include core bonuses - panel-check before trusting; Evelyn's stats were datamine-corrected 2026-07-14: raw base ATK 854 at Lv. 60 (134 + 59 x 8.1654 growth + 239 promotion - the earlier 779 wrongly assumed the published 854 included the +75 core flat), AM 92, AP 90). AFTERSHOCK (added 2026-07-15): a skill-type tag ('aftershock' in constants.json skill_tags) for the Aftershock mechanic (Anby S / Trigger). The datamine gives many Aftershock hits TWO types (Trigger's Harmonizing Shot = Basic + Aftershock; Anby S's Chain/Ultimate also count as Aftershock via her ability) - DUAL-TYPE SUPPORT: a hit keeps its own skill tag AND can be flagged 'counts_as_aftershock' (UI checkbox / CLI prompt), so BOTH tags' gated bonuses apply to the same hit (e.g. Anby S's Ultimate takes Ultimate DMG% and Aftershock DMG% together). Pure Aftershock hits (White Thunder, Thunder Smite) just use the 'aftershock' tag. core_skill_bonuses may also carry 'crit_dmg' (Seed +28.8%), added to base CRIT DMG exactly like core crit_rate adds to base CRIT Rate.",
+    "description": "Preset agent list. The v1 DUMMY became the real Ellen Joe on 2026-07-14 (same key-for-key stats, game-validated; kit + Potential added). Optional 'potential' block (Potential Awakening, mindscape-like): {name, note, levels {'1'..'6'}} - levels REPLACE each other (activate at most one); effects may carry 'at_max_stacks': true to fire only at the buff's full stack count, unmultiplied. Roster includes the Phase 5 anomaly teams. Phase 5 agents' stats are stored as published (see sources.md Phase 5 caveat: some tables may already include core bonuses - panel-check before trusting; Evelyn's stats were datamine-corrected 2026-07-14: raw base ATK 854 at Lv. 60 (134 + 59 x 8.1654 growth + 239 promotion - the earlier 779 wrongly assumed the published 854 included the +75 core flat), AM 92, AP 90). AFTERSHOCK (added 2026-07-15): a skill-type tag ('aftershock' in constants.json skill_tags) for the Aftershock mechanic (Anby S / Trigger). The datamine gives many Aftershock hits TWO types (Trigger's Harmonizing Shot = Basic + Aftershock; Anby S's Chain/Ultimate also count as Aftershock via her ability) - DUAL-TYPE SUPPORT: a hit keeps its own skill tag AND can be flagged 'counts_as_aftershock' (UI checkbox / CLI prompt), so BOTH tags' gated bonuses apply to the same hit (e.g. Anby S's Ultimate takes Ultimate DMG% and Aftershock DMG% together). Pure Aftershock hits (White Thunder, Thunder Smite) just use the 'aftershock' tag. core_skill_bonuses may also carry 'crit_dmg' (Seed +28.8%), added to base CRIT DMG exactly like core crit_rate adds to base CRIT Rate. LUMIFLUX (added 2026-07-29 with Remielle): a 7th 'attribute' value that is NOT an enemy-RES element. A lumiflux agent's damage undergoes ATTRIBUTE MUTATION - it counts as the attribute of the NEXT agent in the squad - so every calculation for her takes a runtime 'mutated_element' (one of the six real elements), which then drives the boss RES, the slot-5 Attribute DMG% match, element-gated effects and which anomaly her hits build. Bosses never need a 'lumiflux' RES entry.",
     "sources": "DOCS/sources.md (Phase 4 and Phase 5 sections)",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency, pen_ratio, sheer_force, hp_pct, sheer_dmg, def_red; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. RUPTURE (Phase 5 Rupture): 'core_skill_bonuses.base_hp' is FLAT base HP (scales with HP%, like base_atk with ATK%); 'sheer_force_hp_conversion' is the agent's HP -> Sheer Force rate (Yixuan 0.10, absent/0 for everyone else); 'sheer_force' effects add flat Sheer Force, 'hp_pct' joins the combat Max-HP% bracket, 'sheer_dmg' joins the dedicated Sheer DMG bracket, 'def_red' reduces enemy DEF (multiplicative with PEN Ratio; irrelevant to Sheer damage, which ignores DEF). Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
+    "conventions": "Percent stats are fractions (0.24 = 24%). 'core_skill_bonuses' are the max-rank (F) core enhancement stat boosts; base_atk there is FLAT base ATK added to the agent's own base (it scales with ATK%). 'default_engine' is a key into data/engines.json — engines are a separate database so builds can swap them freely. Optional 'core_passive' and 'mindscapes' ('1'..'6') document the agent's kit: entries WITH an 'effects' list are modeled conditionals (kinds: crit_rate, crit_dmg, dmg_bonus, res_shred, dmg_taken, flat_atk, atk_pct, daze_bonus, anomaly_buff, disorder_mult_add, anomaly_proficiency, pen_ratio, sheer_force, hp_pct, sheer_dmg, def_red; value per stack; max_stacks 1 = on/off checkbox), asked at runtime. RUPTURE (Phase 5 Rupture): 'core_skill_bonuses.base_hp' is FLAT base HP (scales with HP%, like base_atk with ATK%); 'sheer_force_hp_conversion' is the agent's HP -> Sheer Force rate (Yixuan 0.10, absent/0 for everyone else); 'sheer_force' effects add flat Sheer Force, 'hp_pct' joins the combat Max-HP% bracket, 'sheer_dmg' joins the dedicated Sheer DMG bracket, 'def_red' reduces enemy DEF (multiplicative with PEN Ratio; irrelevant to Sheer damage, which ignores DEF). Effect gates: 'skill_tag' limits an effect to that damage type; 'modes' limits it to calculation modes (direct/anomaly/disorder/vortex; absent = all); 'element' limits it to damage dealt as that element (an effect explicitly listing a disorder/vortex mode skips the element check there, since those bursts deal another element by design; effects without 'modes' stay element-checked everywhere). 'anomaly_buff' joins the separate Anomaly/Disorder Buff Multiplier bracket; 'disorder_mult_add' adds to the Disorder/Vortex burst base multiplier; 'anomaly_proficiency' is flat AP. 'refringe' (Lumiflux, 3.1) is the Refringe zone - its OWN multiplicative factor on a TEAMMATE's anomaly (1 + sum), deliberately apart from the additive anomaly_buff bracket so the two compound; its parts are additive percentage points (Remielle: 0.02%/AP base, +10 with 3 Anomaly squadmates, +20 at M2). PROJECT CONVENTION: only mindscapes that buff stats/DMG or debuff the enemy are modeled; motion-value/energy/QoL mindscapes are documented with a note but never modeled (the user enters multipliers manually)."
   },
   "agents": {
     "ellen": {
@@ -286,7 +286,7 @@
           { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "ex_special" },
           { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "dodge_counter" }
         ],
-        "note": "Requires a teammate sharing her Attribute (physical) or Faction (Cunning Hares). After any squad member inflicts Assault, +35% DMG per stack (max 2). Verified 2026-07-03 (Game8) for the EX Special half. USER JUDGMENT: the Dodge Counter half exists ONLY with Potential Awakening unlocked (Cat's Gratitude rework, PROVISIONAL - nanoka 3.1.12: trigger also gains 'after Dodge: Disappearing Tail', duration 30s, and coverage extends to Dodge Counter hits) - without Awakening, do not count Catwalk stacks on a dodge_counter-tagged hit."
+        "note": "Requires a teammate sharing her Attribute (physical) or Faction (Cunning Hares). After any squad member inflicts Assault, +35% DMG per stack (max 2). CONFIRMED 2026-07-29 against nanoka 1021 (both halves, +35% x2). USER JUDGMENT: the Dodge Counter half exists ONLY with Potential Awakening unlocked (Cat's Gratitude rework, PROVISIONAL - nanoka 3.1.12: trigger also gains 'after Dodge: Disappearing Tail', duration 30s, and coverage extends to Dodge Counter hits) - without Awakening, do not count Catwalk stacks on a dodge_counter-tagged hit."
       },
       "mindscapes": {
         "1": {
@@ -403,14 +403,14 @@
           "note": "Basic/Dodge/Assist/Special/Chain Lv. +2 - motion values only, not modeled."
         },
         "4": {
-          "name": "Quick as a Hare",
+          "name": "Featherlight Footsteps",
           "max_stacks": 1,
           "effects": [
             { "kind": "crit_dmg", "value": 0.40, "skill_tag": "ultimate" },
             { "kind": "crit_dmg", "value": 0.40, "skill_tag": "chain" },
             { "kind": "crit_dmg", "value": 0.40, "skill_tag": "basic" }
           ],
-          "note": "Her Ultimate / Chain Attack / Basic (Final Verdict) gain +40% CRIT DMG - applies when the hit's damage type matches. The +250 Decibels part is resource-only."
+          "note": "Her Ultimate / Chain Attack / Basic (Final Verdict) gain +40% CRIT DMG - applies when the hit's damage type matches; it does NOT cover her EX Special. The +250 Decibels part is resource-only. Renamed 2026-07-29: this mindscape is 'Featherlight Footsteps' (nanoka 1341 + Lin-0); the earlier 'Quick as a Hare' was a Game8-era mistake."
         },
         "5": {
           "name": "Fuzzy Listener",
@@ -457,7 +457,7 @@
         }
       ],
       "default_engine": "half_sugar_bunny",
-      "_note": "Support entry (verified 2026-07-03, Game8/BlueStacks). Squad Max HP +5% not modeled (no damage effect). Her HP-scaled CRIT Rate (1.4%/1000 HP) is SELF-ONLY, not squad-wide - community sources misread it; corrected by in-game panel check 2026-07-03 (validation #4). Core stat boosts not modeled - she is not intended as the on-field attacker. AM/AP from Game8. CONVENTION: support mindscapes with TEAM-facing damage effects are modeled as extra team_buffs entries named 'M<level>: ...' (relevance clause applies; the user only checks what their copy has unlocked). Her full kit incl. self-only mindscapes (M4 tag-gated CRIT DMG, M6 core-CRIT x1.25) is modeled under 'mindscapes'/'core_passive' for when SHE is the attacker (off-field damage feature); M3/M5 are motion values (not modeled). Her M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once."
+      "_note": "Support entry (verified 2026-07-03, Game8/BlueStacks). Squad Max HP +5% not modeled (no damage effect). Her HP-scaled CRIT Rate (1.4%/1000 HP) is SELF-ONLY, not squad-wide - community sources misread it; corrected by in-game panel check 2026-07-03 (validation #4). Core stat boosts not modeled - she is not intended as the on-field attacker. AM/AP CONFIRMED 2026-07-29 against nanoka 1341 (93 / 96), along with her Lv. 60 HP/ATK/DEF and Impact. CONVENTION: support mindscapes with TEAM-facing damage effects are modeled as extra team_buffs entries named 'M<level>: ...' (relevance clause applies; the user only checks what their copy has unlocked). Her full kit incl. self-only mindscapes (M4 tag-gated CRIT DMG, M6 core-CRIT x1.25) is modeled under 'mindscapes'/'core_passive' for when SHE is the attacker (off-field damage feature); M3/M5 are motion values (not modeled). Her M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once."
     },
     "dialyn": {
       "name": "Dialyn",
@@ -470,9 +470,18 @@
       "base_def": 612,
       "impact": 110,
       "energy_regen": 1.2,
-      "anomaly_mastery": 0,
-      "anomaly_proficiency": 0,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
       "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "additional_ability": {
+        "name": "External Line: EX Special CRIT DMG (self)",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+        "effects": [
+          { "kind": "crit_dmg", "value": 0.50, "skill_tag": "ex_special" }
+        ],
+        "note": "SELF half of her Additional Ability (needs an Attack or Rupture squadmate): HER EX Special Attacks gain +50% CRIT DMG - unconditional inside that team, so tick it whenever the calculated hit is one of her EX Specials (Rock / Scissors / Paper! / Get Lost!). The squad-facing half of the same ability is the 'Overwhelmingly Positive: squad DMG' team buff; both are active at once (they are different halves, not duplicates). Added 2026-07-29 from nanoka 1481 - the original Game8-sourced entry omitted it entirely."
+      },
       "mindscapes": {
         "1": {
           "name": "Boundless Hospitality",
@@ -484,10 +493,10 @@
           "name": "24/7 Hotline",
           "max_stacks": 1,
           "effects": [
-            { "kind": "dmg_taken", "value": 0.15 },
-            { "kind": "daze_bonus", "value": 0.10 }
+            { "kind": "dmg_bonus", "value": 0.15 },
+            { "kind": "daze_bonus", "value": 0.20 }
           ],
-          "note": "Enemy debuff on Malicious Complaint targets: +15% DMG taken (bracket PROVISIONAL) and stunned +10% Stun DMG Multiplier - applies to her own attacks too. Same effect as her M2 team buff: never apply both at once."
+          "note": "Enemy debuff on Malicious Complaint targets: all units deal +15% DMG to them, and while Stunned they take +20% Stun DMG Multiplier - applies to her own attacks too. Same effect as her M2 team buff: never apply both at once. CORRECTED 2026-07-29 (nanoka 1481 + Lin-0): the stun part is 20 points, not 10 (base 30 + 20 = the 50% total Lin-0 quotes), and the 15% is ORDINARY DMG% - Lin-0: 'it is regular DMG and not a kind of multiplier increase' - so it left the DMG-taken bracket."
         },
         "3": {
           "name": "Call from the Hollow",
@@ -505,7 +514,7 @@
         },
         "6": {
           "name": "Truth",
-          "note": "Aftertone: the chosen ally's attacks trigger an extra Physical hit of 480% of DIALYN's ATK - off-field damage, deferred to that feature (its own calculate() run with Dialyn as attacker)."
+          "note": "Aftertone (granted to the ally who enters via her Core Passive's Ultimate conversion): that ally's attacks make DIALYN deal an extra Physical instance of 480% of HER ATK, capped at 12 ticks (1s cooldown, up to 5,760% total per conversion). OFF-FIELD DAMAGE - run it as its own calculate() with Dialyn as the attacker, skill multiplier 4.8 per tick, and DAMAGE TYPE 'EX Special' (nanoka: 'This DMG is treated as EX Special Attack DMG' - so her EX-gated buffs apply). Enemy-side debuffs (Stun DMG Multiplier, DEF shred) apply normally, and it scales with whatever buffs DIALYN holds. Tick count/tag added 2026-07-29 (nanoka 1481 + Lin-0)."
         }
       },
       "team_buffs": [
@@ -514,32 +523,32 @@
           "max_stacks": 1,
           "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
           "effects": [ { "kind": "dmg_bonus", "value": 0.40 } ],
-          "note": "Additional Ability - needs an Attack/Rupture squadmate. After her EX Special or Ultimate: squad DMG +40% for 15s. Verified 2026-07-03 (Game8)."
+          "note": "Additional Ability - needs an Attack/Rupture squadmate. After her EX Special or Ultimate: squad DMG +40% for 15s. CONFIRMED 2026-07-29 (nanoka 1481)."
         },
         {
           "name": "Malicious Complaint: stunned vulnerability",
           "max_stacks": 1,
           "effects": [ { "kind": "daze_bonus", "value": 0.30 } ],
-          "note": "EX 'Paper!' debuff: while the target is Stunned, its Stun DMG Multiplier +30% (and stun lasts +2s) - affects the Stunned columns only. One overview claimed 35%/+3s; Game8 max-rank says 30%/+2s - the in-game daze bar shows the truth (use the stun override if it differs)."
+          "note": "EX 'Paper!' debuff: while the target is Stunned, its Stun DMG Multiplier +30% (and stun lasts +2s) - affects the Stunned columns only. CONFIRMED 30% / +2s against nanoka 1481 (2026-07-29); the '35%/+3s' claim that once circulated was wrong."
         },
         {
           "name": "M1: squad RES ignore (during Overwhelmingly Positive)",
           "max_stacks": 1,
           "effects": [ { "kind": "res_shred", "value": 0.15 } ],
-          "note": "Requires Dialyn at Mindscape 1 (Boundless Hospitality). While her Overwhelmingly Positive effect is active, all characters ignore 15% of enemy All-Attribute RES. Verified 2026-07-03 (Game8) - check together with the Overwhelmingly Positive buff."
+          "note": "Requires Dialyn at Mindscape 1 (Boundless Hospitality). While her Overwhelmingly Positive effect is active, all characters ignore 15% of enemy All-Attribute RES. CONFIRMED 2026-07-29 (nanoka 1481) - check together with the Overwhelmingly Positive buff."
         },
         {
           "name": "M2: DMG taken vs Malicious Complaint targets",
           "max_stacks": 1,
           "effects": [
-            { "kind": "dmg_taken", "value": 0.15 },
-            { "kind": "daze_bonus", "value": 0.10 }
+            { "kind": "dmg_bonus", "value": 0.15 },
+            { "kind": "daze_bonus", "value": 0.20 }
           ],
-          "note": "Requires Dialyn at Mindscape 2 (24/7 Hotline). All units deal +15% DMG to targets under Malicious Complaint (modeled in the 'DMG taken' bracket - PROVISIONAL, popup-check the bracket), and stunned targets take another +10% Stun DMG Multiplier. Verified 2026-07-03 (Game8)."
+          "note": "Requires Dialyn at Mindscape 2 (24/7 Hotline). All units deal +15% DMG to targets under Malicious Complaint (ordinary DMG% bracket), and stunned targets take another +20% Stun DMG Multiplier, taking her total to 50%. CORRECTED 2026-07-29 (nanoka 1481 + Lin-0/Mobalytics) - the earlier Game8-sourced +10%/DMG-taken reading was wrong on both counts."
         }
       ],
       "default_engine": "yesterday_calls",
-      "_note": "Support/stunner entry (verified 2026-07-03, Game8). AM/AP unverified (stored 0 - do NOT use her as the attacker in anomaly modes). Core stat boosts not modeled. Her full kit incl. self-only mindscapes (M4 flat ATK during Overwhelmingly Positive) is modeled under 'mindscapes' for when SHE is the attacker; M3/M5 are motion values (not modeled). M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once. M6 Truth (Aftertone: ally attacks trigger an extra Physical hit of 480% of DIALYN's ATK) is OFF-FIELD DAMAGE - deferred to that feature."
+      "_note": "Support/stunner entry. RE-VERIFIED 2026-07-29 against nanoka 1481 after Game8 was retired as a source: Lv. 60 HP 8250.59 / ATK 683.20 / DEF 612.60 -> stored 8250/683/612 and Impact 110 all CONFIRMED, and the previously unknown AM/AP are now filled in (94 / 93 - they were stored as 0, which blocked using her as the attacker in anomaly modes). Two Game8-era errors were corrected the same day (see the M2 notes): the M2 stunned bonus is 20 points not 10, and its 15% is ordinary DMG% not a DMG-taken entry. Her base Malicious Complaint stun multiplier is CONFIRMED 30% with +2s (the old '35%/+3s' claim was wrong). Core stat boosts not modeled. NEW 2026-07-29: her Additional Ability's SELF half (EX Special CRIT DMG +50%) is now modeled as 'additional_ability' - it coexists with the squad-facing 'Overwhelmingly Positive' team buff. NOT MODELED, needs the off-field-damage feature: the same ability makes a heavy hit from EX Rock / Scissors / Paper! deal a BONUS instance scaled off the PREVIOUS squad member - 320% of an Attack Agent's ATK, or 400% of a Rupture Agent's Sheer Force - so a meaningful slice of her damage comes from the teammate's stats, not hers. Her full kit incl. self-only mindscapes (M4 flat ATK during Overwhelmingly Positive) is modeled under 'mindscapes' for when SHE is the attacker; M3/M5 are motion values. M1/M2 exist both as mindscapes (attacker role) and team_buffs (support role) - never apply both at once. M6 Truth is OFF-FIELD DAMAGE (see its note for the tick count and damage type)."
     },
     "piper": {
       "name": "Piper Wheel",
@@ -1308,7 +1317,7 @@
         "2": {
           "name": "\"Light Absorption Technique\"",
           "max_stacks": 1,
-          "effects": [ { "kind": "def_red", "value": 0.20 } ],
+          "effects": [ { "kind": "pen_ratio", "value": 0.20 } ],
           "note": "SELF part: while her Besiege is active, her DMG ignores 20% of enemy DEF (multiplies enemy DEF in the DEF zone). The Vanguard's copy is the 'M2: Vanguard DEF ignore' team buff. RIDER not modeled: each 5 Energy consumed by EX Special: Raining Iron Petals gives the FOLLOWING Slaughter +5% DMG (up to 120 Energy = +120% on that one hit) - enter as external DMG% when measuring that specific follow-up. Datamine mindscapeParams[1] [0.2, 60, 120, 5, 0.05]."
         },
         "3": {
@@ -1353,7 +1362,7 @@
         {
           "name": "M2: Vanguard DEF ignore (Besiege)",
           "max_stacks": 1,
-          "effects": [ { "kind": "def_red", "value": 0.20 } ],
+          "effects": [ { "kind": "pen_ratio", "value": 0.20 } ],
           "note": "Requires Seed at Mindscape 2 (Light Absorption Technique). While Besiege is active on the Vanguard: their DMG ignores 20% of enemy DEF. Check together with the Besiege buff. Same effect as her M2 self part: they apply to DIFFERENT characters, so both can be active in a real team. Datamine mindscapeParams[1] [0.2, ...]."
         }
       ],
@@ -1979,7 +1988,7 @@
         },
         "3": {
           "name": "The Best Partner",
-          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled. (Raises her Special skill level, which slightly raises the Darkbreaker Sheer Force cap - covered in that buff's note.)"
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled. BUT her EX Special level also raises the Darkbreaker Sheer Force cap: 900 (Lv. 12) -> 948 at M3 -> 996 at M5 (Lin-0). Entering the in-game TOOLTIP value as 'darkbreaker_sheer_force' captures this automatically at any skill level."
         },
         "4": {
           "name": "Late-Night Hours",
@@ -1987,7 +1996,7 @@
         },
         "5": {
           "name": "Dream Watcher",
-          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled. Like M3 it raises the Darkbreaker Sheer Force cap (996 at M5); the in-game tooltip value covers it."
         },
         "6": {
           "name": "The Never-Ending Journey",
@@ -2113,7 +2122,12 @@
         },
         "6": {
           "name": "Chief Angel",
-          "note": "Windbite refund on consumption (6s cooldown) and +20% Wind Anomaly Buildup - resource/buildup, not modeled. Re-applying Windswept over an active one: the new burst's DMG +2.5% per remaining second, cap +40% - this SCALES the Windswept base, so use the multiplier override at 12.5 x up to 1.40 = up to 1750 (1750%) in wind Anomaly mode."
+          "max_stacks": 16,
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.025,
+              "modes": ["anomaly"], "element": "wind" }
+          ],
+          "note": "Re-applying Windswept over an ACTIVE Windswept: the new instance's DMG +2.5% per SECOND REMAINING on the old one, cap +40% (nanoka 1561: 'the new Windswept's DMG increases based on the remaining duration of the previous'). Enter the remaining seconds as stacks (0-16). MODELED 2026-07-29 in the Anomaly Buff bracket - it buffs Windswept DMG, not the base multiplier, so per Lin-0 it does NOT feed allies' Ablooms (it does feed her own). Supersedes the old 'override the multiplier at 12.5 x 1.40' note. The Windbite refund (6s cooldown) and +20% Wind Anomaly Buildup are resource/buildup only."
         }
       },
       "team_buffs": [
@@ -2154,6 +2168,148 @@
       ],
       "default_engine": "joyau_dore",
       "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = a SEPARATE wind-anomaly instance (its own popup) at its OWN multiplier (cyclones 145%/255%, Ultimate 680%): the stated % IS the anomaly multiplier, NOT a scale on the 12.5 Windswept base - calculate as wind Anomaly mode with the multiplier OVERRIDE (145/255/680). CONFIRMED in-game 2026-07-04 (calibration #5). VORTEX ROLE (added 2026-07-04): a physical/other-element Vortex is dealt as the INFUSED anomaly and scales off the infused-anomaly carrier's stats (e.g. Piper) - set that agent as the on-field attacker; Velina's Windswept/Vortex AMPLIFIERS then apply via her 'team_buffs' (her ability +10%, M1 20% RES ignore, M2 +15%, Windbite +150%). Her attacker-role kit (core_passive / additional_ability / mindscapes) and her team_buffs are the SAME effects for the two roles - never apply both at once. Joyau Dore's squad AP (+60 at 2 stacks) reaches Velina herself (squad buffs apply to the wearer too, since 2026-07-04) - toggle it via the on-field engine squad-buff control. Its squad-facing Vortex/Windswept DMG stacks are NOT yet modeled as a squad buff (squad_buffs lack the anomaly_buff bracket) - enter those as external Anomaly-buff % for now. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
+    },
+    "remielle": {
+      "name": "Remielle Dan",
+      "attribute": "lumiflux",
+      "specialty": "anomaly",
+      "faction": "covenant_of_dayat",
+      "level": 60,
+      "base_hp": 7482,
+      "base_atk": 748,
+      "base_def": 600,
+      "impact": 83,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 115,
+      "anomaly_proficiency": 116,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_proficiency": 54 },
+      "mindscapes": {
+        "1": {
+          "name": "Naive Oath",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.50 } ],
+          "note": "LUMINIZE ONLY: her Luminize damage ignores 50% of the target's All-Attribute RES. There is no 'luminize' skill tag, so this is stored ungated - tick it ONLY when the calculated hit IS a Luminize instance (the Voidflare payload fired by Rainbow's End / Fleeting Grace / Ultimate / Assist), never for her ordinary hits. The 3 special Voidflares on entry and the 200 Decibels are resource-only; the squad-facing Anomaly DMG +10% during Phase Flow is the 'M1: squad Anomaly DMG (Phase Flow)' team buff."
+        },
+        "2": {
+          "name": "Fall Into the Noise",
+          "note": "Refringe Coefficient +20 percentage points - modeled as the 'Refringe: +20% rider (M2)' team buff, tick it there. The squad-facing 15% DEF ignore on Prismatic targets (it covers Luminize too) is the 'M2: squad DEF ignore (Prismatic)' team buff. The faster Phase Flow auto-attacks are buildup only."
+        },
+        "3": {
+          "name": "The Garden of Diverging Time",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "The Long Goodbye",
+          "note": "Luminize DMG multiplier +12% - a MOTION VALUE increase, not modeled (project convention): enter the higher multiplier by hand (x1.12 on the Luminize MV). The special-Voidflare refill is resource-only."
+        },
+        "5": {
+          "name": "To Drink Forgetfulness",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Lone Feather's Endless Flight",
+          "note": "Rainbow's End / Fleeting Grace trigger Luminize TWICE (run the Luminize calculation twice, or double its MV), and a 4th-Basic hit grants 3 special Voidflares worth 25% of the on-entry ones - instance counts and resources, not stat buffs, so nothing is modeled."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Refringe: teammate Anomaly DMG (AP-scaled)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "refringe",
+              "modes": ["anomaly", "disorder", "vortex"],
+              "scaling": { "input": "anomaly_proficiency", "per_step": 1, "per_value": 0.0002 } }
+          ],
+          "note": "HER SIGNATURE MECHANIC. While an enemy carries Lumiflux Buildup, the NEXT Anomaly a teammate inflicts is Refringed: its Anomaly Effect Strength - and so its whole damage - is multiplied by (1 + Refringe Coefficient). Base coefficient = 0.02% per point of REMIELLE's Anomaly Proficiency (enter her panel AP as 'anomaly_proficiency'; 1,200 AP = +24%). Reaches everything derived from the anomaly: Disorder, Vortex, Abloom - and her own Luminize. Its own multiplicative zone, so it does NOT dilute against 'Anomaly DMG +X%' buffs (Lin-0/Mobalytics: 'a unique multiplier... the only source of saturation on this is Remielle herself'). Tick the two riders below on top when they apply - the coefficient's parts are ADDITIVE percentage points. NEVER tick this when REMIELLE herself is the calculated attacker: her Luminize already inherits the Refringe baked into the stored Voidflare.",
+          "condition": { "teammate_specialty_any_of": ["anomaly"] }
+        },
+        {
+          "name": "Refringe: +10% rider (3 Anomaly squad)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "refringe", "value": 0.10,
+              "modes": ["anomaly", "disorder", "vortex"] }
+          ],
+          "note": "Core passive rider: with THREE Anomaly characters in the squad (her standard shell), the Refringe Coefficient gains a FIXED +10 percentage points - an addition, not a x1.10 (Lin-0: 'it gets a fixed 10% boost'). Tick together with the AP-scaled base entry."
+        },
+        {
+          "name": "Refringe: +20% rider (M2)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "refringe", "value": 0.20,
+              "modes": ["anomaly", "disorder", "vortex"] }
+          ],
+          "note": "Requires Remielle at Mindscape 2 (Fall Into the Noise): the Refringe Coefficient gains a further FIXED +20 percentage points. Additive with the base and the 3-Anomaly rider, so all three tick together at M2 in a triple-Anomaly squad (1,200 AP -> 0.24 + 0.10 + 0.20 = x1.54). Lin-0 calls this 'a near 20% increase to all team Anomaly damage', which only holds for a percentage-point addition - a x1.20 on the coefficient would be worth ~4%."
+        },
+        {
+          "name": "Invitation to Bloom: squad ATK (1 Anomaly agent)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.06, "cap": 1600 } }
+          ],
+          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing her Faction (Covenant of Dayat). With exactly ONE Anomaly character in the squad: on entering the battlefield, ALL squad members gain flat ATK = 6% of REMIELLE's initial ATK (cap 1,600). Enter HER panel ATK as 'initial_atk'. The three squad-size variants REPLACE each other - tick exactly one. Flat ATK added after the panel bracket (Zhao analogy, validation #4)."
+        },
+        {
+          "name": "Invitation to Bloom: squad ATK (2 Anomaly agents)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.12, "cap": 1600 } }
+          ],
+          "note": "Same ability with TWO Anomaly characters in the squad: squad flat ATK = 12% of Remielle's initial ATK (cap 1,600). Never tick together with the 1- or 3-Anomaly variant."
+        },
+        {
+          "name": "Invitation to Bloom: squad ATK (3 Anomaly agents)",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "effects": [
+            { "kind": "flat_atk",
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.40, "cap": 1600 } }
+          ],
+          "note": "Same ability in a FULL triple-Anomaly squad (her intended team): squad flat ATK = 40% of Remielle's initial ATK, cap 1,600 (cap reached at 4,000 panel ATK). Never tick together with the 1- or 2-Anomaly variant. The Daze +35% half applies to her Phase Flow Daze only - buildup, not modeled."
+        },
+        {
+          "name": "Phase Flow: squad DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.18 } ],
+          "note": "Special Attack (Ode to Dawn - Radiant Turn): on entering the Phase Flow state, ALL squad members' DMG +18% for 60s, refreshed on repeat - effectively permanent once she is off-field. Stored at Special Lv. 12 (project convention); general formula 1.5% x Special Lv."
+        },
+        {
+          "name": "M1: squad Anomaly DMG (Phase Flow)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "anomaly_buff", "value": 0.10,
+              "modes": ["anomaly", "disorder", "vortex"] }
+          ],
+          "note": "Requires Remielle at Mindscape 1 (Naive Oath). While she is in the Phase Flow state, the OTHER squad members' Attribute Anomaly DMG +10% - check together with the Phase Flow squad DMG buff. Her OWN Luminizes do not benefit (Lin-0: the bonus only exists during Phase Flow, and Anomaly DMG bonuses are checked at trigger time). Joins the Anomaly/Disorder Buff Multiplier bracket (PROVISIONAL)."
+        },
+        {
+          "name": "M2: squad DEF ignore (Prismatic)",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "pen_ratio", "value": 0.15,
+              "modes": ["anomaly", "disorder", "vortex"] }
+          ],
+          "note": "Requires Remielle at Mindscape 2 (Fall Into the Noise). When an ANOMALY squadmate deals Anomaly DMG to an enemy carrying Prismatic (applied whenever Remielle applies Lumiflux Buildup; persists 8s after Prismatic ends), that attack ignores 15% of the target's DEF - modeled as attacker-side PEN Ratio in the DEF zone, anomaly modes only."
+        }
+      ],
+      "luminize": {
+        "ap_scaling": 0.002,
+        "m4_multiplier": 1.12,
+        "max_voidflares": 3,
+        "note": "LUMINIZE MODE data. Each stored Voidflare fires one Attribute Anomaly instance whose multiplier is the skill's own value x (1 + ap_scaling x REMIELLE's Anomaly Proficiency) - MULTIPLICATIVE, not additive (Lin-0's worked example: 500 AP turns a 320% Assist into 640%, not 420%). x1.12 more at her M4. Multipliers are max skill level (project convention); all four confirmed by Lin-0 2026-07-29. The instance scales off the TRIGGERING TEAMMATE's Effect Strength, so the calculation runs with that teammate as the attacker. A Voidflare stores that anomaly's Effect Strength AND element but NOT its type (Lin-0: a Voidflare from Jane's Assault gives a Physical Luminize, not Assault DMG), and Ablooms / Disorders / Vortexes never create one - only an anomaly APPLICATION does. Voidflares from different teammates therefore differ: run one calculation per source agent and sum them.",
+        "skills": {
+          "assist": { "name": "Assist: Flower & Feather Dance", "multiplier": 3.20, "consumes_voidflares": false, "note": "Entry Assist, auto-used on her next normal switch-in with 3 Voidflares stored. Reuses the Voidflares (does not consume them) and extends Stun by 3s." },
+          "ultimate": { "name": "Ultimate: Dazzling Curtain Call", "multiplier": 3.36, "consumes_voidflares": false, "note": "Her highest Luminize multiplier and it does NOT consume Voidflares - always use it before the enhanced Basic." },
+          "fleeting_grace": { "name": "Basic Attack: Fleeting Grace", "multiplier": 3.20, "consumes_voidflares": true, "note": "The UPGRADED enhanced Basic (needs the Luminous Reflection state from her Entry Assist or Chain Attack). Consumes all stored Voidflares. Doubled at M6." },
+          "rainbows_end": { "name": "Basic Attack: Rainbow's End", "multiplier": 1.60, "consumes_voidflares": true, "note": "The plain enhanced Basic, used when Luminous Reflection is not active - half of Fleeting Grace. Consumes all stored Voidflares. Doubled at M6." }
+        }
+      },
+      "default_engine": "ode_of_resurrected_wings",
+      "_note": "FIRST LUMIFLUX AGENT (S-rank anomaly sub-DPS / buffer, added 2026-07-29 - release day; nanoka 3.1 character 1581 for the numbers, kit behaviour cross-verified against Lin-0's Mobalytics guide the same day; frzyc has no entry yet, so everything stays PROVISIONAL). Lv. 60 stats computed from the nanoka growth table (hp 602 + 8.16391/lv, atk 124 + 6.82140/lv, def 48 + 6.55240/lv, plus promotion totals): HP 7482.71, ATK 748.46, DEF 600.59 -> stored 7482/748/600; Impact 83, AM 115, AP 116, ER 1.2; max core ATK+75, AP+54. The same formula reproduces Nekomata's stored 7560/835/587 exactly, so the extraction is sound. ATTRIBUTE MUTATION ('Attribute Flux'): her attribute is 'lumiflux', which is NOT an enemy-RES element and has NO disc/stat support of its own (there is no Lumiflux DMG% slot-5 main) - her damage inherits the attribute of the NEXT agent in the squad, so every calculation asks for a 'mutated_element'. That choice drives the boss RES, the slot-5 Attribute DMG% match, element-gated buffs, and WHICH anomaly her hits build. REFRINGE (modeled 2026-07-29 as the dedicated 'refringe' zone): while the target carries Lumiflux Buildup, a teammate's next Anomaly is Refringed and its whole damage multiplied by (1 + coefficient), where the coefficient = 0.02% x HER Anomaly Proficiency, +10 points with 3 Anomaly squadmates, +20 points at M2 (all ADDITIVE - see the three 'Refringe: ...' team buffs). It reaches Disorder, Vortex and Abloom too. LUMINIZE / VOIDFLARE - her own damage, NOT modeled as a mode; use this recipe. Each Refringe she triggers while in Phase Flow stores a Voidflare (max 3) holding that anomaly's Effect Strength AND element. Her skills then fire ONE Luminize per stored Voidflare, each an Attribute Anomaly instance that scales with the STORED anomaly - i.e. with the TRIGGERING TEAMMATE's ATK / DMG% / PEN, not hers (only the Anomaly DMG Bonus stat and the multiplier come from Remielle). So: run an anomaly calculation with THAT TEAMMATE as the attacker, dealt as the stored Voidflare's element, and 'anomaly_mult_override' = the Luminize multiplier. Luminize multipliers at max skill levels (all four confirmed by Lin-0): Rainbow's End 1.60, Fleeting Grace 3.20, Ultimate 3.36, Assist Flower & Feather Dance 3.20 - each MULTIPLIED by (1 + 0.002 x her AP) from the core passive, NOT increased by it (Lin-0's worked example: at 500 AP a 320% Assist becomes 640%, not 420%; at 1,200 AP the factor is x3.4). Then x1.12 at M4, and twice per enhanced Basic at M6. Only the Basics consume Voidflares; Assist and Ultimate reuse them. A Luminize keeps the stored anomaly's ELEMENT but not its type (a Voidflare from Jane's Assault deals Physical Luminize DMG, not Assault DMG), so anomaly-specific buffs never apply to it - only general Anomaly DMG ones. MODELED: Refringe (3 entries), the Invitation to Bloom squad ATK (three squad-size variants - tick exactly one; 40% at 3 Anomaly agents caps at 4,000 of her ATK), Phase Flow squad DMG +18%, M1 squad Anomaly DMG +10% / Luminize 50% RES ignore, M2 Prismatic 15% DEF ignore. Prismatic's +15% Anomaly Buildup Rate is buildup speed only (project convention), as is the Phase Flow Daze scaling. No Potential in the datamine yet."
     },
     "caesar": {
       "name": "Caesar King",
