@@ -2,8 +2,8 @@
 
 Damage calculator and gear optimizer for **Zenless Zone Zero**: build a
 Lv. 60 agent, point it at a boss, and see exactly what a hit — or an
-anomaly, Disorder, Vortex, or Sheer-damage proc — deals, then let the
-optimizer search your saved discs for a better build.
+anomaly, Disorder, Vortex, Sheer-damage proc, or Luminize — deals, then
+let the optimizer search your saved discs for a better build.
 
 > **A personal note before anything else.** This is a completely
 > personal project, made mostly for my own use — for fun, and honestly,
@@ -16,6 +16,19 @@ optimizer search your saved discs for a better build.
 > Unofficial fan tool, not affiliated with or endorsed by HoYoverse.
 > Zenless Zone Zero and all game content are trademarks of
 > miHoYo/HoYoverse. Code licensed under the [MIT License](LICENSE).
+
+## Recent additions (patch 3.1)
+
+- **Remielle Dan**, the first **Lumiflux** agent, with the whole of the
+  attribute's machinery: **Attribute Mutation**, the **Refringe**
+  multiplier, and a dedicated **Luminize** calculation mode. See
+  [Lumiflux agents](#lumiflux-agents-remielle) for how to drive it.
+- Her signature **Ode of Resurrected Wings** and the craftable
+  **Weeping Gemini** (whose stacking Anomaly Proficiency is a new kind of
+  engine buff), plus the **Feathered Fate** drive set.
+- The optimizer now works in Luminize mode too.
+- Every dropdown (agents, W-Engines, bosses, sets, stats…) is sorted
+  alphabetically.
 
 ## Use it online (no install)
 
@@ -61,6 +74,8 @@ inputs are remembered between sessions.
   passives apply automatically at the chosen rank; anything not modeled
   is shown as a note telling you what to enter manually as an external
   buff. A matchup line shows the resulting RES/DEF/stun numbers.
+  Picking a **Lumiflux** agent adds a **Mutated attribute** dropdown —
+  see below.
 - **Agent Kit** — the agent's conditionals as real controls: core
   passive toggle, Additional Ability stacks (with a live "condition
   met" hint based on your team), mindscape (M1–M6) toggles/stacks, and
@@ -97,6 +112,7 @@ inputs it uses, so nothing stale leaks between modes.
 | **Disorder burst** | Triggering a second anomaly while one is active: pick the replaced element and its remaining/elapsed time. |
 | **Vortex burst** | The Windswept + second-anomaly interaction (wind teams). |
 | **Sheer damage (Rupture)** | Sheer Force agents: Sheer damage crits like a direct hit, so it gets the full crit table, plus Sheer-specific inputs (flat Sheer Force, Sheer DMG%). |
+| **Luminize (Remielle)** | Remielle's own damage, fired from stored Voidflares. Its own mode because a Luminize scales off a *teammate's* anomaly — see below. |
 
 Mode-specific caveats worth knowing:
 
@@ -110,6 +126,56 @@ Mode-specific caveats worth knowing:
 - **Disorder and Vortex numbers are provisional** pending more in-game
   calibration; the Windswept "+10% DMG taken" bracket likewise.
 - Off-field damage (assists and the like) is not modeled yet.
+
+### Lumiflux agents (Remielle)
+
+Lumiflux is a seventh attribute with no RES of its own and no discs that
+buff it, so it works differently in three places.
+
+**1. Attribute Mutation.** Her damage counts as the attribute of the
+**next agent in your squad**. Selecting her reveals a **Mutated
+attribute** dropdown; that choice drives the boss RES, whether a slot-5
+Attribute DMG% disc counts, element-gated buffs, and which anomaly her
+hits build. The control only exists for Lumiflux agents and is ignored
+entirely for everyone else.
+
+**2. Refringe** is her signature multiplier: while an enemy carries
+Lumiflux Buildup, the next anomaly a **teammate** inflicts is enhanced by
+her *Refringe Coefficient* — `0.02% × her Anomaly Proficiency`, plus a
+flat `+10%` with three Anomaly agents and `+20%` at her M2 (these add,
+they don't multiply). Use it by putting Remielle in the **Team** card and
+ticking the three `Refringe:` buffs, entering her panel AP. It applies in
+every anomaly-family mode and to everything derived from the anomaly —
+Disorder, Vortex, Abloom — and never to direct hits. It occupies its own
+multiplier zone, shown as **Refringe** on the Zones line.
+
+**3. Luminize mode** computes her own damage. The counter-intuitive part:
+
+> **The agent you select is the teammate whose Refringed anomaly the
+> Voidflare stored — not Remielle.** A Luminize inherits *their* ATK,
+> DMG% and PEN; only the multiplier and the Anomaly DMG bonus are hers.
+> She stays in the Team card as a support.
+
+Then pick which of her skills fires it, enter her AP, the number of
+stored Voidflares, and tick M4/M1 if you own them. The mode computes the
+multiplier (`skill value × (1 + 0.2% × her AP)`, ×1.12 at M4) and, most
+importantly, **swaps the Anomaly-DMG bracket over to her** — the
+attacker's own anomaly-DMG buffs are excluded automatically and listed as
+such in the buff breakdown, because only *general* Anomaly DMG bonuses
+reach a Luminize.
+
+Worth knowing about Voidflares: **all stored ones fire at once** (3 stored
+= 3 Luminize instances), and only the enhanced Basics consume them — the
+Entry Assist and the Ultimate leave them intact, so one set of three can
+pay out three times in a rotation. A Voidflare stores the source anomaly's
+Effect Strength *and element* but not its type, and only an anomaly
+**application** ever creates one (Ablooms and Disorders don't). If your
+stored Voidflares came from different teammates, set the count to 1 and
+run once per source agent, then add the results.
+
+⚠️ Everything Lumiflux is **provisional**: the attribute shipped with
+patch 3.1 and none of it has been calibrated against in-game damage
+popups yet.
 
 ## Discs, inventory, and loadouts
 
@@ -150,7 +216,14 @@ delta, which slots changed, its full verified results table, and an
 **Objectives** follow the calculated mode: direct and Sheer modes offer
 average / crit / non-crit damage, each in normal or stunned state;
 anomaly modes offer full-duration or per-proc damage, normal or stunned
-(default: full duration).
+(default: full duration); Luminize mode offers one Voidflare or the whole
+stored volley.
+
+In **Luminize mode the optimizer tunes the teammate's discs**, not
+Remielle's — which is the right target, since a Luminize inherits that
+teammate's ATK/DMG%/PEN, and the same build also raises their own anomaly
+damage. Remielle's side (the multiplier, her Anomaly DMG bonus, Refringe)
+is constant during the search. The page states this above the controls.
 
 **Options:**
 
