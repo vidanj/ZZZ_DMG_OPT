@@ -75,6 +75,20 @@ KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
 #: An effect without ``modes`` applies in every mode (original behavior).
 KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
 
+#: Kit scaling inputs (``EffectScaling.input``) whose value is a PERCENT
+#: stat, and so is read here as a fraction — 0.78 is 78% CRIT Rate. Every
+#: other input (initial_atk, initial_max_hp, impact, initial_energy_regen,
+#: sheer_force, ...) is the raw panel number.
+PERCENT_SCALING_INPUTS = ("initial_crit_rate", "initial_crit_dmg",
+                          "pen_ratio")
+
+#: Above this, a percent-typed scaling input can only be a percentage
+#: typed into a fraction field (a panel stat of 500% is not a build) —
+#: worth an error naming the unit, because the value would otherwise pass
+#: silently: kit scaling caps hide it in the damage number, while the
+#: optimizer turns it into a panel minimum no build can ever meet.
+PERCENT_SCALING_INPUT_MAX = 5.0
+
 #: The Lumiflux attribute (Remielle, 3.1): a special attribute OUTSIDE the
 #: enemy-RES element list. Lumiflux damage undergoes ATTRIBUTE MUTATION —
 #: it is treated as the attribute of the next agent in the squad — so a

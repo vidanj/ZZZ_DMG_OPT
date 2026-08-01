@@ -647,12 +647,17 @@ def _panel_constants(agent: Agent, engine: Engine, consts: Constants) -> dict:
 
 def _panel_feasible(
     min_panel_stats: dict[str, float], panel: dict, buckets: list[float],
+    report: list | None = None,
 ) -> bool:
     """Whether a bucket total meets every PANEL minimum (see
     ``OptimizeOptions.min_panel_stats``). Compositions mirror
     :func:`~.api.panel_stats`; assumed 4pc stacks that grant sheet stats
     are the only (over-crediting) approximation. Monotone in every
-    bucket, so the search bounds stay exact."""
+    bucket, so the search bounds stay exact.
+
+    ``report`` (diagnosis only, never the hot path) collects every
+    shortfall as ``("panel", stat, total, minimum)`` and keeps checking
+    instead of returning at the first miss."""
     for stat, minimum in min_panel_stats.items():
         if stat == "ATK":
             total = (panel["atk_base"] * (1.0 + buckets[_B_ATK_PCT])
@@ -689,8 +694,10 @@ def _panel_feasible(
                   + buckets[_B_HP_FLAT])
             total = atk * panel["sf_atk_conv"] + hp * panel["sf_hp_conv"]
         if total < minimum - 1e-12:
-            return False
-    return True
+            if report is None:
+                return False
+            report.append(("panel", stat, total, minimum))
+    return not report
 
 
 #: Kit scaling inputs that ARE panel stats of their owner (agents.json
@@ -780,6 +787,113 @@ def _baseline_mains_ok(
         equipped.get(slot) is not None
         and _main_matches(equipped[slot], main, attribute)
         for slot, main in slot_main_stats.items()
+    )
+
+
+#: Constraint stats the front ends show as percentages (fractions here).
+_PERCENT_STATS = frozenset({"CRIT Rate", "CRIT DMG", "PEN Ratio"})
+
+#: Constraint stat -> the kit scaling input(s) that can auto-derive a
+#: panel minimum for it (reverse of ``_SCALING_INPUT_STAT``), so the
+#: diagnosis can name the box the claimed value came from.
+_STAT_SCALING_INPUTS: dict[str, tuple[str, ...]] = {
+    stat: tuple(name for name, s in _SCALING_INPUT_STAT.items() if s == stat)
+    for stat in set(_SCALING_INPUT_STAT.values())
+}
+
+
+def _fmt_stat(stat: str, value: float) -> str:
+    """One constraint stat in the units the front ends display."""
+    if stat in _PERCENT_STATS:
+        return f"{value * 100:,.1f}%"
+    return f"{value:,.1f}" if value % 1 else f"{value:,.0f}"
+
+
+def _baseline_reasons(
+    shortfalls: list,
+    *,
+    discs,
+    equipped: dict[int, Disc],
+    required: str | None,
+    baseline_counts: dict[str, int],
+    disc_sets: dict[str, DiscSet],
+    slot_main_stats: dict[int, str],
+    attribute: str,
+    sets_only: bool,
+) -> list[str]:
+    """Why the CURRENT build fails the requirements, one phrase each.
+
+    Every phrase carries the build's actual value next to the required
+    one: a bare list of the constraints in force (the old message)
+    cannot tell the user WHICH one to relax, and an auto-derived panel
+    minimum isn't even a constraint they typed.
+    """
+    reasons = []
+    if required is not None and baseline_counts.get(required, 0) < 4:
+        name = disc_sets[required].name if required in disc_sets else required
+        reasons.append(
+            f"it wears {baseline_counts.get(required, 0)} piece(s) of "
+            f"{name}, not the required 4"
+        )
+    for kind, stat, total, minimum in shortfalls:
+        if kind == "panel":
+            inputs = " / ".join(_STAT_SCALING_INPUTS.get(stat, ()))
+            source = (f" (claimed by the '{inputs}' kit input)" if inputs
+                      else "")
+            reasons.append(
+                f"its panel {stat} is {_fmt_stat(stat, total)}, below the "
+                f"{_fmt_stat(stat, minimum)} it claims{source}"
+            )
+        else:
+            reasons.append(
+                f"its {stat} is {_fmt_stat(stat, total)}, below the "
+                f"required {_fmt_stat(stat, minimum)}"
+            )
+    for slot, main in slot_main_stats.items():
+        disc = equipped.get(slot)
+        if disc is None:
+            reasons.append(f"slot {slot} is empty, so it cannot have the "
+                           f"required {main} main stat")
+        elif not _main_matches(disc, main, attribute):
+            reasons.append(f"its slot {slot} main stat is {disc.main_stat}, "
+                           f"not the required {main}")
+    if sets_only and not _sets_coverage_ok(discs):
+        counts: dict[str, int] = {}
+        for disc in discs:
+            if disc.disc_set is not None:
+                counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+        loose = sorted(
+            disc.slot for disc in discs
+            if disc.disc_set is None or counts[disc.disc_set] < 2
+        )
+        reasons.append(
+            f"slot(s) {', '.join(map(str, loose))} complete no 2-piece set "
+            f"bonus (2pc priority)"
+        )
+    return reasons
+
+
+def _infeasible_error(
+    reasons: list[str], budget_exhausted: bool, combo_budget: int,
+) -> OptimizeError:
+    """The 'nothing found' error, explaining what the current build
+    misses so the user knows which requirement to relax."""
+    if budget_exhausted:
+        return OptimizeError(
+            f"Search budget exhausted ({combo_budget:,} builds) before any "
+            f"acceptable build was found; lock slots, add requirements, or "
+            f"use the fast search"
+        )
+    if reasons:
+        return OptimizeError(
+            f"No combination of your saved discs meets the requirements, "
+            f"and your current build does not either: "
+            f"{'; '.join(reasons)}. Relax the requirement(s) above and "
+            f"optimize again"
+        )
+    return OptimizeError(
+        "No combination of your saved discs meets the requirements; "
+        "relax them and optimize again"
     )
 
 
@@ -1381,13 +1495,18 @@ def optimize(
         defense = level_coef / (level_coef + eff_def)
         return atk_total * crit_mult * bonus * defense * const_mult, atk_total
 
-    def feasible(buckets: list[float], atk_total: float) -> bool:
+    def feasible(buckets: list[float], atk_total: float,
+                 report: list | None = None) -> bool:
         """Whether a bucket total meets every minimum: combat-stat
         ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat)."""
+        where self-scaling kit inputs land — panel, never combat).
+
+        ``report`` (diagnosis only, never the hot path) collects every
+        shortfall as ``(kind, stat, total, minimum)``."""
         if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets):
-            return False
+                options.min_panel_stats, panel_consts, buckets, report):
+            if report is None:
+                return False
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
                 total = atk_total
@@ -1415,8 +1534,10 @@ def optimize(
                 total = ((am_const + buckets[_B_AM])
                          * (1.0 + buckets[_B_AM_PCT]))
             if total < minimum - 1e-12:
-                return False
-        return True
+                if report is None:
+                    return False
+                report.append(("combat", stat, total, minimum))
+        return not report
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -1491,8 +1612,9 @@ def optimize(
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_atk = evaluate(base_bb, (0.0, 0.0))
+    baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_atk)
+        feasible(base_bb, baseline_atk, baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
@@ -1553,27 +1675,19 @@ def optimize(
     options_verified = [verify(combo, value) for value, combo in unique]
 
     if not options_verified and not baseline_feasible:
-        parts = []
-        if required is not None:
-            parts.append(f"the required 4-piece set "
-                         f"({disc_sets[required].name})")
-        if options.min_stats:
-            parts.append("the minimum-stat constraints")
-        if options.min_panel_stats:
-            parts.append("the claimed panel values (kit scaling inputs)")
-        if options.slot_main_stats:
-            parts.append("the required main stats")
-        if options.sets_only:
-            parts.append("the 2pc-priority set coverage")
-        if exhausted:
-            raise OptimizeError(
-                f"Search budget exhausted ({options.combo_budget:,} "
-                f"builds) before any acceptable build was found; lock "
-                f"slots, add requirements, or use the fast search"
-            )
-        raise OptimizeError(
-            f"No combination of your saved discs meets "
-            f"{' and '.join(parts)}; relax them and optimize again"
+        raise _infeasible_error(
+            _baseline_reasons(
+                baseline_shortfalls,
+                discs=config.discs,
+                equipped=equipped,
+                required=required,
+                baseline_counts=baseline_counts,
+                disc_sets=disc_sets,
+                slot_main_stats=options.slot_main_stats,
+                attribute=attr,
+                sets_only=options.sets_only,
+            ),
+            exhausted, options.combo_budget,
         )
 
     best = options_verified[0] if options_verified else None
@@ -1936,13 +2050,18 @@ def optimize_anomaly(
                  * bonus * set_abuff * defense * outer)
         return value, (atk_total, ap_total)
 
-    def feasible(buckets: list[float], aux: tuple) -> bool:
+    def feasible(buckets: list[float], aux: tuple,
+                 report: list | None = None) -> bool:
         """Whether a bucket total meets every minimum: combat-stat
         ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat)."""
+        where self-scaling kit inputs land — panel, never combat).
+
+        ``report`` (diagnosis only, never the hot path) collects every
+        shortfall as ``(kind, stat, total, minimum)``."""
         if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets):
-            return False
+                options.min_panel_stats, panel_consts, buckets, report):
+            if report is None:
+                return False
         atk_total, ap_total = aux
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
@@ -1971,8 +2090,10 @@ def optimize_anomaly(
                 total = ((am_const + buckets[_B_AM])
                          * (1.0 + buckets[_B_AM_PCT]))
             if total < minimum - 1e-12:
-                return False
-        return True
+                if report is None:
+                    return False
+                report.append(("combat", stat, total, minimum))
+        return not report
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -2053,8 +2174,9 @@ def optimize_anomaly(
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
+    baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_aux)
+        feasible(base_bb, baseline_aux, baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
@@ -2106,27 +2228,19 @@ def optimize_anomaly(
     options_verified = [verify(combo, value) for value, _, combo in ranked]
 
     if not options_verified and not baseline_feasible:
-        parts = []
-        if required is not None:
-            parts.append(f"the required 4-piece set "
-                         f"({disc_sets[required].name})")
-        if options.min_stats:
-            parts.append("the minimum-stat constraints")
-        if options.min_panel_stats:
-            parts.append("the claimed panel values (kit scaling inputs)")
-        if options.slot_main_stats:
-            parts.append("the required main stats")
-        if options.sets_only:
-            parts.append("the 2pc-priority set coverage")
-        if exhausted:
-            raise OptimizeError(
-                f"Search budget exhausted ({options.combo_budget:,} "
-                f"builds) before any acceptable build was found; lock "
-                f"slots, add requirements, or use the fast search"
-            )
-        raise OptimizeError(
-            f"No combination of your saved discs meets "
-            f"{' and '.join(parts)}; relax them and optimize again"
+        raise _infeasible_error(
+            _baseline_reasons(
+                baseline_shortfalls,
+                discs=config.discs,
+                equipped=equipped,
+                required=required,
+                baseline_counts=baseline_counts,
+                disc_sets=disc_sets,
+                slot_main_stats=options.slot_main_stats,
+                attribute=attr,
+                sets_only=options.sets_only,
+            ),
+            exhausted, options.combo_budget,
         )
 
     best = options_verified[0] if options_verified else None
@@ -2416,13 +2530,18 @@ def optimize_sheer(
         value = sf * crit_mult * bonus * sheer_mult * const_mult
         return value, (atk_total, hp_total, sf)
 
-    def feasible(buckets: list[float], aux: tuple) -> bool:
+    def feasible(buckets: list[float], aux: tuple,
+                 report: list | None = None) -> bool:
         """Whether a bucket total meets every minimum: combat-stat
         ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat)."""
+        where self-scaling kit inputs land — panel, never combat).
+
+        ``report`` (diagnosis only, never the hot path) collects every
+        shortfall as ``(kind, stat, total, minimum)``."""
         if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets):
-            return False
+                options.min_panel_stats, panel_consts, buckets, report):
+            if report is None:
+                return False
         atk_total, hp_total, sf = aux
         for stat, minimum in options.min_stats.items():
             if stat == "ATK":
@@ -2452,8 +2571,10 @@ def optimize_sheer(
                 total = ((am_const + buckets[_B_AM])
                          * (1.0 + buckets[_B_AM_PCT]))
             if total < minimum - 1e-12:
-                return False
-        return True
+                if report is None:
+                    return False
+                report.append(("combat", stat, total, minimum))
+        return not report
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -2527,8 +2648,9 @@ def optimize_sheer(
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
+    baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_aux)
+        feasible(base_bb, baseline_aux, baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
@@ -2590,27 +2712,19 @@ def optimize_sheer(
     options_verified = [verify(combo, value) for value, combo in unique]
 
     if not options_verified and not baseline_feasible:
-        parts = []
-        if required is not None:
-            parts.append(f"the required 4-piece set "
-                         f"({disc_sets[required].name})")
-        if options.min_stats:
-            parts.append("the minimum-stat constraints")
-        if options.min_panel_stats:
-            parts.append("the claimed panel values (kit scaling inputs)")
-        if options.slot_main_stats:
-            parts.append("the required main stats")
-        if options.sets_only:
-            parts.append("the 2pc-priority set coverage")
-        if exhausted:
-            raise OptimizeError(
-                f"Search budget exhausted ({options.combo_budget:,} "
-                f"builds) before any acceptable build was found; lock "
-                f"slots, add requirements, or use the fast search"
-            )
-        raise OptimizeError(
-            f"No combination of your saved discs meets "
-            f"{' and '.join(parts)}; relax them and optimize again"
+        raise _infeasible_error(
+            _baseline_reasons(
+                baseline_shortfalls,
+                discs=config.discs,
+                equipped=equipped,
+                required=required,
+                baseline_counts=baseline_counts,
+                disc_sets=disc_sets,
+                slot_main_stats=options.slot_main_stats,
+                attribute=attr,
+                sets_only=options.sets_only,
+            ),
+            exhausted, options.combo_budget,
         )
 
     best = options_verified[0] if options_verified else None

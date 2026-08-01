@@ -28,7 +28,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import formulas
-from .agent import LUMIFLUX, Agent, aggregate_build, load_agents
+from .agent import (
+    LUMIFLUX, PERCENT_SCALING_INPUT_MAX, PERCENT_SCALING_INPUTS, Agent,
+    aggregate_build, load_agents,
+)
 from .anomalies import AnomalyData, load_anomalies
 from .constants import Constants, load_constants
 from .discs import (
@@ -779,6 +782,19 @@ def _kit_contributions(
                         f"{'non-negative' if zero_ok else 'positive'} "
                         f"'{effect.scaling.input}' value (the buff scales "
                         f"with the owner's stat)"
+                    )
+                # Percent-stat inputs are FRACTIONS here. A percentage
+                # typed into one (100 for "100% CRIT Rate") survives the
+                # damage number — the scaling caps swallow it — but turns
+                # into a panel minimum the optimizer can never satisfy,
+                # so reject it where the unit is still obvious.
+                if (effect.scaling.input in PERCENT_SCALING_INPUTS
+                        and x > PERCENT_SCALING_INPUT_MAX):
+                    raise CalcError(
+                        f"{owner}{buff.name}: '{effect.scaling.input}' is "
+                        f"{float(x):g}, which reads as {float(x) * 100:,.0f}%"
+                        f" — this input is a FRACTION (0.78 = 78%). The web "
+                        f"page takes the percentage and converts it for you."
                     )
                 value = effect.scaling.resolve(float(x))
             else:
