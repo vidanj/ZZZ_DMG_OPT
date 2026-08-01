@@ -135,8 +135,9 @@ buff it, so it works differently in three places.
 **1. Attribute Mutation.** Her damage counts as the attribute of the
 **next agent in your squad**. Selecting her reveals a **Mutated
 attribute** dropdown; that choice drives the boss RES, whether a slot-5
-Attribute DMG% disc counts, element-gated buffs, and which anomaly her
-hits build. The control only exists for Lumiflux agents and is ignored
+Attribute DMG% disc counts, whether an element-gated 2-piece set bonus
+counts (see below), element-gated buffs, and which anomaly her hits
+build. The control only exists for Lumiflux agents and is ignored
 entirely for everyone else.
 
 **2. Refringe** is her signature multiplier: while an enemy carries
@@ -188,6 +189,17 @@ distinct substats, none equal to the main stat, at most +5 on one
 substat and 5 upgrades total. 4-piece effects with stacking parts ask
 for their active stacks.
 
+- **Element-gated 2-piece bonuses.** A set whose 2pc is an elemental
+  DMG bonus (Fanged Metal = *Physical* DMG +10%, Thunder Metal =
+  *Electric*, Polar Metal / Notes From the Chained = *Ice*, Inferno
+  Metal = *Fire*, Chaotic Metal / The Sky Ablaze = *Ether*, Wuthering
+  Salon = *Wind*, White Water Ballad = *Physical*) only counts when
+  your damage is **dealt** as that element — Attribute Mutation
+  included, so an electric-mutated Remielle gets Thunder Metal's 10%
+  and nothing from Fanged Metal. Off-element, the 2pc is worth 0 and
+  the optimizer stops valuing it. (The Sky Ablaze's 4pc CRIT DMG is
+  Ether-gated in-game as well; that one is still credited to any
+  wearer, so only build it on Ether agents.)
 - **Save** on a card stores the disc in your **inventory** (exact
   duplicates are detected and reused, never duplicated).
 - **Equip… / Browse inventory** opens the inventory modal: filter by
@@ -245,6 +257,22 @@ is constant during the search. The page states this above the controls.
   Force in Rupture mode). Note the trade-off: the best build *meeting
   the constraints* may deal less damage than your unconstrained
   current build.
+  **These are combat totals** — agent base + core + discs + set 2pc,
+  *plus* the always-on W-Engine passive, the 4-piece stacks the search
+  assumes, and kit/team buffs. The **Final stats** card is the
+  out-of-combat panel and excludes the last three, so it reads lower:
+  a build satisfying "AP ≥ 400" can show 382 there. Both numbers are
+  right; the combat one is what the damage math uses.
+- **Maximize stat** — make a stat outrank damage: the search reports the
+  build carrying the most of it among those within the *allowed damage
+  loss* (default 5%) of the best build found. For a stat the optimized
+  hit doesn't use — Remielle's Luminize scales with her Anomaly
+  Proficiency, which her direct hits ignore, so a pure damage search
+  would strip it. Same stat list as the constraints; the panel reports
+  what the stat reached and what it cost against the pure-damage
+  optimum. Ties in the stat are broken by damage. Note it runs the
+  search **twice** (best damage, then most of the stat), so expect
+  roughly double the time.
 - **Fast search** — only the top 15 discs per slot by standalone value
   are considered (equipped and required-set discs always survive the
   cut). Much faster on big inventories but **approximate**: the true

@@ -94,6 +94,7 @@
     "FANGED_METAL": {
       "name": "Fanged Metal",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "physical",
       "bonus_4pc": {
         "stat": "DMG%",
         "per_stack": 0.35,
@@ -101,7 +102,7 @@
         "auto": true,
         "note": "Whenever a squad member inflicts Assault: the equipper deals +35% DMG to the target for 12s. Generic DMG% (zenless-optimizer brackets it with the ordinary DMG% bonuses) - RAMP-UP, effectively always up after the first Assault, so auto-applied (range's floor covers the ramp)."
       },
-      "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Physical agents (assume-it-matches, like Wuthering Salon). Disorder-mode caveat: the calculator only applies build DMG% when the dealt element matches the attacker's attribute, so the 4pc is dropped from Disorder bursts dealt as another element - enter it manually there if active."
+      "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. Disorder-mode caveat: the calculator only applies build DMG% when the dealt element matches the attacker's attribute, so the 4pc is dropped from Disorder bursts dealt as another element - enter it manually there if active."
     },
     "FEATHERED_FATE": {
       "name": "Feathered Fate",
@@ -149,6 +150,7 @@
     "THUNDER_METAL": {
       "name": "Thunder Metal",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "electric",
       "bonus_4pc": {
         "stat": "Combat ATK%",
         "per_stack": 0.28,
@@ -156,7 +158,7 @@
         "auto": true,
         "note": "While an enemy in combat is Shocked: the equipper's ATK +28% (Combat ATK%, panel-multiplying). RAMP-UP - a Shocked enemy comes up quickly in an Electric team, so auto-applied (the range covers uptime)."
       },
-      "notes": "Electric anomaly/attack set (added 2026-07-04, zenless-optimizer datamine). 2pc is ELECTRIC DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Electric agents (assume-it-matches, like Wuthering Salon)."
+      "notes": "Electric anomaly/attack set (added 2026-07-04, zenless-optimizer datamine). 2pc is ELECTRIC DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%."
     },
     "PHAETHONS_MELODY": {
       "name": "Phaethon's Melody",
@@ -175,6 +177,7 @@
     "WUTHERING_SALON": {
       "name": "Wuthering Salon",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "wind",
       "bonus_4pc": {
         "stat": "Anomaly Proficiency",
         "per_stack": 25,
@@ -183,7 +186,7 @@
         "note": "Using an EX Special Attack grants +25 Anomaly Proficiency for 40s, stacking to 2 (repeated triggers refresh) - RAMP-UP, effectively always max in an anomaly rotation, so auto-applied at max (the anomaly range's unbuffed floor covers the ramp)."
       },
       "bonus_4pc_auto_dmg": 0.18,
-      "notes": "Velina's primary set (added 2026-07-03, zenless-optimizer datamine). 2pc is WIND DMG +10% - the schema's 2pc stats aren't element-gated, so only equip/select this set on Wind agents (assume-it-matches, like legacy Attribute DMG% discs). The 4pc's second part - 'when the equipper triggers Windswept, their DMG +18% for 40s' - is a RAMP-UP buff (off during the first Windswept's buildup, on after): modeled as 'bonus_4pc_auto_dmg' 0.18, AUTO-applied to the wearer via the dilutable kit-DMG% path (the range's unbuffed floor covers the ramp/falloff). Confirmed in-game 2026-07-04 (calibration #5: ~+9% snapshot-effective on an early Windswept, matching to 0.1%)."
+      "notes": "Velina's primary set (added 2026-07-03, zenless-optimizer datamine). 2pc is WIND DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's second part - 'when the equipper triggers Windswept, their DMG +18% for 40s' - is a RAMP-UP buff (off during the first Windswept's buildup, on after): modeled as 'bonus_4pc_auto_dmg' 0.18, AUTO-applied to the wearer via the dilutable kit-DMG% path (the range's unbuffed floor covers the ramp/falloff). Confirmed in-game 2026-07-04 (calibration #5: ~+9% snapshot-effective on an early Windswept, matching to 0.1%)."
     },
     "PUFFER_ELECTRO": {
       "name": "Puffer Electro",
@@ -232,6 +235,7 @@
     "NOTES_FROM_THE_CHAINED": {
       "name": "Notes From the Chained",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "ice",
       "bonus_4pc": {
         "stat": "Anomaly Proficiency",
         "per_stack": 48,
@@ -239,11 +243,12 @@
         "auto": true,
         "note": "Triggering Abloom grants +48 Anomaly Proficiency for 30s (refreshing). RAMP-UP in an Abloom rotation - auto-applied."
       },
-      "notes": "Ice Abloom anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Ice agents (assume-it-matches). The 4pc's second part - triggering Freeze grants All-Attribute Anomaly DMG and Disorder DMG +16% for 30s (refreshing) - is an anomaly-only bracket the single-4pc-slot schema can't hold: enter 16 as external DMG% on anomaly/Disorder calcs while active (Chaos Jazz convention)."
+      "notes": "Ice Abloom anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's second part - triggering Freeze grants All-Attribute Anomaly DMG and Disorder DMG +16% for 30s (refreshing) - is an anomaly-only bracket the single-4pc-slot schema can't hold: enter 16 as external DMG% on anomaly/Disorder calcs while active (Chaos Jazz convention)."
     },
     "CHAOTIC_METAL": {
       "name": "Chaotic Metal",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "ether",
       "bonus_4pc": {
         "stat": "CRIT DMG",
         "per_stack": 0.055,
@@ -252,11 +257,12 @@
         "at_max_extra": { "stat": "CRIT DMG", "value": 0.20 },
         "note": "Squad Corruption DMG triggers grant +5.5% CRIT DMG per stack (max 6) for 8s (refreshing). The 4pc's UNCONDITIONAL base CRIT DMG +20% is carried as at_max_extra: with auto defaulting to max stacks the full 53% applies; when overriding to partial stacks the schema drops the base (it's tied to max) - add the 20 manually there. RAMP-UP - Corruption ticks hold max in an Ether anomaly team."
       },
-      "notes": "Ether anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - only select this set on Ether agents (assume-it-matches). RAMP-UP: Corruption ticks keep stacks near max in an Ether anomaly team."
+      "notes": "Ether anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. RAMP-UP: Corruption ticks keep stacks near max in an Ether anomaly team."
     },
     "INFERNO_METAL": {
       "name": "Inferno Metal",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "fire",
       "bonus_4pc": {
         "stat": "CRIT Rate",
         "per_stack": 0.28,
@@ -264,11 +270,12 @@
         "auto": true,
         "note": "Upon hitting a Burning enemy: the equipper's CRIT Rate +28% for 8s. RAMP-UP - a Burning enemy is effectively permanent in a Fire team, so auto-applied (Thunder Metal convention)."
       },
-      "notes": "Fire attack/anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is FIRE DMG +10% - the schema's 2pc stats aren't element-gated, so only select this set on Fire agents (assume-it-matches)."
+      "notes": "Fire attack/anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is FIRE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%."
     },
     "POLAR_METAL": {
       "name": "Polar Metal",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "ice",
       "bonus_4pc_dmg": [
         {
           "skill_tag": "basic",
@@ -281,7 +288,7 @@
           "note": "Dash Attack DMG +20%, unconditional."
         }
       ],
-      "notes": "Ice attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - only select this set on Ice agents (assume-it-matches). The 4pc's conditional part - squad Freeze/Shatter raises the Basic/Dash bonus by an ADDITIONAL 20% for 12s - is windowed (not ramp-up-stable) and bonus_4pc_dmg has no stack toggle: enter 20 as external DMG% on Basic/Dash hits inside the window."
+      "notes": "Ice attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's conditional part - squad Freeze/Shatter raises the Basic/Dash bonus by an ADDITIONAL 20% for 12s - is windowed (not ramp-up-stable) and bonus_4pc_dmg has no stack toggle: enter 20 as external DMG% on Basic/Dash hits inside the window."
     },
     "SHADOW_HARMONY": {
       "name": "Shadow Harmony",
@@ -306,6 +313,7 @@
     "THE_SKY_ABLAZE": {
       "name": "The Sky Ablaze",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "ether",
       "bonus_4pc": {
         "stat": "CRIT DMG",
         "per_stack": 0.30,
@@ -314,11 +322,12 @@
         "at_max_extra": { "stat": "Combat ATK%", "value": 0.10 },
         "note": "ETHER-attribute wearer: CRIT DMG +30%, unconditional (the single stack; set 0 stacks on a non-Ether wearer). at_max_extra carries the second part - using an EX Special / Ultimate grants ATK +10% for 30s (refreshing): RAMP-UP, rides along at the auto max. Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured."
       },
-      "notes": "Ether crit set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - only select this set on Ether agents (assume-it-matches; the 4pc CRIT DMG is also Ether-gated in-game)."
+      "notes": "Ether crit set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. NOTE: the 4pc CRIT DMG is Ether-gated in-game too, which the single CRIT DMG bracket cannot express - it is still credited to any wearer, so only build this set on Ether agents."
     },
     "WHITE_WATER_BALLAD": {
       "name": "White Water Ballad",
       "bonus_2pc": { "Attribute DMG%": 0.10 },
+      "bonus_2pc_attribute": "physical",
       "bonus_4pc": {
         "stat": "CRIT Rate",
         "per_stack": 0.10,
@@ -326,7 +335,7 @@
         "at_max_extra": { "stat": "Combat ATK%", "value": 0.10 },
         "note": "Stack 1: within (or up to 15s after leaving) an Ether Veil, CRIT Rate +10%. Stack 2: ATTACK-character wearer activating/extending an Ether Veil, a further +10% CRIT Rate for 30s - its paired ATK +10% is carried as at_max_extra Combat ATK% (panel-multiplying by analogy, not measured). Needs a Veil-generating team - situational, so no auto."
       },
-      "notes": "Physical attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - only select this set on Physical agents (assume-it-matches). The whole 4pc depends on the Ether Veil squad mechanic, so stacks are manual."
+      "notes": "Physical attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The whole 4pc depends on the Ether Veil squad mechanic, so stacks are manual."
     }
   }
 }

@@ -301,7 +301,12 @@ def run() -> None:
             if stacks:
                 set_stacks[key] = stacks
     if piece_counts:
-        applied = set_bonus_stats(discs, disc_sets, set_stacks)
+        # The dealt element gates an element-specific 2pc (Fanged Metal =
+        # Physical DMG +10%), so the summary lists what really applies.
+        applied = set_bonus_stats(
+            discs, disc_sets, set_stacks,
+            mutated_element or agents[agent_key].attribute,
+        )
         summary = ", ".join(f"{s} +{v:.1%}" if v < 1 else f"{s} +{v:g}"
                             for s, v in applied.items())
         print(f"Set bonuses applied: {summary or 'none (need 2+ pieces)'}")

@@ -449,6 +449,14 @@
           <select id="opt-required"></select></div>
       </div>
       <div class="row c3">
+        <div><label title="Rank builds by this stat FIRST and by damage second: the search reports the build carrying the most of it among those within the allowed damage loss of the best build found. For a stat the chosen damage does not use at all — Remielle's Luminize scales with her Anomaly Proficiency, which her direct hits ignore. Like the minimum-stat constraints, this reads the COMBAT total (engine passive + assumed 4pc stacks + kit/team buffs included), which is higher than the out-of-combat Final stats panel.">Maximize stat (outranks damage)</label>
+          <select id="opt-maximize"></select></div>
+        <div id="opt-maximize-tol-wrap" style="display:none">
+          <label title="How much damage the search may give up to gain that stat, as a percentage of the best build found. 0 = only builds that lose no damage at all.">Allowed damage loss %</label>
+          <input type="number" id="opt-max-tolerance" min="0" max="99"
+                 step="any" value="5"></div>
+      </div>
+      <div class="row c3">
         <div><label>Slot 4 main stat (required)</label>
           <select id="opt-main-4"></select></div>
         <div><label>Slot 5 main stat (required)</label>
@@ -471,14 +479,18 @@
         <span class="note">⚠ can take very long; prefer adding filters
         or Fast search</span></label>
       <div id="opt-constraints"></div>
-      <button class="mini" id="opt-add-constraint" style="margin-bottom:4px">
+      <button class="mini" id="opt-add-constraint" style="margin-bottom:4px"
+              title="Minimums are checked against COMBAT totals — agent base + core + discs + set 2pc, plus the always-on engine passive, the assumed 4pc stacks and kit/team buffs. The Final stats card shows the out-of-combat panel, which excludes the last three and is lower.">
         + Minimum-stat constraint</button>
       <button class="primary optimize" id="optimize">Optimize discs</button>
       <p class="hint">Uses everything above as-is and only swaps discs —
       candidates are your saved inventory plus what's equipped. Tick 🔒 on a
       disc card to keep that slot's current disc. Constraints require the
       build to keep at least the given total (the best build meeting them
-      may deal less than your current one).
+      may deal less than your current one). A <b>maximize stat</b> makes
+      that stat the first ranking key and damage the second — it runs the
+      search twice (best damage, then most of the stat within the allowed
+      loss), so expect roughly double the time.
       ⚠ An unrestricted search — no 🔒 locks, no required 4pc set, no
       required mains, no constraints — considers every saved disc and can
       take <b>minutes</b> on a large inventory; narrowing it with any of
@@ -609,6 +621,7 @@ function buildStaticSelects() {
   $("mutated-element").value = "physical";   // neutral on most bosses
   fillSelect($("opt-required"), [["", "(none — any sets)"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
+  refreshMaximizeStats();
   for (const slot of [4, 5, 6])
     fillSelect($(`opt-main-${slot}`), [["", "(any)"],
       ...byLabel(Object.keys(DB.disc.main_stats[String(slot)])
@@ -2905,6 +2918,7 @@ function syncOptimizeObjectives(mode) {
     fillSelect(statSel, defs.map(([k, label]) => [k, `min ${label}`]));
     statSel.value = prevStat;
   }
+  refreshMaximizeStats();
 }
 
 /* The comparison rows to show for a given objective (anomaly vs direct). */
@@ -2949,6 +2963,25 @@ const CONSTRAINT_DEFS = {
    syncOptimizeObjectives after each Calculate; "direct" before one). */
 function constraintDefs() {
   return CONSTRAINT_DEFS[$("opt-objective").dataset.family || "direct"];
+}
+
+/* "Maximize stat" (§15 E5) shares the constraint stat list — same totals,
+   same per-family membership, so a stat is either both or neither. Keeps
+   the current pick whenever the new family still supports it. */
+function refreshMaximizeStats() {
+  const sel = $("opt-maximize");
+  const prev = sel.value;
+  const defs = constraintDefs();
+  fillSelect(sel, [["", "(none — maximize damage)"],
+    ...defs.map(([k, label]) => [k, `max ${label}`])]);
+  sel.value = defs.some(([k]) => k === prev) ? prev : "";
+  refreshMaximizeTolerance();
+}
+
+/* The tolerance only means anything with a stat picked. */
+function refreshMaximizeTolerance() {
+  $("opt-maximize-tol-wrap").style.display =
+    $("opt-maximize").value ? "" : "none";
 }
 
 function addConstraintRow(stat = "CRIT Rate", value = "") {
@@ -3008,6 +3041,10 @@ async function runOptimize() {
     slot_main_stats: slotMains,
     sets_only: $("opt-sets-only").checked,
     candidate_cap: $("opt-fast").checked ? 15 : 0,
+    maximize_stat: $("opt-maximize").value || null,
+    // Entered as a human percentage, sent as the fraction the API takes.
+    maximize_tolerance: Math.max(
+      0, parseFloat($("opt-max-tolerance").value) || 0) / 100,
     ignore_budget: $("opt-no-budget").checked,
     ignore_reserved: $("bypass-locks").checked,
   };
@@ -3030,6 +3067,10 @@ async function runOptimize() {
     : unrestricted && bigInventory
     ? "Optimizing… (unrestricted search, may take minutes — locks/constraints speed it up)"
     : "Optimizing…";
+  // A maximize stat runs the search twice (damage, then the stat) — say so
+  // rather than looking twice as frozen.
+  if (opt.maximize_stat)
+    btn.textContent += ` · maximizing ${opt.maximize_stat} (two passes)`;
   try {
     const data = await postJSON("/optimize", body);
     lastOptimize = data;
@@ -3077,10 +3118,46 @@ function fmtDelta(delta) {
   return `<span class="${cls}">${sign}${(delta * 100).toFixed(1)}%</span>`;
 }
 
+/* Constraints and the maximize stat read COMBAT totals — the same
+   numbers the damage math uses. The "Final stats" card is the
+   out-of-combat panel (no engine passives, no 4pc conditionals, no
+   kit/team buffs), so it reads LOWER; without saying so, a build that
+   satisfies "AP >= 400" looks like it has 382. */
+const COMBAT_TOTAL_NOTE =
+  `<span title="Combat total: agent base + core + discs + set 2pc, plus `
+  + `the always-on engine passive, the assumed 4pc stacks and kit/team `
+  + `buffs. The Final stats card shows the out-of-combat panel, which `
+  + `excludes the last three and is therefore lower.">(combat total ⓘ)`
+  + `</span>`;
+
+/* One constraint/maximize stat in the units the page shows it in. */
+function fmtStatValue(stat, value) {
+  return constraintDefs().some(([k, , pct]) => k === stat && pct)
+    ? (value * 100).toFixed(1) + "%"
+    : fmtNum(value);
+}
+
+/* The maximize-stat summary (§15 E5): what the stat reached, and what
+   that cost against the damage-optimal build the first pass found. */
+function maximizeNote(data) {
+  if (!data.maximize_stat || data.best.stat_value == null
+      || !data.damage_ceiling) return "";
+  const lost = (data.best.value - data.damage_ceiling) / data.damage_ceiling;
+  return `<p class="note">Maximized <b>${data.maximize_stat}</b>:
+    <b>${fmtStatValue(data.maximize_stat, data.best.stat_value)}</b>
+    ${COMBAT_TOTAL_NOTE}.
+    The pure-damage optimum is ${fmtNum(data.damage_ceiling)}; this build
+    deals ${fmtNum(data.best.value)} (${fmtDelta(lost)} vs it, floor
+    ${fmtNum(data.damage_floor)}).</p>`;
+}
+
 function constraintsNote(data) {
   const pctStats = new Set(
     constraintDefs().filter(([, , pct]) => pct).map(([k]) => k));
   const parts = [];
+  if (data.maximize_stat)
+    parts.push(`maximize ${data.maximize_stat} (accepting up to
+      ${(data.maximize_tolerance * 100).toFixed(1)}% less damage)`);
   if (data.required_4pc) {
     const set = DB.sets[data.required_4pc];
     parts.push(`build around ${set ? set.name : data.required_4pc} 4pc`);
@@ -3100,7 +3177,12 @@ function constraintsNote(data) {
   const infeasible = data.baseline_feasible === false
     ? ` <span class="delta-down">— your current build does not meet
        these requirements</span>` : "";
-  return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}</p>`;
+  // Stat requirements are checked against combat totals; say so, or the
+  // lower "Final stats" panel number reads as a violated minimum.
+  const units = Object.keys(data.min_stats || {}).length || data.maximize_stat
+    ? ` <span class="note">Stat totals are ${COMBAT_TOTAL_NOTE}, not the
+       out-of-combat Final stats panel.</span>` : "";
+  return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}${units}</p>`;
 }
 
 function renderOptimize(data) {
@@ -3134,11 +3216,17 @@ function renderOptimize(data) {
         : "");
 
   if (data.already_optimal) {
+    const target = data.maximize_stat
+      ? `${data.maximize_stat} (among builds within
+         ${(data.maximize_tolerance * 100).toFixed(1)}% of the best
+         ${objectiveLabel})`
+      : objectiveLabel;
     out.innerHTML = `
       <div class="verdict optimal">✅ Your current discs are already optimal
-        for ${objectiveLabel}.</div>
+        for ${target}.</div>
       <p class="note">No combination of your saved discs beats the equipped
-      build for this calculation.</p>${constraintsNote(data)}${searched}`;
+      build for this calculation.</p>
+      ${maximizeNote(data)}${constraintsNote(data)}${searched}`;
     return;
   }
 
@@ -3157,19 +3245,27 @@ function renderOptimize(data) {
   const alts = data.alternatives.map((alt, i) => `
     <div class="alt">
       #${i + 2}: <b>${fmtNum(alt.value)}</b>
-      (${fmtDelta(alt.delta)}, ${alt.changed_slots.length} change(s))
+      (${fmtDelta(alt.delta)}, ${alt.changed_slots.length} change(s))${
+        data.maximize_stat && alt.stat_value != null
+          ? ` · ${data.maximize_stat}
+              ${fmtStatValue(data.maximize_stat, alt.stat_value)}` : ""}
       <button class="mini apply-alt" data-alt="${i}">Apply</button>
       ${swapLines(alt)}
     </div>`).join("");
 
-  const verdict = best.delta >= 0
+  const verdict = data.maximize_stat
+    ? `◆ Most ${data.maximize_stat} within the allowed damage loss:
+       ${fmtStatValue(data.maximize_stat, best.stat_value)}
+       (${fmtDelta(best.delta)} ${objectiveLabel} vs your current build,
+       ${best.changed_slots.length} disc change(s))`
+    : best.delta >= 0
     ? `▲ ${fmtDelta(best.delta)} ${objectiveLabel} with
        ${best.changed_slots.length} disc change(s)`
     : `◆ Best build meeting your constraints: ${fmtDelta(best.delta)}
        ${objectiveLabel} (${best.changed_slots.length} disc change(s))`;
   out.innerHTML = `
     <div class="verdict better">${verdict}</div>
-    ${constraintsNote(data)}
+    ${maximizeNote(data)}${constraintsNote(data)}
     <table>
       <thead><tr><th>Scenario</th><th>Current</th><th>Best found</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -3385,6 +3481,7 @@ async function init() {
   buildStaticSelects();
   buildDiscGrid();
   const saved = restoreState();
+  refreshMaximizeTolerance();      // follows the restored maximize stat
   refreshMutationControl();
   updateDerived();
   renderKit();
@@ -3415,6 +3512,7 @@ async function init() {
   $("abloom").addEventListener("change", updateModeUI);
   $("calc").addEventListener("click", runCalc);
   $("optimize").addEventListener("click", runOptimize);
+  $("opt-maximize").addEventListener("change", refreshMaximizeTolerance);
   $("opt-add-constraint").addEventListener("click", () => {
     addConstraintRow().querySelector(".constraint-min").focus();
   });

@@ -311,6 +311,13 @@ class DiscSet:
     Attributes:
         bonus_2pc: stat -> value, unconditional, applied automatically when
             2+ pieces are equipped (the in-game stat sheet shows these).
+        bonus_2pc_attribute: Element the 2-piece ``Attribute DMG%`` is
+            gated to in-game — Fanged Metal's 10% is *Physical* DMG, so it
+            does nothing for damage dealt as another element. Compared
+            against the DEALT element (Attribute Mutation included), like
+            an element-tagged disc. ``None`` = element-agnostic 2pc
+            (ATK%, AP, CRIT Rate…) or a legacy entry that assumes it
+            matches.
         bonus_4pc: Modeled stacking effect, or ``None`` if the set's 4-piece
             isn't modeled (its ``notes`` say why).
         bonus_4pc_dmg: Skill-type-conditional DMG% bonuses that come with
@@ -335,6 +342,7 @@ class DiscSet:
     key: str
     name: str
     bonus_2pc: dict[str, float]
+    bonus_2pc_attribute: str | None = None
     bonus_4pc: SetBonus4pc | None = None
     bonus_4pc_dmg: tuple[SetDmgBonus, ...] = ()
     auto_4pc_dmg: float = 0.0
@@ -377,6 +385,22 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
                 raise DiscError(
                     f"Set '{key}': 2pc bonus '{stat}' must be a positive number"
+                )
+
+        # Element gate for an "Attribute DMG%" 2pc (Fanged Metal = Physical
+        # DMG +10%): only meaningful for that stat, so a gate on any other
+        # 2pc is a data error, not a silently ignored field.
+        bonus_2pc_attribute = entry.get("bonus_2pc_attribute")
+        if bonus_2pc_attribute is not None:
+            if bonus_2pc_attribute not in ELEMENTS:
+                raise DiscError(
+                    f"Set '{key}': 'bonus_2pc_attribute' must be one of "
+                    f"{list(ELEMENTS)}, got {bonus_2pc_attribute!r}"
+                )
+            if "Attribute DMG%" not in bonus_2pc:
+                raise DiscError(
+                    f"Set '{key}': 'bonus_2pc_attribute' only applies to an "
+                    f"'Attribute DMG%' 2pc bonus"
                 )
 
         bonus_4pc = None
@@ -501,6 +525,7 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             key=key,
             name=name,
             bonus_2pc={s: float(v) for s, v in bonus_2pc.items()},
+            bonus_2pc_attribute=bonus_2pc_attribute,
             bonus_4pc=bonus_4pc,
             bonus_4pc_dmg=tuple(dmg_bonuses),
             auto_4pc_dmg=float(auto_4pc_dmg),
@@ -563,12 +588,19 @@ def set_bonus_stats(
     discs: list[Disc] | tuple[Disc, ...],
     sets: dict[str, DiscSet],
     set_stacks: dict[str, int] | None = None,
+    dealt_element: str | None = None,
 ) -> dict[str, float]:
     """Compute the automatic stat bonuses granted by equipped disc sets.
 
     Rules (mirroring the game):
 
-    - 2+ pieces of a set -> its 2-piece bonus applies unconditionally.
+    - 2+ pieces of a set -> its 2-piece bonus applies unconditionally,
+      EXCEPT an element-gated ``Attribute DMG%`` (``bonus_2pc_attribute``):
+      Fanged Metal's +10% is *Physical* DMG, so it contributes nothing to
+      damage dealt as another element. Gated on ``dealt_element`` — the
+      element the damage COUNTS as (Attribute Mutation included), exactly
+      like an element-tagged disc. ``dealt_element=None`` keeps the legacy
+      assume-it-matches behavior for callers that don't know the agent.
     - 4+ pieces -> additionally, its modeled 4-piece stacking bonus applies
       at ``set_stacks[key]`` active stacks (default 0 — 4-piece effects are
       combat-conditional and OFF unless the user says they're up). A set
@@ -581,6 +613,8 @@ def set_bonus_stats(
         discs: The equipped discs (``disc_set=None`` pieces count nothing).
         sets: Registry from :func:`load_disc_sets`.
         set_stacks: set key -> active stacks for modeled 4pc effects.
+        dealt_element: The element this agent's damage is dealt as; an
+            element-gated 2pc that doesn't match it is dropped.
 
     Raises:
         DiscError: unknown set key on a disc; stacks for a set without 4
@@ -618,7 +652,12 @@ def set_bonus_stats(
     for key, count in counts.items():
         entry = sets[key]
         if count >= 2:
+            off_element = (entry.bonus_2pc_attribute is not None
+                           and dealt_element is not None
+                           and entry.bonus_2pc_attribute != dealt_element)
             for stat, value in entry.bonus_2pc.items():
+                if off_element and stat == "Attribute DMG%":
+                    continue     # a different element's DMG% — worth 0 here
                 bonuses[stat] = bonuses.get(stat, 0.0) + value
         if count >= 4:
             for stat, value in set_4pc_stats(

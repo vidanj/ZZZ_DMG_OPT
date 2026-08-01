@@ -46,8 +46,8 @@ from urllib.parse import unquote
 
 try:
     from ..api import (
-        CalcConfig, LuminizeConfig, SupportConfig, calculate, calculate_anomaly,
-        calculate_sheer, panel_stats,
+        CalcConfig, LuminizeConfig, SupportConfig, attack_element, calculate,
+        calculate_anomaly, calculate_sheer, panel_stats,
     )
     from ..agent import Agent, load_agents
     from ..anomalies import AnomalyData, load_anomalies
@@ -61,7 +61,8 @@ try:
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
     from ..optimizer import (
-        OptimizeOptions, optimize, optimize_anomaly, optimize_sheer,
+        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeOptions, optimize,
+        optimize_anomaly, optimize_sheer,
     )
 except ImportError:
     # Executed directly as a script (``py server.py``): no parent package,
@@ -70,8 +71,8 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from zzz_dmg_calc.api import (
-        CalcConfig, LuminizeConfig, SupportConfig, calculate, calculate_anomaly,
-        calculate_sheer, panel_stats,
+        CalcConfig, LuminizeConfig, SupportConfig, attack_element, calculate,
+        calculate_anomaly, calculate_sheer, panel_stats,
     )
     from zzz_dmg_calc.agent import Agent, load_agents
     from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
@@ -85,7 +86,8 @@ except ImportError:
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
     from zzz_dmg_calc.optimizer import (
-        OptimizeOptions, optimize, optimize_anomaly, optimize_sheer,
+        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeOptions, optimize,
+        optimize_anomaly, optimize_sheer,
     )
 
 
@@ -707,8 +709,12 @@ def run_calculation(data: AppData, body: dict) -> dict:
         }
     # Echo the applied set bonuses so the page can display them (the
     # calculation already validated the discs, so this cannot raise).
+    # The dealt element must be passed, or an element-gated 2pc the
+    # calculation dropped (Fanged Metal on a non-Physical hit) would
+    # still be listed as applied.
     payload["set_bonuses"] = set_bonus_stats(
-        config.discs, data.disc_sets, config.set_stacks
+        config.discs, data.disc_sets, config.set_stacks,
+        attack_element(data.agents[config.agent_key], config),
     )
     payload["tag_dmg_bonuses"] = {
         data.disc_sets[key].name: value
@@ -732,7 +738,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
 
     The body is the same payload as ``/calculate`` plus an ``optimize``
     object: ``{objective, set_assumption, locked_slots, top_n, min_stats,
-    required_4pc}``. Direct mode runs
+    required_4pc, maximize_stat, maximize_tolerance}``. Direct mode runs
     :func:`~zzz_dmg_calc.optimizer.optimize`; rupture mode runs
     :func:`~zzz_dmg_calc.optimizer.optimize_sheer` (same crit objectives,
     Sheer-specific constraint stats); anomaly / Disorder / Vortex modes
@@ -784,6 +790,15 @@ def run_optimization(data: AppData, body: dict) -> dict:
                          if str(main)},
         sets_only=bool(opt_raw.get("sets_only")),
         candidate_cap=int(opt_raw.get("candidate_cap") or 0),
+        # Maximize stat (§15 E5): the stat outranks damage, which becomes
+        # a floor — 'maximize_tolerance' is the fraction of the best
+        # damage found the search may give up (default 5%).
+        maximize_stat=str(opt_raw.get("maximize_stat") or "") or None,
+        maximize_tolerance=(
+            float(opt_raw["maximize_tolerance"])
+            if opt_raw.get("maximize_tolerance") is not None
+            else DEFAULT_MAXIMIZE_TOLERANCE
+        ),
         # Bypass the anytime budget (user-requested "search deeper"):
         # effectively unlimited — the search runs until finished, however
         # long that takes. The page warns and recommends filters instead.
@@ -868,6 +883,9 @@ def run_optimization(data: AppData, body: dict) -> dict:
         return {
             "value": option.value,
             "delta": option.delta,
+            # Total of the maximized stat (§15 E5); null when the search
+            # maximized damage only.
+            "stat_value": option.stat_value,
             "discs": [
                 dict(_disc_json(disc), id=disc_id)
                 for disc, disc_id in zip(option.discs, option.disc_ids)
@@ -894,6 +912,12 @@ def run_optimization(data: AppData, body: dict) -> dict:
         "sets_only": result.sets_only,
         "budget_exhausted": result.budget_exhausted,
         "min_panel_stats": result.min_panel_stats,
+        # Maximize stat (§15 E5): the stat that outranked damage, the
+        # tolerance it was given, and the damage band that implied.
+        "maximize_stat": result.maximize_stat,
+        "maximize_tolerance": result.maximize_tolerance,
+        "damage_ceiling": result.damage_ceiling,
+        "damage_floor": result.damage_floor,
         "best": build_option(result.best),
         "alternatives": [build_option(o) for o in result.alternatives],
         "combos_evaluated": result.combos_evaluated,

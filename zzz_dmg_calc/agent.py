@@ -924,7 +924,10 @@ def aggregate_build(
             _fold_stat(build, stat, value)
 
     if disc_sets is not None:
-        for stat, value in set_bonus_stats(discs, disc_sets, set_stacks).items():
+        # dealt_element gates an element-specific 2pc (Fanged Metal's
+        # Physical DMG +10%) exactly as it gates an element-tagged disc.
+        for stat, value in set_bonus_stats(
+                discs, disc_sets, set_stacks, dealt_element).items():
             _fold_stat(build, stat, value)
 
     build.atk_pre_combat = formulas.atk_final(

@@ -1098,10 +1098,20 @@ def panel_stats(
         )
     engine = engines[engine_key]
 
+    # The dealt element matters even out of combat: without it a Lumiflux
+    # agent's would be "lumiflux", and every element-tagged disc (and
+    # element-gated 2pc) would be dropped from the panel. This is a
+    # display helper, so an un-chosen Lumiflux mutation falls back to the
+    # pre-fix behavior instead of failing — calculate() raises the real
+    # error, and the UI only reaches here after a successful calculation.
+    try:
+        attr = attack_element(agent, config)
+    except CalcError:
+        attr = None
     # set_stacks=None: 2pc bonuses only — 4pc stacks are combat state.
     build = aggregate_build(
         agent, engine, config.discs, disc_data, consts,
-        disc_sets=disc_sets, set_stacks=None,
+        disc_sets=disc_sets, set_stacks=None, attack_element=attr,
     )
     other = build.other
     stats = {

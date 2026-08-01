@@ -36,6 +36,11 @@ depending on ``OptimizeOptions.set_assumption`` — ``max_stacks``
 Constraints (§11 E3): ``OptimizeOptions.min_stats`` filters the search
 to builds meeting minimum final-build totals; constrained stats join the
 dominance vectors and the bound, so pruning stays exact under them.
+
+Maximize stat (§15 E5): ``OptimizeOptions.maximize_stat`` makes a stat
+the PRIMARY ranking key and damage a bounded constraint — two passes,
+"best damage" then "most of that stat among builds within
+``maximize_tolerance`` of it" (see :func:`_search_maximizing`).
 """
 
 from __future__ import annotations
@@ -99,6 +104,17 @@ DEFAULT_COMBO_BUDGET = 5_000_000
 
 #: Relative tolerance of the fast-path vs calculate() re-check (plan §4).
 _RECHECK_RTOL = 1e-9
+
+#: Default damage the maximize-stat search (§15 E5) may give up vs the
+#: best build found — 5%.
+DEFAULT_MAXIMIZE_TOLERANCE = 0.05
+
+#: Weight of the damage term in the maximize-stat ranking key (§15 E5).
+#: Both terms are normalized to ~1, so damage only ever decides between
+#: builds whose maximized stat differs by less than this relative amount
+#: — i.e. exact ties, which are COMMON (stat totals are discrete: many
+#: builds reach the same 350 AP with wildly different damage).
+_MAXIMIZE_TIE_WEIGHT = 1e-6
 
 #: Stat buckets tracked per candidate. Indices 0-7 are the direct-hit
 #: damage-relevant stats (the fast path and the dominance pruning share
@@ -176,6 +192,17 @@ def _dominance_indices(
             if index not in damage_indices and index not in extra:
                 extra.append(index)
     return damage_indices + tuple(extra)
+
+
+def _watched_stats(options: OptimizeOptions) -> dict[str, float]:
+    """Stats dominance pruning must keep visible: every constrained stat
+    plus the maximize-stat (§15 E5) — a disc that only carries the
+    maximized stat is worthless for damage and would otherwise be pruned
+    as dominated before it could win."""
+    watched = {**options.min_stats, **options.min_panel_stats}
+    if options.maximize_stat is not None:
+        watched.setdefault(options.maximize_stat, 0.0)
+    return watched
 
 
 _BUCKET_BY_STAT = {
@@ -284,6 +311,19 @@ class OptimizeOptions:
             ``initial_atk`` 3,430 must reach panel ATK 3,430, and the
             combat total (which contains the very flat ATK that claim
             grants — circular) must not satisfy it.
+        maximize_stat: Stat to maximize as the PRIMARY objective (§15
+            E5), with damage demoted to a floor + tie-break: the search
+            reports the build with the most of this stat among those
+            within ``maximize_tolerance`` of the best damage found.
+            ``None`` = pure damage (today's behavior). Same stat names
+            and final-total definitions as ``min_stats`` — the stat need
+            not scale the mode's damage at all, which is the point (an
+            agent's OTHER hit reads it: Remielle's Luminize scales with
+            her Anomaly Proficiency, which her direct hits ignore).
+        maximize_tolerance: Fraction of damage the maximize-stat search
+            may give up vs the best build found, in ``[0, 1)`` (0.05 =
+            accept up to 5% less damage; 0 = only exact-damage ties).
+            Ignored without ``maximize_stat``.
     """
 
     objective: str = "average"
@@ -297,6 +337,8 @@ class OptimizeOptions:
     sets_only: bool = False
     candidate_cap: int = 0
     min_panel_stats: dict[str, float] = field(default_factory=dict)
+    maximize_stat: str | None = None
+    maximize_tolerance: float = DEFAULT_MAXIMIZE_TOLERANCE
 
 
 @dataclass(frozen=True)
@@ -314,6 +356,9 @@ class BuildOption:
             these back into the config when equipping the build.
         changed_slots: Slots whose disc differs from the baseline build.
         results: Full verified results table for display.
+        stat_value: This build's total of ``maximize_stat`` (``None``
+            when the search maximized damage only). ``value`` stays the
+            damage either way, so the comparison table is unchanged.
     """
 
     value: float
@@ -323,6 +368,7 @@ class BuildOption:
     set_stacks: dict[str, int]
     changed_slots: tuple[int, ...]
     results: CalcResults
+    stat_value: float | None = None
 
 
 @dataclass(frozen=True)
@@ -358,6 +404,14 @@ class OptimizeResult:
     # Panel-stat minimums enforced (auto-derived from the main agent's
     # self-scaling kit inputs; see OptimizeOptions.min_panel_stats).
     min_panel_stats: dict[str, float] = field(default_factory=dict)
+    # Maximize-stat search (§15 E5): the stat that outranked damage, the
+    # tolerance it was allowed, the best damage the first pass found
+    # (``damage_ceiling``) and the floor that implied. All None/0 for an
+    # ordinary damage search.
+    maximize_stat: str | None = None
+    maximize_tolerance: float = 0.0
+    damage_ceiling: float | None = None
+    damage_floor: float | None = None
 
 
 def _bucket_vector(stats: dict[str, float]) -> tuple[float, ...]:
@@ -381,6 +435,23 @@ def _disc_buckets(
     """
     stats = dict(disc_stats(disc, disc_data))
     if disc.element is not None and disc.element != attribute:
+        stats.pop("Attribute DMG%", None)
+    return _bucket_vector(stats)
+
+
+def _set_2pc_buckets(entry: DiscSet, attribute: str) -> tuple[float, ...]:
+    """One set's 2-piece bucket vector for an agent attacking as
+    ``attribute``.
+
+    Mirrors ``set_bonus_stats``' element gate: an element-specific 2pc
+    (Fanged Metal = Physical DMG +10%) is worth nothing when the damage
+    is dealt as another element, so the optimizer must not value it —
+    otherwise it recommends an off-element set for a phantom +10% (and
+    the §4 re-check would fail, since ``calculate`` drops it).
+    """
+    stats = dict(entry.bonus_2pc)
+    if (entry.bonus_2pc_attribute is not None
+            and entry.bonus_2pc_attribute != attribute):
         stats.pop("Attribute DMG%", None)
     return _bucket_vector(stats)
 
@@ -486,6 +557,22 @@ def _validate_options(
                     f"Minimum for '{stat}' must be a number >= 0, "
                     f"got {minimum!r}"
                 )
+    maximize = options.maximize_stat
+    if maximize is not None:
+        if maximize not in constraint_stats:
+            raise OptimizeError(
+                f"Unknown maximize stat '{maximize}'; "
+                f"options: {list(constraint_stats)}"
+            )
+        tolerance = options.maximize_tolerance
+        if isinstance(tolerance, bool) \
+                or not isinstance(tolerance, (int, float)) \
+                or not 0.0 <= tolerance < 1.0:
+            raise OptimizeError(
+                f"'maximize_tolerance' must be a number in [0, 1) "
+                f"(fraction of damage the search may give up), "
+                f"got {tolerance!r}"
+            )
     required = options.required_4pc
     if required is not None and (
             not isinstance(required, str) or not required.strip()):
@@ -700,6 +787,36 @@ def _panel_feasible(
     return not report
 
 
+def _make_feasible(
+    options: OptimizeOptions, panel_consts: dict, stat_total,
+):
+    """Build a mode's ``feasible(buckets, aux, report=None)`` predicate.
+
+    Shared by all three optimizers: the panel minimums compose
+    identically everywhere (:func:`_panel_feasible`), and the combat
+    minimums differ only through the mode's ``stat_total(stat, buckets,
+    aux)`` closure — the same closure the maximize-stat search reads
+    (§15 E5), so a stat can never be constrainable but not maximizable.
+
+    ``report`` (diagnosis only, never the hot path) collects every
+    shortfall as ``(kind, stat, total, minimum)`` instead of returning at
+    the first miss.
+    """
+    def feasible(buckets: list[float], aux, report: list | None = None) -> bool:
+        if options.min_panel_stats and not _panel_feasible(
+                options.min_panel_stats, panel_consts, buckets, report):
+            if report is None:
+                return False
+        for stat, minimum in options.min_stats.items():
+            total = stat_total(stat, buckets, aux)
+            if total < minimum - 1e-12:
+                if report is None:
+                    return False
+                report.append(("combat", stat, total, minimum))
+        return not report
+    return feasible
+
+
 #: Kit scaling inputs that ARE panel stats of their owner (agents.json
 #: scaling.input names -> the min-stat constraint that panel maps to).
 #: When the MAIN agent's active kit reads one, the user-entered value is
@@ -843,6 +960,13 @@ def _baseline_reasons(
             reasons.append(
                 f"its panel {stat} is {_fmt_stat(stat, total)}, below the "
                 f"{_fmt_stat(stat, minimum)} it claims{source}"
+            )
+        elif kind == "damage":
+            # The maximize-stat floor (§15 E5): ``stat`` names the
+            # objective, ``minimum`` is the floor the tolerance allows.
+            reasons.append(
+                f"its {stat} is {total:,.1f}, below the {minimum:,.1f} "
+                f"floor the maximize-stat tolerance allows"
             )
         else:
             reasons.append(
@@ -1288,6 +1412,172 @@ def _search(
     return heap, evals, exhausted
 
 
+def _combo_buckets(
+    combo, base_buckets: tuple[float, ...],
+    set_2pc: dict[str, tuple[float, ...]],
+    set_4pc: dict[str, tuple[float, ...]],
+    set_tag_bonus: dict[str, tuple[float, float]],
+) -> tuple[list[float], tuple[float, float], dict[str, int]]:
+    """One full build's ``(buckets, tagged, set counts)`` — the leaf math
+    of :func:`_search`, reused to re-evaluate a REPORTED build (the heap
+    keeps only the ranking value, which in a maximize-stat search is not
+    the damage the §4 re-check needs)."""
+    buckets = list(base_buckets)
+    counts: dict[str, int] = {}
+    for cand in combo:
+        for k, v in enumerate(cand.buckets):
+            buckets[k] += v
+        key = cand.disc.disc_set
+        if key is not None:
+            counts[key] = counts.get(key, 0) + 1
+    tagged = _fold_sets(buckets, counts, set_2pc, set_4pc, set_tag_bonus)
+    return buckets, tagged, counts
+
+
+@dataclass(frozen=True)
+class _SearchOutcome:
+    """What :func:`_search_maximizing` hands back to an optimizer.
+
+    ``check_baseline(buckets, aux, damage, report=None)`` is the predicate
+    the BASELINE must be judged by — in a maximize-stat search it also
+    enforces the damage floor, which is only known after the first pass
+    (hence the baseline verdict is computed AFTER the search). ``rank`` is
+    the ordering key the reported builds were chosen by (plain damage
+    without a maximize stat).
+    """
+
+    heap: list
+    evals: int
+    exhausted: bool
+    check_baseline: object
+    rank: object
+    ceiling: float | None = None
+    floor: float | None = None
+
+
+def _search_maximizing(
+    candidates: dict[int, list[_Candidate]],
+    slots: list[int],
+    equipped: dict[int, Disc],
+    base_buckets: tuple[float, ...],
+    evaluate,
+    feasible,
+    stat_total,
+    set_2pc: dict[str, tuple[float, ...]],
+    set_4pc: dict[str, tuple[float, ...]],
+    set_tag_bonus: dict[str, tuple[float, float]],
+    candidate_sets: set[str],
+    required: str | None,
+    options: OptimizeOptions,
+    bound: bool,
+) -> _SearchOutcome:
+    """Run the search, optionally under a maximize-stat objective (§15 E5).
+
+    Without ``options.maximize_stat`` this is exactly one :func:`_search`
+    call — the damage search, unchanged.
+
+    With one, damage and the stat trade places in two passes:
+
+    1. the damage search as usual → its best value is the **ceiling**;
+    2. ``floor = ceiling × (1 - maximize_tolerance)``, and a second search
+       ranks by the stat with ``damage >= floor`` as one more feasibility
+       gate.
+
+    Both passes share every other constraint, the §5 set policy and the
+    same evaluation budget (so the search does up to twice the work — the
+    floor usually prunes pass 2 hard).
+
+    **Why the bounds stay valid:** the pass-2 ranking key is
+    ``stat/stat_ref + w × damage/damage_ref`` with ``w`` tiny
+    (:data:`_MAXIMIZE_TIE_WEIGHT`). Both terms are monotone in every stat
+    bucket, so the branch-and-bound upper bound is still an over-estimate
+    and the damage floor cuts a subtree only when even its optimistic
+    completion falls short. The damage term exists to order the (common)
+    exact ties in the stat; a stat difference below ``w`` relative counts
+    as a tie, which is the documented approximation.
+    """
+    def run(cands, ev, fe, budget):
+        return _search(
+            cands, slots, equipped, base_buckets, ev, fe,
+            set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
+            options.sets_only, options.top_n, budget, bound,
+            slot_cap=options.candidate_cap,
+        )
+
+    heap, evals, exhausted = run(candidates, evaluate, feasible,
+                                 options.combo_budget)
+
+    def damage_outcome() -> _SearchOutcome:
+        """Pass 1 as the final answer (no maximize stat, or nothing
+        feasible to measure a tolerance against)."""
+        return _SearchOutcome(
+            heap=heap, evals=evals, exhausted=exhausted,
+            check_baseline=lambda buckets, aux, damage, report=None:
+                feasible(buckets, aux, report),
+            rank=lambda damage, stat_value: damage,
+        )
+
+    stat = options.maximize_stat
+    # An empty heap means nothing satisfied the ordinary constraints:
+    # there is no ceiling to measure a tolerance against, and the caller's
+    # infeasibility diagnosis (which the empty heap triggers) is the right
+    # answer.
+    if stat is None or not heap:
+        return damage_outcome()
+
+    # --- Pass 1's winner sets the damage ceiling and the normalizers -----
+    top = max(heap, key=lambda entry: (entry[0], entry[1]))
+    ceiling = top[0]
+    top_buckets, top_tagged, _counts = _combo_buckets(
+        top[2], base_buckets, set_2pc, set_4pc, set_tag_bonus)
+    _damage, top_aux = evaluate(top_buckets, top_tagged)
+    floor = ceiling * (1.0 - options.maximize_tolerance)
+    # Reference scales, so both terms of the ranking key are ~1 and the
+    # tie weight keeps its intended meaning. The damage-optimal build's
+    # own stat total is the natural scale; a zero one (maximizing a stat
+    # that build has none of) falls back to 1.
+    stat_ref = max(abs(stat_total(stat, top_buckets, top_aux)), 1.0)
+    damage_ref = max(abs(ceiling), 1e-12)
+
+    def rank(damage: float, stat_value: float | None) -> float:
+        if stat_value is None:
+            return damage
+        return (stat_value / stat_ref
+                + _MAXIMIZE_TIE_WEIGHT * damage / damage_ref)
+
+    def evaluate_stat(buckets: list[float], tagged: tuple[float, float]):
+        """Fast path of the second pass: rank by the stat, carry the
+        damage along for the floor gate (and for the §4 re-check)."""
+        damage, aux = evaluate(buckets, tagged)
+        return rank(damage, stat_total(stat, buckets, aux)), (damage, aux)
+
+    def feasible_stat(buckets: list[float], aux, report: list | None = None) -> bool:
+        damage, inner_aux = aux
+        ok = feasible(buckets, inner_aux, report)
+        if damage < floor - abs(floor) * _RECHECK_RTOL:
+            if report is None:
+                return False
+            report.append(("damage", f"{options.objective} damage",
+                           damage, floor))
+            ok = False
+        return ok
+
+    # A fresh candidate dict: _search reorders (and, under a candidate
+    # cap, truncates) the lists it is given.
+    pass2 = {slot: list(candidates[slot]) for slot in slots}
+    heap2, evals2, exhausted2 = run(pass2, evaluate_stat, feasible_stat,
+                                    options.combo_budget)
+    return _SearchOutcome(
+        heap=heap2, evals=evals + evals2,
+        exhausted=exhausted or exhausted2,
+        # The baseline's damage is its VERIFIED value, so the floor is
+        # judged against the same number the user was shown.
+        check_baseline=lambda buckets, aux, damage, report=None:
+            feasible_stat(buckets, (damage, aux), report),
+        rank=rank, ceiling=ceiling, floor=floor,
+    )
+
+
 def optimize(
     config: CalcConfig,
     options: OptimizeOptions | None = None,
@@ -1355,7 +1645,7 @@ def optimize(
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     dominance_indices = _dominance_indices(
-        _DAMAGE_INDICES, {**options.min_stats, **options.min_panel_stats})
+        _DAMAGE_INDICES, _watched_stats(options))
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
@@ -1421,8 +1711,15 @@ def optimize(
     # DEF reduction (Qingyi M1), a separate factor in the DEF zone.
     pen_ratio_const = kit["pen_ratio"] + agent.core_bonus_pen_ratio
     def_red_const = kit["def_red"]
+    # AP is inert for direct-hit damage, but the constraint / maximize-stat
+    # total must be the SAME number the other modes report (engine passive
+    # and kit/external AP included) — an agent whose other hit scales with
+    # AP is exactly why a direct-hit search would ask for it.
     ap_const = (agent.base_anomaly_proficiency
-                + agent.core_bonus_anomaly_proficiency)
+                + agent.core_bonus_anomaly_proficiency
+                + engine.passive_ap(rank)
+                + kit["anomaly_proficiency"]
+                + config.external_anomaly_proficiency)
     am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
     # HP/DEF/Impact/Energy-Regen panel pieces, read only by the min-stat
     # constraints (inert for direct-hit damage): HP composes like the
@@ -1495,49 +1792,35 @@ def optimize(
         defense = level_coef / (level_coef + eff_def)
         return atk_total * crit_mult * bonus * defense * const_mult, atk_total
 
-    def feasible(buckets: list[float], atk_total: float,
-                 report: list | None = None) -> bool:
-        """Whether a bucket total meets every minimum: combat-stat
-        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat).
+    def stat_total(stat: str, buckets: list[float], atk_total: float) -> float:
+        """One constraint / maximize stat's final total for a bucket
+        vector (the totals the results panel reports)."""
+        if stat == "ATK":
+            return atk_total
+        if stat == "HP":
+            return (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
+                    + buckets[_B_HP_FLAT]) * kit_hp_mult
+        if stat == "DEF":
+            return (def_base * (1.0 + buckets[_B_DEF_PCT])
+                    + buckets[_B_DEF_FLAT])
+        if stat == "CRIT Rate":
+            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
+        if stat == "CRIT DMG":
+            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+        if stat == "PEN Ratio":
+            return buckets[_B_PEN_RATIO] + pen_ratio_const
+        if stat == "PEN":
+            return buckets[_B_PEN_FLAT]
+        if stat == "Impact":
+            return impact_base * (1.0 + buckets[_B_IMPACT])
+        if stat == "Energy Regen":
+            return er_base * (1.0 + buckets[_B_ER])
+        if stat == "Anomaly Proficiency":
+            return ap_const + buckets[_B_AP]
+        # "Anomaly Mastery" (keys validated above)
+        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
 
-        ``report`` (diagnosis only, never the hot path) collects every
-        shortfall as ``(kind, stat, total, minimum)``."""
-        if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets, report):
-            if report is None:
-                return False
-        for stat, minimum in options.min_stats.items():
-            if stat == "ATK":
-                total = atk_total
-            elif stat == "HP":
-                total = (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
-                         + buckets[_B_HP_FLAT]) * kit_hp_mult
-            elif stat == "DEF":
-                total = (def_base * (1.0 + buckets[_B_DEF_PCT])
-                         + buckets[_B_DEF_FLAT])
-            elif stat == "CRIT Rate":
-                total = base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-            elif stat == "CRIT DMG":
-                total = base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
-            elif stat == "PEN Ratio":
-                total = buckets[_B_PEN_RATIO] + pen_ratio_const
-            elif stat == "PEN":
-                total = buckets[_B_PEN_FLAT]
-            elif stat == "Impact":
-                total = impact_base * (1.0 + buckets[_B_IMPACT])
-            elif stat == "Energy Regen":
-                total = er_base * (1.0 + buckets[_B_ER])
-            elif stat == "Anomaly Proficiency":
-                total = ap_const + buckets[_B_AP]
-            else:   # "Anomaly Mastery" (keys validated above)
-                total = ((am_const + buckets[_B_AM])
-                         * (1.0 + buckets[_B_AM_PCT]))
-            if total < minimum - 1e-12:
-                if report is None:
-                    return False
-                report.append(("combat", stat, total, minimum))
-        return not report
+    feasible = _make_feasible(options, panel_consts, stat_total)
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -1570,7 +1853,7 @@ def optimize(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _bucket_vector(entry.bonus_2pc)
+        set_2pc[key] = _set_2pc_buckets(entry, attr)
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors
@@ -1605,37 +1888,41 @@ def optimize(
             if count >= 4 and set_stacks_used[key]
         }
 
+    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
+    outcome = _search_maximizing(
+        candidates, slots, equipped, base_buckets, evaluate, feasible,
+        stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
+        required, options, _bound,
+    )
+    heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
+
     # --- Baseline feasibility (constraints may exclude the baseline) ------
+    # After the search: a maximize-stat run's damage floor (§15 E5) is
+    # only known once the first pass has found the ceiling.
     base_bb = list(base_buckets)
     for disc in config.discs:
         for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_atk = evaluate(base_bb, (0.0, 0.0))
+    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_atk)
+                     if options.maximize_stat else None)
     baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_atk, baseline_shortfalls)
+        outcome.check_baseline(base_bb, baseline_atk, baseline_value,
+                               baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals, exhausted = _search(
-        candidates, slots, equipped, base_buckets, evaluate, feasible,
-        set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
-        options.sets_only, options.top_n, options.combo_budget, _bound,
-        slot_cap=options.candidate_cap,
-    )
-
-    def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
+    def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
         """Re-run one build through calculate() (exactness guarantee, §4)."""
         discs = [c.disc for c in combo]
-        counts: dict[str, int] = {}
-        for disc in discs:
-            if disc.disc_set is not None:
-                counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+        buckets, tagged, counts = _combo_buckets(
+            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
+        fast_value, aux = evaluate(buckets, tagged)
         stacks = combo_set_stacks(counts)
         results = calculate(
             replace(config, discs=discs, set_stacks=stacks), **data
@@ -1658,6 +1945,8 @@ def optimize(
                 if equipped.get(c.disc.slot) != c.disc
             ),
             results=results,
+            stat_value=(stat_total(options.maximize_stat, buckets, aux)
+                        if options.maximize_stat else None),
         )
 
     # Highest value first; on exact ties the earlier build wins, and the
@@ -1666,13 +1955,13 @@ def optimize(
     ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
     seen_combos: set = set()
     unique = []
-    for value, neg_counter, combo in ranked:
+    for value, _neg_counter, combo in ranked:
         combo_key = tuple(id(c) for c in combo)
         if combo_key in seen_combos:
             continue
         seen_combos.add(combo_key)
         unique.append((value, combo))
-    options_verified = [verify(combo, value) for value, combo in unique]
+    options_verified = [verify(combo) for _value, combo in unique]
 
     if not options_verified and not baseline_feasible:
         raise _infeasible_error(
@@ -1691,9 +1980,15 @@ def optimize(
         )
 
     best = options_verified[0] if options_verified else None
+    # Compared by the SEARCH's ranking key — damage, or (maximize mode)
+    # the stat with damage as the tie-break. Comparing damage there would
+    # call the baseline a winner against a build that deliberately traded
+    # a little damage for more of the maximized stat.
+    baseline_rank = outcome.rank(baseline_value, baseline_stat)
     baseline_wins = baseline_feasible and (
         best is None
-        or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
+        or outcome.rank(best.value, best.stat_value)
+        <= baseline_rank * (1.0 + _RECHECK_RTOL)
     )
     # A budget-exhausted search proves nothing about optimality: the
     # baseline may still be reported as the best FOUND, but never as
@@ -1711,6 +2006,7 @@ def optimize(
             set_stacks=dict(config.set_stacks),
             changed_slots=(),
             results=baseline_results,
+            stat_value=baseline_stat,
         )
     # Runners-up: every verified build that actually differs from the
     # baseline and isn't the reported best.
@@ -1733,6 +2029,11 @@ def optimize(
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
         min_panel_stats=dict(options.min_panel_stats),
+        maximize_stat=options.maximize_stat,
+        maximize_tolerance=(options.maximize_tolerance
+                            if options.maximize_stat else 0.0),
+        damage_ceiling=outcome.ceiling,
+        damage_floor=outcome.floor,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -1861,7 +2162,7 @@ def optimize_anomaly(
     damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
                       else _ANOMALY_DAMAGE_INDICES_NO_ATTR)
     dominance_indices = _dominance_indices(
-        damage_indices, {**options.min_stats, **options.min_panel_stats})
+        damage_indices, _watched_stats(options))
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
@@ -2050,50 +2351,36 @@ def optimize_anomaly(
                  * bonus * set_abuff * defense * outer)
         return value, (atk_total, ap_total)
 
-    def feasible(buckets: list[float], aux: tuple,
-                 report: list | None = None) -> bool:
-        """Whether a bucket total meets every minimum: combat-stat
-        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat).
-
-        ``report`` (diagnosis only, never the hot path) collects every
-        shortfall as ``(kind, stat, total, minimum)``."""
-        if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets, report):
-            if report is None:
-                return False
+    def stat_total(stat: str, buckets: list[float], aux: tuple) -> float:
+        """One constraint / maximize stat's final total for a bucket
+        vector (the totals the results panel reports)."""
         atk_total, ap_total = aux
-        for stat, minimum in options.min_stats.items():
-            if stat == "ATK":
-                total = atk_total
-            elif stat == "HP":
-                total = (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
-                         + buckets[_B_HP_FLAT]) * kit_hp_mult
-            elif stat == "DEF":
-                total = (def_base * (1.0 + buckets[_B_DEF_PCT])
-                         + buckets[_B_DEF_FLAT])
-            elif stat == "CRIT Rate":
-                total = base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-            elif stat == "CRIT DMG":
-                total = base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
-            elif stat == "PEN Ratio":
-                total = buckets[_B_PEN_RATIO] + pen_ratio_const
-            elif stat == "PEN":
-                total = buckets[_B_PEN_FLAT]
-            elif stat == "Impact":
-                total = impact_base * (1.0 + buckets[_B_IMPACT])
-            elif stat == "Energy Regen":
-                total = er_base * (1.0 + buckets[_B_ER])
-            elif stat == "Anomaly Proficiency":
-                total = ap_total
-            else:   # "Anomaly Mastery" (keys validated above)
-                total = ((am_const + buckets[_B_AM])
-                         * (1.0 + buckets[_B_AM_PCT]))
-            if total < minimum - 1e-12:
-                if report is None:
-                    return False
-                report.append(("combat", stat, total, minimum))
-        return not report
+        if stat == "ATK":
+            return atk_total
+        if stat == "HP":
+            return (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
+                    + buckets[_B_HP_FLAT]) * kit_hp_mult
+        if stat == "DEF":
+            return (def_base * (1.0 + buckets[_B_DEF_PCT])
+                    + buckets[_B_DEF_FLAT])
+        if stat == "CRIT Rate":
+            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
+        if stat == "CRIT DMG":
+            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+        if stat == "PEN Ratio":
+            return buckets[_B_PEN_RATIO] + pen_ratio_const
+        if stat == "PEN":
+            return buckets[_B_PEN_FLAT]
+        if stat == "Impact":
+            return impact_base * (1.0 + buckets[_B_IMPACT])
+        if stat == "Energy Regen":
+            return er_base * (1.0 + buckets[_B_ER])
+        if stat == "Anomaly Proficiency":
+            return ap_total
+        # "Anomaly Mastery" (keys validated above)
+        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
+
+    feasible = _make_feasible(options, panel_consts, stat_total)
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -2126,7 +2413,7 @@ def optimize_anomaly(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _bucket_vector(entry.bonus_2pc)
+        set_2pc[key] = _set_2pc_buckets(entry, attr)
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors
@@ -2167,37 +2454,41 @@ def optimize_anomaly(
             if count >= 4 and set_stacks_used[key]
         }
 
+    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
+    outcome = _search_maximizing(
+        candidates, slots, equipped, base_buckets, evaluate, feasible,
+        stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
+        required, options, _bound,
+    )
+    heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
+
     # --- Baseline feasibility (constraints may exclude the baseline) ------
+    # After the search: a maximize-stat run's damage floor (§15 E5) is
+    # only known once the first pass has found the ceiling.
     base_bb = list(base_buckets)
     for disc in config.discs:
         for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
+    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_aux)
+                     if options.maximize_stat else None)
     baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_aux, baseline_shortfalls)
+        outcome.check_baseline(base_bb, baseline_aux, baseline_value,
+                               baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals, exhausted = _search(
-        candidates, slots, equipped, base_buckets, evaluate, feasible,
-        set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
-        options.sets_only, options.top_n, options.combo_budget, _bound,
-        slot_cap=options.candidate_cap,
-    )
-
-    def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
+    def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
         """Re-run one build through calculate_anomaly (exactness, §4)."""
         discs = [c.disc for c in combo]
-        counts: dict[str, int] = {}
-        for disc in discs:
-            if disc.disc_set is not None:
-                counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+        buckets, tagged, counts = _combo_buckets(
+            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
+        fast_value, aux = evaluate(buckets, tagged)
         stacks = combo_set_stacks(counts)
         results = calculate_anomaly(
             replace(config, discs=discs, set_stacks=stacks),
@@ -2222,10 +2513,12 @@ def optimize_anomaly(
                 if equipped.get(c.disc.slot) != c.disc
             ),
             results=results,
+            stat_value=(stat_total(options.maximize_stat, buckets, aux)
+                        if options.maximize_stat else None),
         )
 
     ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
-    options_verified = [verify(combo, value) for value, _, combo in ranked]
+    options_verified = [verify(combo) for _value, _counter, combo in ranked]
 
     if not options_verified and not baseline_feasible:
         raise _infeasible_error(
@@ -2244,9 +2537,15 @@ def optimize_anomaly(
         )
 
     best = options_verified[0] if options_verified else None
+    # Compared by the SEARCH's ranking key — damage, or (maximize mode)
+    # the stat with damage as the tie-break. Comparing damage there would
+    # call the baseline a winner against a build that deliberately traded
+    # a little damage for more of the maximized stat.
+    baseline_rank = outcome.rank(baseline_value, baseline_stat)
     baseline_wins = baseline_feasible and (
         best is None
-        or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
+        or outcome.rank(best.value, best.stat_value)
+        <= baseline_rank * (1.0 + _RECHECK_RTOL)
     )
     # A budget-exhausted search proves nothing about optimality: the
     # baseline may still be reported as the best FOUND, but never as
@@ -2264,6 +2563,7 @@ def optimize_anomaly(
             set_stacks=dict(config.set_stacks),
             changed_slots=(),
             results=baseline_results,
+            stat_value=baseline_stat,
         )
     alternatives = tuple(
         option for option in options_verified
@@ -2284,6 +2584,11 @@ def optimize_anomaly(
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
         min_panel_stats=dict(options.min_panel_stats),
+        maximize_stat=options.maximize_stat,
+        maximize_tolerance=(options.maximize_tolerance
+                            if options.maximize_stat else 0.0),
+        damage_ceiling=outcome.ceiling,
+        damage_floor=outcome.floor,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
@@ -2378,7 +2683,7 @@ def optimize_sheer(
         _SHEER_HP_INDICES if agent.sheer_force_hp_conversion > 0 else ()
     )
     dominance_indices = _dominance_indices(
-        damage_indices, {**options.min_stats, **options.min_panel_stats})
+        damage_indices, _watched_stats(options))
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
@@ -2530,51 +2835,37 @@ def optimize_sheer(
         value = sf * crit_mult * bonus * sheer_mult * const_mult
         return value, (atk_total, hp_total, sf)
 
-    def feasible(buckets: list[float], aux: tuple,
-                 report: list | None = None) -> bool:
-        """Whether a bucket total meets every minimum: combat-stat
-        ``min_stats`` and panel-stat ``min_panel_stats`` (the latter is
-        where self-scaling kit inputs land — panel, never combat).
-
-        ``report`` (diagnosis only, never the hot path) collects every
-        shortfall as ``(kind, stat, total, minimum)``."""
-        if options.min_panel_stats and not _panel_feasible(
-                options.min_panel_stats, panel_consts, buckets, report):
-            if report is None:
-                return False
+    def stat_total(stat: str, buckets: list[float], aux: tuple) -> float:
+        """One constraint / maximize stat's final total for a bucket
+        vector (the totals SheerResults reports)."""
         atk_total, hp_total, sf = aux
-        for stat, minimum in options.min_stats.items():
-            if stat == "ATK":
-                total = atk_total
-            elif stat == "HP":
-                total = hp_total
-            elif stat == "Sheer Force":
-                total = sf
-            elif stat == "DEF":
-                total = (def_base * (1.0 + buckets[_B_DEF_PCT])
-                         + buckets[_B_DEF_FLAT])
-            elif stat == "CRIT Rate":
-                total = base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-            elif stat == "CRIT DMG":
-                total = base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
-            elif stat == "PEN Ratio":
-                total = buckets[_B_PEN_RATIO] + pen_ratio_const
-            elif stat == "PEN":
-                total = buckets[_B_PEN_FLAT]
-            elif stat == "Impact":
-                total = impact_base * (1.0 + buckets[_B_IMPACT])
-            elif stat == "Energy Regen":
-                total = er_base * (1.0 + buckets[_B_ER])
-            elif stat == "Anomaly Proficiency":
-                total = ap_const + buckets[_B_AP]
-            else:   # "Anomaly Mastery" (keys validated above)
-                total = ((am_const + buckets[_B_AM])
-                         * (1.0 + buckets[_B_AM_PCT]))
-            if total < minimum - 1e-12:
-                if report is None:
-                    return False
-                report.append(("combat", stat, total, minimum))
-        return not report
+        if stat == "ATK":
+            return atk_total
+        if stat == "HP":
+            return hp_total
+        if stat == "Sheer Force":
+            return sf
+        if stat == "DEF":
+            return (def_base * (1.0 + buckets[_B_DEF_PCT])
+                    + buckets[_B_DEF_FLAT])
+        if stat == "CRIT Rate":
+            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
+        if stat == "CRIT DMG":
+            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+        if stat == "PEN Ratio":
+            return buckets[_B_PEN_RATIO] + pen_ratio_const
+        if stat == "PEN":
+            return buckets[_B_PEN_FLAT]
+        if stat == "Impact":
+            return impact_base * (1.0 + buckets[_B_IMPACT])
+        if stat == "Energy Regen":
+            return er_base * (1.0 + buckets[_B_ER])
+        if stat == "Anomaly Proficiency":
+            return ap_const + buckets[_B_AP]
+        # "Anomaly Mastery" (keys validated above)
+        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
+
+    feasible = _make_feasible(options, panel_consts, stat_total)
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -2607,7 +2898,7 @@ def optimize_sheer(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _bucket_vector(entry.bonus_2pc)
+        set_2pc[key] = _set_2pc_buckets(entry, attr)
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors
@@ -2641,37 +2932,41 @@ def optimize_sheer(
             if count >= 4 and set_stacks_used[key]
         }
 
+    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
+    outcome = _search_maximizing(
+        candidates, slots, equipped, base_buckets, evaluate, feasible,
+        stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
+        required, options, _bound,
+    )
+    heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
+
     # --- Baseline feasibility (constraints may exclude the baseline) ------
+    # After the search: a maximize-stat run's damage floor (§15 E5) is
+    # only known once the first pass has found the ceiling.
     base_bb = list(base_buckets)
     for disc in config.discs:
         for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
     _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
+    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_aux)
+                     if options.maximize_stat else None)
     baseline_shortfalls: list = []
     baseline_feasible = (
-        feasible(base_bb, baseline_aux, baseline_shortfalls)
+        outcome.check_baseline(base_bb, baseline_aux, baseline_value,
+                               baseline_shortfalls)
         and (required is None or baseline_counts.get(required, 0) >= 4)
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    heap, evals, exhausted = _search(
-        candidates, slots, equipped, base_buckets, evaluate, feasible,
-        set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
-        options.sets_only, options.top_n, options.combo_budget, _bound,
-        slot_cap=options.candidate_cap,
-    )
-
-    def verify(combo: tuple[_Candidate, ...], fast_value: float) -> BuildOption:
+    def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
         """Re-run one build through calculate_sheer (exactness, §4)."""
         discs = [c.disc for c in combo]
-        counts: dict[str, int] = {}
-        for disc in discs:
-            if disc.disc_set is not None:
-                counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+        buckets, tagged, counts = _combo_buckets(
+            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
+        fast_value, aux = evaluate(buckets, tagged)
         stacks = combo_set_stacks(counts)
         results = calculate_sheer(
             replace(config, discs=discs, set_stacks=stacks), **data
@@ -2695,6 +2990,8 @@ def optimize_sheer(
                 if equipped.get(c.disc.slot) != c.disc
             ),
             results=results,
+            stat_value=(stat_total(options.maximize_stat, buckets, aux)
+                        if options.maximize_stat else None),
         )
 
     # Highest value first; on exact ties the earlier build wins, and the
@@ -2703,13 +3000,13 @@ def optimize_sheer(
     ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
     seen_combos: set = set()
     unique = []
-    for value, neg_counter, combo in ranked:
+    for value, _neg_counter, combo in ranked:
         combo_key = tuple(id(c) for c in combo)
         if combo_key in seen_combos:
             continue
         seen_combos.add(combo_key)
         unique.append((value, combo))
-    options_verified = [verify(combo, value) for value, combo in unique]
+    options_verified = [verify(combo) for _value, combo in unique]
 
     if not options_verified and not baseline_feasible:
         raise _infeasible_error(
@@ -2728,9 +3025,15 @@ def optimize_sheer(
         )
 
     best = options_verified[0] if options_verified else None
+    # Compared by the SEARCH's ranking key — damage, or (maximize mode)
+    # the stat with damage as the tie-break. Comparing damage there would
+    # call the baseline a winner against a build that deliberately traded
+    # a little damage for more of the maximized stat.
+    baseline_rank = outcome.rank(baseline_value, baseline_stat)
     baseline_wins = baseline_feasible and (
         best is None
-        or best.value <= baseline_value * (1.0 + _RECHECK_RTOL)
+        or outcome.rank(best.value, best.stat_value)
+        <= baseline_rank * (1.0 + _RECHECK_RTOL)
     )
     # A budget-exhausted search proves nothing about optimality: the
     # baseline may still be reported as the best FOUND, but never as
@@ -2748,6 +3051,7 @@ def optimize_sheer(
             set_stacks=dict(config.set_stacks),
             changed_slots=(),
             results=baseline_results,
+            stat_value=baseline_stat,
         )
     alternatives = tuple(
         option for option in options_verified
@@ -2768,6 +3072,11 @@ def optimize_sheer(
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
         min_panel_stats=dict(options.min_panel_stats),
+        maximize_stat=options.maximize_stat,
+        maximize_tolerance=(options.maximize_tolerance
+                            if options.maximize_stat else 0.0),
+        damage_ceiling=outcome.ceiling,
+        damage_floor=outcome.floor,
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
