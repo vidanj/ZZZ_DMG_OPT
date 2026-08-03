@@ -23,7 +23,9 @@ try:
         BuildupSegment, CalcConfig, LuminizeConfig, SupportConfig,
         calculate, calculate_anomaly, calculate_sheer,
     )
-    from .agent import LUMIFLUX, load_agents
+    from .agent import (
+        LUMIFLUX, TOTAL_CRIT_DMG_INPUT, load_agents,
+    )
     from .anomalies import load_anomalies
     from .constants import load_constants
     from .discs import (
@@ -44,7 +46,9 @@ except ImportError:
         BuildupSegment, CalcConfig, LuminizeConfig, SupportConfig,
         calculate, calculate_anomaly, calculate_sheer,
     )
-    from zzz_dmg_calc.agent import LUMIFLUX, load_agents
+    from zzz_dmg_calc.agent import (
+        LUMIFLUX, TOTAL_CRIT_DMG_INPUT, load_agents,
+    )
     from zzz_dmg_calc.anomalies import load_anomalies
     from zzz_dmg_calc.constants import load_constants
     from zzz_dmg_calc.discs import (
@@ -517,7 +521,10 @@ def run() -> None:
     kit_buffs += [p.buff for p in agent_obj.potentials.values() if p.buff]
     for kit_b in kit_buffs:
         for eff in kit_b.effects:
-            if eff.scaling is not None and eff.scaling.input not in scaling_inputs:
+            # TOTAL_CRIT_DMG_INPUT is resolved from the build, not asked.
+            if (eff.scaling is not None
+                    and eff.scaling.input != TOTAL_CRIT_DMG_INPUT
+                    and eff.scaling.input not in scaling_inputs):
                 scaling_inputs[eff.scaling.input] = _ask_float(
                     f"{agent_obj.name}'s "
                     f"{eff.scaling.input.replace('_', ' ')}", 0
@@ -609,7 +616,10 @@ def run() -> None:
         scaling: dict[str, float] = {}
         for team_buff in member.team_buffs:
             for eff in team_buff.effects:
-                if eff.scaling is not None and eff.scaling.input not in scaling:
+                # TOTAL_CRIT_DMG_INPUT is resolved from the build.
+                if (eff.scaling is not None
+                        and eff.scaling.input != TOTAL_CRIT_DMG_INPUT
+                        and eff.scaling.input not in scaling):
                     scaling[eff.scaling.input] = _ask_float(
                         f"{member.name}'s "
                         f"{eff.scaling.input.replace('_', ' ')}", 0

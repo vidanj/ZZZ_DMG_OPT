@@ -38,9 +38,9 @@
       "additional_ability": {
         "name": "Rising Storm",
         "max_stacks": 10,
-        "condition": { "teammate_specialty_any_of": ["stun"] },
+        "condition": { "teammate_shares_attribute_or_faction": true, "potential_adds_specialty": ["stun"] },
         "effects": [ { "kind": "dmg_bonus", "value": 0.03, "element": "ice" } ],
-        "note": "Needs a Stun squadmate OR one sharing her Attribute (ice) or Faction (Victoria Housekeeping - Lycaon satisfies all three; condition data only checks specialty, tick it for the others too). When she deals Ice DMG: subsequent Ice DMG +3% per stack for 10s, max 10 stacks (+30%) - ramps fast in her loop. Her Potential (Permafrost Zone) rides these SAME stacks. Datamine abilityParams [0.03, 10, 10]."
+        "note": "Needs a Stun squadmate OR one sharing her Attribute (ice) or Faction (Victoria Housekeeping - Lycaon qualifies on both). Her Potential ALSO accepts a Stun squadmate; the base requirement does not (datamine audit 2026-08-02). When she deals Ice DMG: subsequent Ice DMG +3% per stack for 10s, max 10 stacks (+30%) - ramps fast in her loop. Her Potential (Permafrost Zone) rides these SAME stacks. Datamine abilityParams [0.03, 10, 10]."
       },
       "mindscapes": {
         "1": {
@@ -190,13 +190,13 @@
         {
           "name": "Elegant Predator: stunned vulnerability",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "condition": { "teammate_shares_attribute_or_faction": true, "potential_adds_specialty": ["anomaly"] },
           "effects": [ { "kind": "daze_bonus", "value": 0.35 } ],
-          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing his Attribute (ice) or Faction (Victoria Housekeeping - Ellen/Rina qualify; condition data only checks specialty, tick it for the others too). When he hits a Stunned enemy: its Stun DMG Multiplier +35% - affects the whole squad's Stunned columns. Datamine abilityParams [0.35]."
+          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing his Attribute (ice) or Faction (Victoria Housekeeping - Ellen/Rina qualify). His Potential ALSO accepts an Anomaly squadmate; the base requirement does NOT - this entry previously modeled only the Anomaly half, which was wrong on both counts (datamine audit 2026-08-02). When he hits a Stunned enemy: its Stun DMG Multiplier +35% - affects the whole squad's Stunned columns. Datamine abilityParams [0.35]."
         }
       ],
       "default_engine": "the_restrained",
-      "_note": "Ice stunner (added 2026-07-14, zenless-optimizer datamine: Lv. 60 HP 8416.29, ATK 653.59, DEF 606.60 -> stored 8416/653/606; Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119, it affects buildup only anyway). Ellen's classic partner (shares ice + Victoria Housekeeping). His value: the core Ice RES -25% + non-Ice +30% DMG-taken debuffs and the +35% stunned multiplier - all modeled as team_buffs (enemy debuffs benefit his own attacks too; there is no separate attacker-role copy). Core Daze +80% on charged hits and his Encircle Prey off-field attack mechanics affect buildup/off-field damage only. His Potential (Glacial Rush) is Impact-only -> documented, not modeled. M6 is his only modeled mindscape (self vulnerability stacks). Not yet panel-checked in-game; PROVISIONAL until calibration."
+      "_note": "Ice stunner (added 2026-07-14, zenless-optimizer datamine: Lv. 60 HP 8416.29, ATK 653.59, DEF 606.60 -> stored 8416/653/606; Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119, it affects buildup only anyway). Ellen's classic partner (shares ice + Victoria Housekeeping). His value: the core Ice RES -25% + non-Ice +30% DMG-taken debuffs and the +35% stunned multiplier - all modeled as team_buffs (enemy debuffs benefit his own attacks too; there is no separate attacker-role copy). Core Daze +80% on charged hits and his Encircle Prey off-field attack mechanics affect buildup/off-field damage only. His Potential (Glacial Rush) grants NO damage multiplier, but it is not Impact-only as this note previously claimed (corrected 2026-08-02, nanoka 3.1 passive ids 1141508-1141514): it also (a) widens the Additional Ability requirement to accept an Anomaly squadmate on top of the base Attribute/Faction clause - carried as 'potential_adds_specialty' - and (b) rewrites the core passive (the Daze bonus extends to Dodge Counter and Dash Attack, the Ice RES shred also triggers off Vengeful Counterattack - Glacial Waltz, and Encircle Prey gains activation charges). All of (b) is Daze/buildup or off-field damage, so the modeled numbers are unaffected. M6 is his only modeled mindscape (self vulnerability stacks). Not yet panel-checked in-game; PROVISIONAL until calibration."
     },
     "lucy": {
       "name": "Lucy (Luciana de Montefio)",
@@ -281,7 +281,7 @@
       "additional_ability": {
         "name": "Catwalk",
         "max_stacks": 2,
-        "condition": { "teammate_shares_attribute_or_faction": true },
+        "condition": { "teammate_shares_attribute_or_faction": true, "potential_adds_specialty": ["support"] },
         "effects": [
           { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "ex_special" },
           { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "dodge_counter" }
@@ -567,7 +567,7 @@
       "additional_ability": {
         "name": "Synced Acceleration",
         "max_stacks": 1,
-        "condition": { "teammate_shares_attribute_or_faction": true },
+        "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute_or_faction": true },
         "effects": [ { "kind": "dmg_bonus", "value": 0.18 } ],
         "note": "Requires a teammate sharing her Attribute (physical, e.g. Yuzuha) or Faction (Sons of Calydon). While Piper has 20+ stacks of Power: ALL squad members' DMG +18%. Verified 2026-07-03 (Game8 + zenless-optimizer datamine: abilityParams [20, 0.18])."
       },
@@ -611,8 +611,9 @@
       "team_buffs": [
         {
           "name": "Synced Acceleration: squad DMG",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
-          "condition": { "teammate_shares_attribute_or_faction": true },
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute_or_faction": true },
           "effects": [ { "kind": "dmg_bonus", "value": 0.18 } ],
           "note": "Her Additional Ability. When a squadmate shares Piper's Attribute (physical) or Faction (Sons of Calydon) - e.g. Yuzuha is physical - and Piper holds 20+ Power: ALL squad members' DMG +18%. Applies when Piper is OFF-FIELD supporting another on-field agent (e.g. Velina's Ablooms / Vortex). Same effect as her attacker-role 'Synced Acceleration' additional ability: never apply both at once."
         }
@@ -675,6 +676,7 @@
       "team_buffs": [
         {
           "name": "Tanuki Wish: squad ATK + DMG",
+          "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "effects": [
             { "kind": "flat_atk",
@@ -686,7 +688,7 @@
         {
           "name": "Additional Ability: squad Anomaly & Disorder DMG (AM-scaled)",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "anomaly_buff", "modes": ["anomaly", "disorder"],
               "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.002, "cap": 0.20 } }
@@ -855,6 +857,7 @@
         },
         {
           "name": "Graceful Andante (Tremolo): squad flat ATK",
+          "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "effects": [
             { "kind": "flat_atk",
@@ -898,14 +901,14 @@
       "additional_ability": {
         "name": "Fighting Spirit: Elation (Ice/Fire DMG)",
         "max_stacks": 20,
-        "condition": { "teammate_specialty_any_of": ["attack"] },
+        "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
         "effects": [
           { "kind": "dmg_bonus", "element": "ice",
             "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
           { "kind": "dmg_bonus", "element": "fire",
             "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } }
         ],
-        "note": "Needs an Attack squadmate OR another Sons of Calydon member (condition data only checks specialty - tick it for faction too). During Morale Burst, his Basic 5th-hit grants the squad Elation stacks (max 20, 30s, refreshed by any Chain Attack): each stack +1.25% Ice DMG and Fire DMG, +0.25% more per 10 Impact above 170, total cap +75% (per-stack cap 3.75%). Enter HIS panel Impact as 'impact' (base 119 + core +18 + engine). Applies to his own hits too - same effect as his 'Fighting Spirit' team buff: never apply both at once. Datamine abilityParams [20, 30, 0.0125, 170, 10, 0.0025, 0.75]."
+        "note": "Needs an Attack squadmate OR another Sons of Calydon member (both clauses are checked). During Morale Burst, his Basic 5th-hit grants the squad Elation stacks (max 20, 30s, refreshed by any Chain Attack): each stack +1.25% Ice DMG and Fire DMG, +0.25% more per 10 Impact above 170, total cap +75% (per-stack cap 3.75%). Enter HIS panel Impact as 'impact' (base 119 + core +18 + engine). Applies to his own hits too - same effect as his 'Fighting Spirit' team buff: never apply both at once. Datamine abilityParams [20, 30, 0.0125, 170, 10, 0.0025, 0.75]."
       },
       "mindscapes": {
         "1": {
@@ -947,8 +950,9 @@
         },
         {
           "name": "Fighting Spirit: squad Ice/Fire DMG (Elation)",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 20,
-          "condition": { "teammate_specialty_any_of": ["attack"] },
+          "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "dmg_bonus", "element": "ice",
               "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
@@ -1015,9 +1019,9 @@
       "additional_ability": {
         "name": "Advantage in Numbers: En-Nah Barrage ATK (self)",
         "max_stacks": 1,
-        "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+        "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
         "effects": [ { "kind": "flat_atk", "value": 870 } ],
-        "note": "Needs an Attack or Rupture squadmate OR another Roscaelifer member (condition data only checks specialty - tick it for faction too, e.g. Velina). Self part: while her En-Nah Barrage state is active (32s after her EX Special - effectively always up) her ATK +870 flat at Lv. 60 (44 + 14/level, cap 870). The Tech Divide stacks and the squad DMG +20% are team-facing - modeled as her team_buffs (they apply to her own attacks too): never apply both at once. Datamine abilityParams [1, 0.03, 10, 0.5, 2, 44, 14, 870, 0.2]."
+        "note": "Needs an Attack or Rupture squadmate OR another Roscaelifer member (e.g. Velina); both clauses are checked. Self part: while her En-Nah Barrage state is active (32s after her EX Special - effectively always up) her ATK +870 flat at Lv. 60 (44 + 14/level, cap 870). The Tech Divide stacks and the squad DMG +20% are team-facing - modeled as her team_buffs (they apply to her own attacks too): never apply both at once. Datamine abilityParams [1, 0.03, 10, 0.5, 2, 44, 14, 870, 0.2]."
       },
       "mindscapes": {
         "1": {
@@ -1051,14 +1055,14 @@
         {
           "name": "Tech Divide: stunned vulnerability",
           "max_stacks": 10,
-          "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
           "effects": [ { "kind": "daze_bonus", "value": 0.03 } ],
           "note": "Additional Ability (needs an Attack/Rupture squadmate or another Roscaelifer member). Norma's / her creations' / Combat Bangboo hits apply Tech Divide (1 stack per 0.5s, max 10): each stack raises the target's Stun DMG Multiplier by 3% (max +30%). Stacks persist until the stun ends - enter the realistic count at burst time (10 for a full loop). Stun duration +2s is QoL. Datamine abilityParams [1, 0.03, 10, 0.5, 2, ...]."
         },
         {
           "name": "En-Nah Barrage: squad DMG",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["attack", "rupture"] },
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
           "effects": [ { "kind": "dmg_bonus", "value": 0.20 } ],
           "note": "Additional Ability (same condition). While her En-Nah Barrage state is active (32s after her EX Special, extendable - effectively always up in rotation): ALL squad members' DMG +20%. Datamine abilityParams [..., 0.2]."
         },
@@ -1098,9 +1102,9 @@
         "effects": [
           { "kind": "dmg_bonus", "value": 0.25 },
           { "kind": "crit_dmg", "skill_tag": "aftershock",
-            "scaling": { "input": "initial_crit_dmg", "per_step": 0.01, "per_value": 0.0035 } }
+            "scaling": { "input": "total_crit_dmg", "per_step": 0.0001, "per_value": 0.000035 } }
         ],
-        "note": "Core, max rank F, vs enemies marked with her Silver Star (her focus target - effectively always marked): (1) her DMG +25%; (2) Aftershocks gain extra CRIT DMG = 35% (30% + 5% rank-F bonus) of HER total CRIT DMG - enter her panel CRIT DMG as 'initial_crit_dmg' (the web page takes 144 for 144%; the Python API takes the fraction 1.44) and tag the hit 'aftershock'. The CRIT DMG part is an enemy mark that also serves teammates' Aftershocks - same effect as her 'Silver Star' team buff: never apply both at once. Datamine coreParams [[0.125..0.25],[0.15..0.30],[5],[0.05]]; sheet: teamBuff FINAL crit_dmg x0.35 of her initial+combat CRIT DMG."
+        "note": "Core, max rank F, vs enemies marked with her Silver Star (her focus target - effectively always marked): (1) her DMG +25%; (2) Aftershocks gain extra CRIT DMG = 35% (30% + 5% rank-F bonus) of HER TOTAL combat CRIT DMG - nothing to enter, the calculator reads the total off the build (panel + every combat buff, excluding this bonus itself) - just tag the hit 'aftershock'. The CRIT DMG part is an enemy mark that also serves teammates' Aftershocks - same effect as her 'Silver Star' team buff, and the calculator now refuses both at once. Datamine coreParams [[0.125..0.25],[0.15..0.30],[5],[0.05]]; sheet: teamBuff FINAL crit_dmg x0.35 of her initial+combat CRIT DMG. CONFIRMED in-game 2026-08-02: at 289.6% total CRIT DMG the Aftershock hit crit for 4.9096x its non-crit, i.e. +101.36% = 0.35 x 289.6 exactly."
       },
       "additional_ability": {
         "name": "Voltage Surge",
@@ -1181,15 +1185,17 @@
       "team_buffs": [
         {
           "name": "Silver Star: Aftershock CRIT DMG (CD-scaled)",
+          "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "effects": [
             { "kind": "crit_dmg", "skill_tag": "aftershock",
-              "scaling": { "input": "initial_crit_dmg", "per_step": 0.01, "per_value": 0.0035 } }
+              "scaling": { "input": "initial_crit_dmg", "per_step": 0.0001, "per_value": 0.000035 } }
           ],
-          "note": "Core passive as a support: Silver Star-marked enemies take extra CRIT DMG from ALL allies' Aftershocks = 35% of ANBY S's CRIT DMG. Enter HER panel CRIT DMG as 'initial_crit_dmg' (the web page takes 144 for 144%; the Python API takes the fraction 1.44 -> +50.4%). Applies to hits tagged 'aftershock' (e.g. Trigger's Harmonizing Shots). Same effect as her attacker-role core passive: never apply both at once."
+          "note": "Core passive as a support: Silver Star-marked enemies take extra CRIT DMG from ALL allies' Aftershocks = 35% of ANBY S's OWN total CRIT DMG. She is off-field here, so the calculator cannot read her build - type HER CRIT DMG into the box (the web page takes 289.6 for 289.6%; the Python API takes the fraction 2.896 -> +101.4%). Include her combat buffs, not just her panel: in-game the multiplier is 0.35 x her initial+combat CRIT DMG (CONFIRMED 2026-08-02). Applies to hits tagged 'aftershock' (e.g. Trigger's Harmonizing Shots). Same effect as her attacker-role core passive, which is why this row is hidden when SHE is the on-field agent (that role reads the total automatically)."
         },
         {
           "name": "Voltage Surge: squad Aftershock DMG (Anby S ACTIVE)",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
           "condition": { "teammate_specialty_any_of": ["stun", "support"] },
           "effects": [ { "kind": "dmg_bonus", "value": 0.25, "skill_tag": "aftershock" } ],
@@ -1197,6 +1203,7 @@
         },
         {
           "name": "Potential: Voltage Surge boost (enter level 1-5)",
+          "self_duplicate_of": "potential",
           "max_stacks": 1,
           "effects": [
             { "kind": "dmg_bonus", "skill_tag": "aftershock",
@@ -1253,7 +1260,7 @@
           "name": "Soul-Searching Gaze: Aftershock stun-mult debuff",
           "max_stacks": 1,
           "effects": [ { "kind": "daze_bonus", "value": 0.35 } ],
-          "note": "Core passive, max rank F: her Aftershock hits raise the target's Stun DMG Multiplier by 35% for 5s (near-permanent in her off-field loop) - benefits the whole squad's Stunned columns. QUIRK: the game applies it EVEN WHEN THE TARGET ISN'T STUNNED - the stunned columns model the stunned case; for the unstunned case use the stun-multiplier override at 135% (100 + 35) to see her effect outside stun windows. Datamine coreParams [[0.2..0.35],[5]]."
+          "note": "Core passive, max rank F: her Aftershock hits raise the target's Stun DMG Multiplier by 35% for 5s (near-permanent in her off-field loop) - benefits the whole squad's Stunned columns. QUIRK: the game applies it EVEN WHEN THE TARGET ISN'T STUNNED. To model an UNSTUNNED hit with her debuff up, set the stun-multiplier override to 100% and read the STUNNED columns: this buff (and her M1) are daze bonuses ADDED to the override, giving 1.00 + 0.35 = 135% (155% with M1). Do NOT set the override to 135% - the daze bonuses would stack on top and give 190%. CONFIRMED in-game 2026-08-02 (Anby S calibration: unstunned VR dummy hit matched 155% with Trigger M1). Datamine coreParams [[0.2..0.35],[5]]."
         },
         {
           "name": "M1: Soul-Searching Gaze boost",
@@ -1548,9 +1555,9 @@
         {
           "name": "Misstep: stunned vulnerability",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
           "effects": [ { "kind": "daze_bonus", "value": 0.30 } ],
-          "note": "Additional Ability (needs an Anomaly squadmate or another Angels of Delusion member, e.g. Aria - condition data only checks specialty, tick it for faction too). Her basic 3rd hit / Ultimate applies Misstep: Stun DMG Multiplier +30% (and stun +3s), once per stun period. The squad Anomaly Buildup +30/60% parts affect buildup only. Datamine abilityParams [..., 0.3, 3]."
+          "note": "Additional Ability (needs an Anomaly squadmate or another Angels of Delusion member, e.g. Aria; both clauses are checked). Her basic 3rd hit / Ultimate applies Misstep: Stun DMG Multiplier +30% (and stun +3s), once per stun period. The squad Anomaly Buildup +30/60% parts affect buildup only. Datamine abilityParams [..., 0.3, 3]."
         },
         {
           "name": "M1: enemy RES shred",
@@ -1638,7 +1645,7 @@
         }
       ],
       "default_engine": "timeweaver",
-      "_note": "Anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 710+... = 7789, ATK 798, DEF 613, AM 112, AP 114; max core ATK+75 AM+36). POLARITY DISORDER is her main DMG source - see the anomaly_plan / calc note: her downward thrust on an anomalous enemy triggers Polarity Disorder = 15% of a normal Disorder's DMG (+ a flat ~27.25% of her AP term at max skill) and does NOT consume the anomaly, so it repeats many times. To calc: run Disorder mode (electric), apply her core +250% mult and Timeweaver +25%, then take 15% per trigger. M1/M2/M3/M5 not modeled (buildup/MV). Disorder numbers PROVISIONAL until in-game calibration."
+      "_note": "Anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 710+... = 7789, ATK 798, DEF 613, AM 112, AP 114; max core ATK+75 AM+36). POLARITY DISORDER is her main DMG source - see the anomaly_plan / calc note: her downward thrust on an anomalous enemy triggers Polarity Disorder = 15% of a normal Disorder's DMG (+ a flat ~27.25% of her AP term at max skill) and does NOT consume the anomaly, so it repeats many times. To calc: run Disorder mode (electric), apply her core +250% mult and Timeweaver +25%, then take 15% per trigger. M1/M2/M3/M5 not modeled (buildup/MV). ADDITIONAL ABILITY (Gessou - needs an Anomaly squadmate or one sharing her attribute, electric): after switching stances, a Basic Attack: Tsukuyomi Kagura hit raises Electric Anomaly Buildup by 45% for 8s - BUILDUP ONLY, not modeled (documented 2026-08-02; it carries no condition entry because there is no buff to gate). Disorder numbers PROVISIONAL until in-game calibration."
     },
     "vivian": {
       "name": "Vivian Banshee",
@@ -1657,7 +1664,7 @@
       "additional_ability": {
         "name": "Prophetic Tears",
         "max_stacks": 1,
-        "condition": { "teammate_specialty_any_of": ["anomaly"] },
+        "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute": true },
         "effects": [
           { "kind": "anomaly_buff", "value": 0.12, "modes": ["anomaly"], "element": "ether" },
           { "kind": "anomaly_buff", "value": 0.12, "modes": ["disorder"] }
@@ -1704,8 +1711,9 @@
       "team_buffs": [
         {
           "name": "Prophetic Tears: squad Corruption & Disorder DMG",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute": true },
           "effects": [
             { "kind": "anomaly_buff", "value": 0.12, "modes": ["anomaly"], "element": "ether" },
             { "kind": "anomaly_buff", "value": 0.12, "modes": ["disorder"] }
@@ -1741,9 +1749,10 @@
       "core_skill_bonuses": { "base_atk": 75, "pen_ratio": 0.144 },
       "core_passive": {
         "name": "Mini Destruction Partner (self)",
+        "condition": { "teammate_shares_attribute_or_faction": true },
         "max_stacks": 1,
         "effects": [ { "kind": "dmg_bonus", "value": 0.10, "element": "electric" } ],
-        "note": "Self note: the squad PEN Ratio buff is her support role (see team_buffs). Her own PEN Ratio +14.4% core is folded into core_skill_bonuses. This entry keeps her Additional Ability's Electric DMG +10% available when SHE is the attacker (off-field damage feature) - normally she is a support (use team_buffs)."
+        "note": "Self note: the squad PEN Ratio buff is her support role (see team_buffs). Her own PEN Ratio +14.4% core is folded into core_skill_bonuses. This entry keeps her Additional Ability's Electric DMG +10% available when SHE is the attacker (off-field damage feature) - normally she is a support (use team_buffs). Same in-game effect as the 'Banquet of Perfection' team buff, which is hidden when she is the on-field agent. Carries the Additional Ability's real requirement (a squadmate sharing her Attribute electric or Faction Victoria Housekeeping) - added 2026-08-02, the team-buff copy had it but this one did not."
       },
       "team_buffs": [
         {
@@ -1766,6 +1775,7 @@
         },
         {
           "name": "Banquet of Perfection: squad Electric DMG",
+          "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "condition": { "teammate_shares_attribute_or_faction": true },
           "effects": [ { "kind": "dmg_bonus", "value": 0.10, "element": "electric" } ],
@@ -1972,7 +1982,7 @@
       "additional_ability": {
         "name": "Three Verses of Farewell at Yang Pass",
         "max_stacks": 1,
-        "condition": { "teammate_specialty_any_of": ["attack"] },
+        "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
         "effects": [
           { "kind": "flat_atk",
             "scaling": { "input": "impact", "threshold": 120, "per_step": 1, "per_value": 6, "cap": 600 } }
@@ -2165,7 +2175,7 @@
       "additional_ability": {
         "name": "Tea Party Etiquette",
         "max_stacks": 1,
-        "condition": { "teammate_specialty_any_of": ["anomaly"] },
+        "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute": true },
         "effects": [
           { "kind": "anomaly_buff", "value": 0.10, "modes": ["anomaly"], "element": "wind" },
           { "kind": "anomaly_buff", "value": 0.10, "modes": ["vortex"] }
@@ -2219,7 +2229,7 @@
         {
           "name": "Tea Party Etiquette: squad Windswept & Vortex DMG",
           "max_stacks": 1,
-          "condition": { "teammate_specialty_any_of": ["anomaly"] },
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute": true },
           "effects": [
             { "kind": "anomaly_buff", "value": 0.10, "modes": ["vortex"] },
             { "kind": "anomaly_buff", "value": 0.10, "modes": ["anomaly"], "element": "wind" }
@@ -2334,7 +2344,7 @@
             { "kind": "flat_atk",
               "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.06, "cap": 1600 } }
           ],
-          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing her Faction (Covenant of Dayat). With exactly ONE Anomaly character in the squad: on entering the battlefield, ALL squad members gain flat ATK = 6% of REMIELLE's initial ATK (cap 1,600). Enter HER panel ATK as 'initial_atk'. The three squad-size variants REPLACE each other - tick exactly one. Flat ATK added after the panel bracket (Zhao analogy, validation #4)."
+          "note": "Additional Ability - needs an Anomaly squadmate OR one sharing her Faction (Covenant of Dayat). The modeled condition deliberately checks ONLY the Anomaly clause and omits the faction one: each variant additionally needs a specific COUNT of Anomaly squadmates, so with a faction-mate and zero Anomaly agents the ability is unlocked but NO variant fires - the narrower hint is the useful one (kept on purpose through the 2026-08-02 condition audit). With exactly ONE Anomaly character in the squad: on entering the battlefield, ALL squad members gain flat ATK = 6% of REMIELLE's initial ATK (cap 1,600). Enter HER panel ATK as 'initial_atk'. The three squad-size variants REPLACE each other - tick exactly one. Flat ATK added after the panel bracket (Zhao analogy, validation #4)."
         },
         {
           "name": "Invitation to Bloom: squad ATK (2 Anomaly agents)",
@@ -2421,13 +2431,10 @@
       "additional_ability": {
         "name": "Battle Spirit",
         "max_stacks": 1,
-        "condition": {
-          "teammate_specialty_any_of": ["stun", "defense"]
-        },
         "effects": [
           { "kind": "dmg_taken", "value": 0.25 }
         ],
-        "note": "Real condition: another squad member who can activate a DEFENSIVE ASSIST or who shares her Faction (Sons of Calydon - Lighter/Lucy/Pulchra/Burnice); the condition data only checks Stun/Defense specialty, tick it for the others too. When Caesar triggers Perfect Block, Retaliation, Defensive Assist, or Basic Attack: Dead End: enemies within 7m take +25% DMG from ALL squad members for 30s (enemy debuff). ATTACKER ROLE: applies to her own hits too. Same effect as the 'Battle Spirit' team buff - NEVER apply both at once. Datamine abilityParams [0.25, 30]."
+        "note": "Real condition: another squad member who can activate a DEFENSIVE ASSIST or who shares her Faction (Sons of Calydon - Lighter/Lucy/Pulchra/Burnice). 'Can activate Defensive Assist' is a per-agent CAPABILITY, not a Specialty, so it cannot be checked from data: this ability carries NO condition and is a plain manual checkbox - tick it when your squad qualifies (datamine audit 2026-08-02). When Caesar triggers Perfect Block, Retaliation, Defensive Assist, or Basic Attack: Dead End: enemies within 7m take +25% DMG from ALL squad members for 30s (enemy debuff). ATTACKER ROLE: applies to her own hits too. Same effect as the 'Battle Spirit' team buff - NEVER apply both at once. Datamine abilityParams [0.25, 30]."
       },
       "mindscapes": {
         "1": {
@@ -2475,6 +2482,7 @@
       "team_buffs": [
         {
           "name": "Radiant Aegis: shield-bearer ATK",
+          "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "effects": [
             { "kind": "flat_atk", "value": 1000 }
@@ -2491,14 +2499,12 @@
         },
         {
           "name": "Battle Spirit: squad DMG-taken debuff",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
-          "condition": {
-            "teammate_specialty_any_of": ["stun", "defense"]
-          },
           "effects": [
             { "kind": "dmg_taken", "value": 0.25 }
           ],
-          "note": "Additional Ability - real condition: a squadmate who can DEFENSIVE ASSIST or shares her Faction (Sons of Calydon); the condition data only checks Stun/Defense specialty, tick it for the others too. Her Perfect Block / Retaliation / Defensive Assist / Dead End applies a 7m debuff: enemies take +25% DMG from ALL squad members for 30s - near-permanent with her parry loop. Datamine abilityParams [0.25, 30]."
+          "note": "Additional Ability - real condition: a squadmate who can DEFENSIVE ASSIST or shares her Faction (Sons of Calydon). 'Can activate Defensive Assist' is a capability, not a Specialty, so this buff carries NO condition and is a plain manual checkbox - tick it when your squad qualifies (datamine audit 2026-08-02). Her Perfect Block / Retaliation / Defensive Assist / Dead End applies a 7m debuff: enemies take +25% DMG from ALL squad members for 30s - near-permanent with her parry loop. Datamine abilityParams [0.25, 30]."
         },
         {
           "name": "M1: Radiant Aegis RES shred",
@@ -2617,13 +2623,11 @@
       "additional_ability": {
         "name": "Business Partner (Binding Trap)",
         "max_stacks": 1,
-        "condition": {
-          "teammate_specialty_any_of": ["attack", "rupture"]
-        },
+        "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
         "effects": [
           { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "aftershock" }
         ],
-        "note": "Real condition: an Attack or Rupture squadmate OR one sharing her Faction (Sons of Calydon); the condition data only checks specialty, tick it for the others too. Her Nightmare Shadow / Flashstep specials, Assist Follow-Up, Chain Attack, or Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30%. ATTACKER ROLE: her own Nightmare Shadow IS an Aftershock, so it benefits (tag 'special' + tick 'also counts as Aftershock'). Same effect as the 'Binding Trap' team buff - NEVER apply both at once. At M6 use the M6 all-type variant INSTEAD. Datamine abilityParams [15, 0.3]."
+        "note": "Real condition: an Attack or Rupture squadmate OR one sharing her Faction (Sons of Calydon); both clauses are checked. Her Nightmare Shadow / Flashstep specials, Assist Follow-Up, Chain Attack, or Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30%. ATTACKER ROLE: her own Nightmare Shadow IS an Aftershock, so it benefits (tag 'special' + tick 'also counts as Aftershock'). Same effect as the 'Binding Trap' team buff - NEVER apply both at once. At M6 use the M6 all-type variant INSTEAD. Datamine abilityParams [15, 0.3]."
       },
       "mindscapes": {
         "1": {
@@ -2666,21 +2670,18 @@
       "team_buffs": [
         {
           "name": "Binding Trap: squad Aftershock DMG",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
-          "condition": {
-            "teammate_specialty_any_of": ["attack", "rupture"]
-          },
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "aftershock" }
           ],
-          "note": "Additional Ability - real condition: an Attack or Rupture squadmate OR same Faction (Sons of Calydon); the condition data only checks specialty, tick it for the others too. Her Nightmare Shadow / Flashstep / Assist Follow-Up / Chain / Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30% - applies to hits tagged 'aftershock' OR with 'also counts as Aftershock' ticked (Trigger's Harmonizing Shots, Anby S's Aftershocks, Pulchra's own Nightmare Shadow). Apply it even when Pulchra attacks herself. At Pulchra M6 use the M6 variant INSTEAD. Datamine abilityParams [15, 0.3]."
+          "note": "Additional Ability AS A SUPPORT - real condition: an Attack or Rupture squadmate OR same Faction (Sons of Calydon); both clauses are checked. Her Nightmare Shadow / Flashstep / Assist Follow-Up / Chain / Ultimate hits apply Binding Trap (15s): ALL units' AFTERSHOCK DMG vs the target +30% - applies to hits tagged 'aftershock' OR with 'also counts as Aftershock' ticked (Trigger's Harmonizing Shots, Anby S's Aftershocks). Same in-game effect as her attacker-role Additional Ability: when PULCHRA HERSELF is the on-field agent use that one instead (this row is hidden there, and the calculator refuses the pair) - corrected 2026-08-02, this note previously said to apply it as self, which double-counted with her Additional Ability. At Pulchra M6 use the M6 variant INSTEAD. Datamine abilityParams [15, 0.3]."
         },
         {
           "name": "M6: Binding Trap all-type DMG",
           "max_stacks": 1,
-          "condition": {
-            "teammate_specialty_any_of": ["attack", "rupture"]
-          },
+          "condition": { "teammate_specialty_any_of": ["attack", "rupture"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "dmg_bonus", "value": 0.30 }
           ],

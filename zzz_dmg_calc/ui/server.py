@@ -202,6 +202,7 @@ def frontend_payload(data: AppData) -> dict:
             ],
             "note": buff.note,
             "condition": buff.condition,
+            "self_duplicate_of": buff.self_duplicate_of,
         }
 
     return {
@@ -282,6 +283,7 @@ def frontend_payload(data: AppData) -> dict:
                         ),
                         "per_stack_by_rank": list(b.per_stack_by_rank),
                         "max_stacks": b.max_stacks,
+                        "at_max_only": b.at_max_only,
                         "auto": b.auto,
                         "note": b.note,
                     }
@@ -300,6 +302,7 @@ def frontend_payload(data: AppData) -> dict:
                             e.conditional_buff.per_stack_by_rank
                         ),
                         "max_stacks": e.conditional_buff.max_stacks,
+                        "at_max_only": e.conditional_buff.at_max_only,
                         "auto": e.conditional_buff.auto,
                         "note": e.conditional_buff.note,
                     }

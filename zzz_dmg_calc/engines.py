@@ -47,7 +47,9 @@ class EngineBuff:
     "Vortex and Windswept DMG"); ``"sheer_dmg"`` joins the dedicated
     Sheer DMG bracket (Qingming Birdcage); ``"crit_dmg"`` adds to the
     equipper's CRIT DMG total in crit-capable modes (Heartstring
-    Nocturne's unconditional +50..80%); ``"anomaly_proficiency"`` adds
+    Nocturne's unconditional +50..80%); ``"crit_rate"`` likewise adds to
+    the equipper's CRIT Rate total (Deep Sea Visitor's Basic / Ice-Dash
+    stacks); ``"anomaly_proficiency"`` adds
     FLAT AP per stack to the equipper's AP total in anomaly modes only
     (Weeping Gemini's per-anomaly stacks — per-stack values are plain
     numbers, not fractions). ``modes`` optionally gates the
@@ -60,6 +62,11 @@ class EngineBuff:
     An engine may model SEVERAL conditional buffs that share one stack
     counter (``Engine.conditional_buffs``) — e.g. Qingming Companion
     grants Ether DMG% *and* Ult/EX Sheer DMG% per stack.
+
+    ``at_max_only`` marks an all-or-nothing part of such a shared counter:
+    the buff grants ``per_stack(rank)`` **once**, and only once the counter
+    has reached ``max_stacks`` (Severed Innocence's Electric DMG needs all
+    3 Tranquil Blossom stacks, while its CRIT DMG part scales per stack).
     """
 
     name: str
@@ -69,8 +76,20 @@ class EngineBuff:
     bracket: str = "dmg_bonus"
     modes: tuple[str, ...] | None = None
     skill_tags: tuple[str, ...] | None = None
+    at_max_only: bool = False
     auto: bool = False
     note: str = ""
+
+    def value_at(self, rank: int, stacks: float) -> float:
+        """Contribution at ``rank`` for a counter standing at ``stacks``.
+
+        Ordinary parts scale linearly and clamp at their own
+        ``max_stacks``; ``at_max_only`` parts are all-or-nothing.
+        """
+        if self.at_max_only:
+            return (self.per_stack(rank) if stacks >= self.max_stacks
+                    else 0.0)
+        return self.per_stack(rank) * min(stacks, self.max_stacks)
 
     def per_stack(self, rank: int) -> float:
         """Per-stack value at refinement ``rank`` (1-based).
@@ -167,6 +186,12 @@ class Engine:
             passive (Qingming Birdcage's +20..32%) — applied automatically
             to the equipper's CRIT Rate in crit-capable modes, empty when
             none.
+        passive_crit_dmg_by_rank: Always-on rank-scaled CRIT DMG from the
+            passive (Severed Innocence's unconditional +30..48%) — applied
+            automatically to the equipper's CRIT DMG in crit-capable
+            modes, empty when none. The *conditional* CRIT DMG parts of
+            the same passive belong in ``conditional_buffs`` with
+            ``bracket="crit_dmg"``.
         conditional_buffs: Rank-scaled stacking/on-off buffs sharing ONE
             stack counter (``CalcConfig.engine_buff_stacks``); empty when
             no conditional part is modeled (see ``passive_note``).
@@ -184,6 +209,7 @@ class Engine:
     passive_dmg: tuple[EnginePassiveDmg, ...] = ()
     passive_ap_by_rank: tuple[float, ...] = ()
     passive_crit_by_rank: tuple[float, ...] = ()
+    passive_crit_dmg_by_rank: tuple[float, ...] = ()
     conditional_buffs: tuple[EngineBuff, ...] = ()
     squad_buffs: tuple[EngineSquadBuff, ...] = ()
     passive_note: str = ""
@@ -224,6 +250,16 @@ class Engine:
         """
         return self._rank_value(
             self.passive_crit_by_rank, rank, "passive CRIT Rate"
+        )
+
+    def passive_crit_dmg(self, rank: int) -> float:
+        """Always-on CRIT DMG of the passive at ``rank`` (0 when unmodeled).
+
+        Raises:
+            EngineError: rank outside the modeled table.
+        """
+        return self._rank_value(
+            self.passive_crit_dmg_by_rank, rank, "passive CRIT DMG"
         )
 
 
@@ -275,6 +311,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
         passive_dmg: list[EnginePassiveDmg] = []
         passive_ap: tuple[float, ...] = ()
         passive_crit: tuple[float, ...] = ()
+        passive_crit_dmg: tuple[float, ...] = ()
         conditional_buffs: list[EngineBuff] = []
         refinement = entry.get("refinement")
         if refinement is not None:
@@ -326,6 +363,14 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
             else:
                 passive_crit = ()
 
+            passive_cd_raw = refinement.get("passive_crit_dmg_by_rank")
+            if passive_cd_raw is not None:
+                passive_crit_dmg = rank_values(
+                    passive_cd_raw, "passive_crit_dmg_by_rank"
+                )
+            else:
+                passive_crit_dmg = ()
+
             def parse_buff(buff_raw) -> EngineBuff:
                 """Validate one conditional-buff object."""
                 if not isinstance(buff_raw, dict):
@@ -349,11 +394,13 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     )
                 bracket = buff_raw.get("bracket", "dmg_bonus")
                 if bracket not in ("dmg_bonus", "anomaly_buff", "sheer_dmg",
-                                   "crit_dmg", "anomaly_proficiency"):
+                                   "crit_dmg", "crit_rate",
+                                   "anomaly_proficiency"):
                     raise EngineError(
                         f"Engine '{key}': buff 'bracket' must be 'dmg_bonus', "
-                        f"'anomaly_buff', 'sheer_dmg', 'crit_dmg' or "
-                        f"'anomaly_proficiency', got {bracket!r}"
+                        f"'anomaly_buff', 'sheer_dmg', 'crit_dmg', "
+                        f"'crit_rate' or 'anomaly_proficiency', "
+                        f"got {bracket!r}"
                     )
                 modes = buff_raw.get("modes")
                 if modes is not None:
@@ -384,6 +431,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     bracket=bracket,
                     modes=modes,
                     skill_tags=skill_tags,
+                    at_max_only=bool(buff_raw.get("at_max_only", False)),
                     auto=bool(buff_raw.get("auto", False)),
                     note=str(buff_raw.get("note", "")),
                 )
@@ -445,6 +493,7 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
             passive_dmg=tuple(passive_dmg),
             passive_ap_by_rank=passive_ap,
             passive_crit_by_rank=passive_crit,
+            passive_crit_dmg_by_rank=passive_crit_dmg,
             conditional_buffs=tuple(conditional_buffs),
             squad_buffs=tuple(squad_buffs),
             passive_note=str(entry.get("passive_note", "")),

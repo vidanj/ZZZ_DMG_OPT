@@ -318,6 +318,12 @@ class DiscSet:
             an element-tagged disc. ``None`` = element-agnostic 2pc
             (ATK%, AP, CRIT Rate…) or a legacy entry that assumes it
             matches.
+        bonus_2pc_dmg: Skill-type-conditional DMG% bonuses that come with
+            the **2-piece** (gated by the hit's skill tag, not by stacks) —
+            Shadow Harmony's "Aftershock & Dash Attack DMG +15%". Kept
+            apart from ``bonus_2pc`` because that dict is unconditional
+            stats the in-game sheet shows; these apply only to matching
+            hits, so they join the DMG% bracket at damage time instead.
         bonus_4pc: Modeled stacking effect, or ``None`` if the set's 4-piece
             isn't modeled (its ``notes`` say why).
         bonus_4pc_dmg: Skill-type-conditional DMG% bonuses that come with
@@ -343,6 +349,7 @@ class DiscSet:
     name: str
     bonus_2pc: dict[str, float]
     bonus_2pc_attribute: str | None = None
+    bonus_2pc_dmg: tuple[SetDmgBonus, ...] = ()
     bonus_4pc: SetBonus4pc | None = None
     bonus_4pc_dmg: tuple[SetDmgBonus, ...] = ()
     auto_4pc_dmg: float = 0.0
@@ -378,9 +385,12 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
         if not isinstance(name, str) or not name.strip():
             raise DiscError(f"Set '{key}' is missing a valid 'name'")
 
+        # May be empty ONLY when the whole 2-piece is skill-gated and so
+        # lives in 'bonus_2pc_dmg' instead (Shadow Harmony) — checked once
+        # that field is parsed, below.
         bonus_2pc = entry.get("bonus_2pc")
-        if not isinstance(bonus_2pc, dict) or not bonus_2pc:
-            raise DiscError(f"Set '{key}': 'bonus_2pc' must be a non-empty object")
+        if not isinstance(bonus_2pc, dict):
+            raise DiscError(f"Set '{key}': 'bonus_2pc' must be an object")
         for stat, value in bonus_2pc.items():
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
                 raise DiscError(
@@ -446,30 +456,41 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 note=str(raw_4pc.get("note", "")),
             )
 
-        dmg_bonuses: list[SetDmgBonus] = []
-        raw_dmg = entry.get("bonus_4pc_dmg", [])
-        if not isinstance(raw_dmg, list):
-            raise DiscError(f"Set '{key}': 'bonus_4pc_dmg' must be a list")
-        for item in raw_dmg:
-            if not isinstance(item, dict):
-                raise DiscError(
-                    f"Set '{key}': 'bonus_4pc_dmg' entries must be objects"
-                )
-            tag = item.get("skill_tag")
-            value = item.get("value")
-            if not isinstance(tag, str) or not tag.strip():
-                raise DiscError(
-                    f"Set '{key}': typed DMG bonus needs a 'skill_tag'"
-                )
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-                raise DiscError(
-                    f"Set '{key}': typed DMG bonus 'value' must be positive"
-                )
-            dmg_bonuses.append(SetDmgBonus(
-                skill_tag=tag,
-                value=float(value),
-                note=str(item.get("note", "")),
-            ))
+        def typed_dmg_bonuses(field: str) -> list[SetDmgBonus]:
+            """Parse a list of skill-tag-gated DMG% bonuses."""
+            parsed: list[SetDmgBonus] = []
+            raw_list = entry.get(field, [])
+            if not isinstance(raw_list, list):
+                raise DiscError(f"Set '{key}': '{field}' must be a list")
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    raise DiscError(
+                        f"Set '{key}': '{field}' entries must be objects"
+                    )
+                tag = item.get("skill_tag")
+                value = item.get("value")
+                if not isinstance(tag, str) or not tag.strip():
+                    raise DiscError(
+                        f"Set '{key}': typed DMG bonus needs a 'skill_tag'"
+                    )
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                    raise DiscError(
+                        f"Set '{key}': typed DMG bonus 'value' must be positive"
+                    )
+                parsed.append(SetDmgBonus(
+                    skill_tag=tag,
+                    value=float(value),
+                    note=str(item.get("note", "")),
+                ))
+            return parsed
+
+        dmg_bonuses_2pc = typed_dmg_bonuses("bonus_2pc_dmg")
+        dmg_bonuses = typed_dmg_bonuses("bonus_4pc_dmg")
+        if not bonus_2pc and not dmg_bonuses_2pc:
+            raise DiscError(
+                f"Set '{key}': needs a non-empty 'bonus_2pc' or "
+                f"'bonus_2pc_dmg' — every set has a 2-piece bonus"
+            )
 
         squad_4pc = None
         raw_squad = entry.get("squad_4pc")
@@ -526,6 +547,7 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
             name=name,
             bonus_2pc={s: float(v) for s, v in bonus_2pc.items()},
             bonus_2pc_attribute=bonus_2pc_attribute,
+            bonus_2pc_dmg=tuple(dmg_bonuses_2pc),
             bonus_4pc=bonus_4pc,
             bonus_4pc_dmg=tuple(dmg_bonuses),
             auto_4pc_dmg=float(auto_4pc_dmg),
@@ -673,11 +695,15 @@ def set_tagged_dmg_bonuses(
     valid_tags: set[str] | frozenset[str] | None = None,
     counts_as_aftershock: bool = False,
 ) -> dict[str, float]:
-    """Skill-type-conditional DMG% granted by equipped 4-piece sets.
+    """Skill-type-conditional DMG% granted by equipped sets.
+
+    Both tiers contribute: a set with >= 2 equipped pieces grants its
+    ``bonus_2pc_dmg`` entries (Shadow Harmony's Aftershock & Dash +15%),
+    and >= 4 pieces additionally grants ``bonus_4pc_dmg``.
 
     Returns:
-        set key -> total DMG% (fraction) for every set with >= 4 equipped
-        pieces whose typed bonuses match the hit's ``skill_tag``.
+        set key -> total DMG% (fraction) for every equipped set whose
+        typed bonuses match the hit's ``skill_tag``.
         ``skill_tag=None`` (untyped hit) matches nothing. A hit that also
         ``counts_as_aftershock`` (dual damage type — Anby S's Chain/Ult,
         Trigger's Harmonizing Shots) additionally matches bonuses tagged
@@ -702,9 +728,12 @@ def set_tagged_dmg_bonuses(
 
     bonuses: dict[str, float] = {}
     for key, count in counts.items():
-        if count < 4:
+        if count < 2:
             continue
-        for bonus in sets[key].bonus_4pc_dmg:
+        entries = list(sets[key].bonus_2pc_dmg)
+        if count >= 4:
+            entries += list(sets[key].bonus_4pc_dmg)
+        for bonus in entries:
             if valid_tags is not None and bonus.skill_tag not in valid_tags:
                 raise DiscError(
                     f"Set '{key}': typed DMG bonus names unknown skill tag "

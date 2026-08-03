@@ -292,7 +292,19 @@
     },
     "SHADOW_HARMONY": {
       "name": "Shadow Harmony",
-      "bonus_2pc": { "Aftershock & Dash Attack DMG%": 0.15 },
+      "bonus_2pc": {},
+      "bonus_2pc_dmg": [
+        {
+          "skill_tag": "aftershock",
+          "value": 0.15,
+          "note": "2pc 'Aftershock DMG +15%'. Applies to hits tagged 'aftershock' AND to dual-type hits ticking 'also counts as Aftershock' (Anby S's Chain/Ultimate)."
+        },
+        {
+          "skill_tag": "dash",
+          "value": 0.15,
+          "note": "2pc 'Dash Attack DMG +15%' - the other half of the same 2-piece line."
+        }
+      ],
       "bonus_4pc": {
         "stat": "CRIT Rate",
         "per_stack": 0.04,
@@ -301,14 +313,7 @@
         "at_max_extra": { "stat": "Combat ATK%", "value": 0.12 },
         "note": "Aftershock/Dash hits matching the wearer's attribute grant a stack (max 3, 15s, refreshing; once per skill use): +4% CRIT Rate each. The paired +4% ATK per stack has no second per-stack slot - carried as at_max_extra Combat ATK% 12% (full ATK part at max only; at partial stacks add 4 x stacks manually). Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured. RAMP-UP for aftershock/dash agents - auto-applied."
       },
-      "bonus_4pc_dmg": [
-        {
-          "skill_tag": "dash",
-          "value": 0.15,
-          "note": "The 2pc's Dash Attack half folded here - the schema's 2pc stats can't be skill-gated."
-        }
-      ],
-      "notes": "Aftershock/Dash set (added 2026-07-14, zenless-optimizer datamine). 2pc 'Aftershock & Dash Attack DMG +15%' is skill-gated: the stat name in bonus_2pc is tracked-only (no damage effect). The Dash half is folded into bonus_4pc_dmg (applies with 4 pieces); Aftershocks have no skill tag in constants.json - enter 15 as external DMG% on Aftershock hits (and on Dash hits when running 2 PIECES ONLY)."
+      "notes": "Aftershock/Dash set (added 2026-07-14, zenless-optimizer datamine). The 2pc 'Aftershock & Dash Attack DMG +15%' is skill-gated, so it lives in bonus_2pc_dmg (added 2026-08-02) and is applied automatically from 2 pieces up - do NOT also enter 15 as external DMG% (that double-counts). Before 2026-08-02 the Aftershock half was unmodeled and the Dash half sat in bonus_4pc_dmg, wrongly needing 4 pieces. CONFIRMED in-game 2026-08-02 (Anby S calibration)."
     },
     "THE_SKY_ABLAZE": {
       "name": "The Sky Ablaze",

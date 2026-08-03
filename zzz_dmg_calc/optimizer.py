@@ -439,7 +439,10 @@ def _disc_buckets(
     return _bucket_vector(stats)
 
 
-def _set_2pc_buckets(entry: DiscSet, attribute: str) -> tuple[float, ...]:
+def _set_2pc_buckets(
+    entry: DiscSet, attribute: str,
+    skill_tag: str | None = None, counts_as_aftershock: bool = False,
+) -> tuple[float, ...]:
     """One set's 2-piece bucket vector for an agent attacking as
     ``attribute``.
 
@@ -448,11 +451,26 @@ def _set_2pc_buckets(entry: DiscSet, attribute: str) -> tuple[float, ...]:
     is dealt as another element, so the optimizer must not value it —
     otherwise it recommends an off-element set for a phantom +10% (and
     the §4 re-check would fail, since ``calculate`` drops it).
+
+    Skill-tag-gated 2pc DMG% (Shadow Harmony's Aftershock & Dash +15%)
+    joins the same additive bracket as ``Attribute DMG%``, so it rides
+    the same bucket — which also gives it the right piece threshold for
+    free, since ``_fold_sets`` applies this vector from 2 pieces up. The
+    tag arguments default to "no tagged bonus" so the ANOMALY fast path,
+    where ``set_tagged_dmg_bonuses`` never runs, stays correct by
+    omission.
     """
     stats = dict(entry.bonus_2pc)
     if (entry.bonus_2pc_attribute is not None
             and entry.bonus_2pc_attribute != attribute):
         stats.pop("Attribute DMG%", None)
+    tagged = sum(
+        b.value for b in entry.bonus_2pc_dmg
+        if (skill_tag is not None and b.skill_tag == skill_tag)
+        or (counts_as_aftershock and b.skill_tag == "aftershock")
+    )
+    if tagged:
+        stats["DMG%"] = stats.get("DMG%", 0.0) + tagged
     return _bucket_vector(stats)
 
 
@@ -1691,18 +1709,37 @@ def optimize(
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
-    # Engine always-on CRIT Rate (Qingming Birdcage) joins the crit total
-    # exactly as in calculate(); same for crit_dmg-bracket conditional
-    # parts (Heartstring Nocturne).
-    crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
-                       + engine.passive_crit(rank))
+    # Engine always-on CRIT Rate (Qingming Birdcage) and CRIT DMG (Severed
+    # Innocence) join the crit totals exactly as in calculate(); same for
+    # the crit_dmg / crit_rate bracket conditional parts (Heartstring
+    # Nocturne, Deep Sea Visitor).
+    crit_rate_const = (
+        config.external_crit_rate + kit["crit_rate"]
+        + engine.passive_crit(rank)
+        + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                             attr, rank, bracket="crit_rate",
+                             skill_tag=config.skill_tag,
+                             counts_as_aftershock=config.counts_as_aftershock)
+    )
     crit_dmg_const = (
         config.external_crit_dmg + kit["crit_dmg"]
+        + engine.passive_crit_dmg(rank)
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
                              attr, rank, bracket="crit_dmg",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
     )
+    # Anby S's Silver Star takes a share of the CRIT DMG TOTAL, so it
+    # cannot be folded into the constant — it scales with the candidate
+    # build's own CRIT DMG rolls (see api._resolve_deferred_crit_dmg).
+    deferred_cd = kit["deferred_crit_dmg"]
+
+    def with_deferred_cd(total: float) -> float:
+        """CRIT DMG total after total-CRIT-DMG-scaled kit effects."""
+        if not deferred_cd:
+            return total
+        return total + sum(p["scaling"].resolve(total) * p["stacks"]
+                           for p in deferred_cd)
     # Kit/support PEN Ratio (e.g. Rina's squad PEN Ratio) — a constant that
     # calculate() folds into the DEF zone (build.pen_ratio + kit pen_ratio);
     # the fast path must too, or a support granting PEN Ratio under-values
@@ -1775,7 +1812,8 @@ def optimize(
         if crit_variant == "non_crit":
             crit_mult = 1.0
         else:
-            crit_dmg = base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+            crit_dmg = with_deferred_cd(
+                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
             if crit_variant == "crit":
                 crit_mult = 1.0 + crit_dmg
             else:
@@ -1806,7 +1844,8 @@ def optimize(
         if stat == "CRIT Rate":
             return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
         if stat == "CRIT DMG":
-            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+            return with_deferred_cd(
+                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
         if stat == "PEN Ratio":
             return buckets[_B_PEN_RATIO] + pen_ratio_const
         if stat == "PEN":
@@ -1853,7 +1892,8 @@ def optimize(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _set_2pc_buckets(entry, attr)
+        set_2pc[key] = _set_2pc_buckets(
+            entry, attr, config.skill_tag, config.counts_as_aftershock)
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors
@@ -2747,16 +2787,33 @@ def optimize_sheer(
                 + kit["anomaly_proficiency"]
                 + config.external_anomaly_proficiency)
     am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
-    crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
-                       + engine.passive_crit(rank))
+    crit_rate_const = (
+        config.external_crit_rate + kit["crit_rate"]
+        + engine.passive_crit(rank)
+        + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                             attr, rank, mode="sheer",
+                             bracket="crit_rate",
+                             skill_tag=config.skill_tag,
+                             counts_as_aftershock=config.counts_as_aftershock)
+    )
     crit_dmg_const = (
         config.external_crit_dmg + kit["crit_dmg"]
+        + engine.passive_crit_dmg(rank)
         + _engine_buff_bonus(engine, config.engine_buff_stacks,
                              attr, rank, mode="sheer",
                              bracket="crit_dmg",
                              skill_tag=config.skill_tag,
                              counts_as_aftershock=config.counts_as_aftershock)
     )
+    # Total-CRIT-DMG-scaled kit effects — see the direct-mode twin.
+    deferred_cd = kit["deferred_crit_dmg"]
+
+    def with_deferred_cd(total: float) -> float:
+        """CRIT DMG total after total-CRIT-DMG-scaled kit effects."""
+        if not deferred_cd:
+            return total
+        return total + sum(p["scaling"].resolve(total) * p["stacks"]
+                           for p in deferred_cd)
     bonus_const = (
         sum(config.external_dmg_bonuses)
         + sum(_engine_passive_bonuses(engine, attr, rank))
@@ -2821,7 +2878,8 @@ def optimize_sheer(
         if crit_variant == "non_crit":
             crit_mult = 1.0
         else:
-            crit_dmg = base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+            crit_dmg = with_deferred_cd(
+                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
             if crit_variant == "crit":
                 crit_mult = 1.0 + crit_dmg
             else:
@@ -2851,7 +2909,8 @@ def optimize_sheer(
         if stat == "CRIT Rate":
             return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
         if stat == "CRIT DMG":
-            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
+            return with_deferred_cd(
+                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
         if stat == "PEN Ratio":
             return buckets[_B_PEN_RATIO] + pen_ratio_const
         if stat == "PEN":
@@ -2898,7 +2957,8 @@ def optimize_sheer(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _set_2pc_buckets(entry, attr)
+        set_2pc[key] = _set_2pc_buckets(
+            entry, attr, config.skill_tag, config.counts_as_aftershock)
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors

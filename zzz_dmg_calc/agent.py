@@ -82,6 +82,55 @@ KIT_EFFECT_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
 PERCENT_SCALING_INPUTS = ("initial_crit_rate", "initial_crit_dmg",
                           "pen_ratio")
 
+#: The one scaling input the ENGINE resolves instead of the user: the
+#: owner's total combat CRIT DMG (panel + every combat buff). Anby S's
+#: Silver Star grants Aftershocks 35% of it, and the in-game value
+#: includes buffs no UI form can know up front (support mindscapes, disc
+#: squad sets, the equipper's own W-Engine), so asking for it by hand was
+#: the single largest source of error — CONFIRMED in-game 2026-08-02.
+#: Self-referential by construction: an effect scaling on this input is
+#: excluded from its own input. NOT in PERCENT_SCALING_INPUTS — no box is
+#: ever rendered for it, so there is no unit to police.
+TOTAL_CRIT_DMG_INPUT = "total_crit_dmg"
+
+#: Attacker-role slots a team buff may mirror (``self_duplicate_of``).
+#: See :class:`KitBuff` for why the duplication exists.
+SELF_DUPLICATE_SLOTS = ("core_passive", "additional_ability", "potential")
+
+#: The game's six agent Specialties, as used by ``Agent.specialty`` and by
+#: the specialty lists inside a buff ``condition``.
+SPECIALTIES = ("attack", "stun", "anomaly", "support", "defense", "rupture")
+
+#: Keys a kit buff's ``condition`` object may carry. Every real ZZZ
+#: Additional Ability requirement is a DISJUNCTION — "an Attack character
+#: OR one sharing the same Faction" — so more than one key may appear and
+#: they are OR-ed: the requirement is met when ANY holds. Modeling only
+#: one clause is what mis-stated 10 agents' requirements (audit against
+#: the nanoka 3.1 ability text, 2026-08-02).
+#:
+#: - ``teammate_specialty_any_of``: list of specialties, any of which a
+#:   squadmate may have.
+#: - ``teammate_shares_attribute``: a squadmate shares the owner's
+#:   Attribute (Trigger, Yanagi — "shares the same attribute").
+#: - ``teammate_shares_faction``: a squadmate shares the owner's Faction
+#:   (Lighter, Qingyi, Norma… — "shares the same Faction").
+#: - ``teammate_shares_attribute_or_faction``: either of the two above
+#:   (Ellen, Lycaon, Nekomata, Rina…).
+#: - ``potential_adds_specialty``: specialties the requirement ALSO
+#:   accepts once the owner's Potential is unlocked. Kept separate from
+#:   ``teammate_specialty_any_of`` because the base requirement is what
+#:   every account has; encoding the widened form as the base is exactly
+#:   the error found in Lycaon and Ellen.
+#:
+#: An ability with NO stated machine-checkable requirement (Caesar's
+#: "can activate Defensive Assist" is a per-agent capability, not a
+#: specialty) carries no ``condition`` at all: the front end then shows a
+#: plain manual checkbox and the requirement lives in the buff's note.
+CONDITION_KEYS = ("teammate_specialty_any_of", "teammate_shares_attribute",
+                  "teammate_shares_faction",
+                  "teammate_shares_attribute_or_faction",
+                  "potential_adds_specialty")
+
 #: Above this, a percent-typed scaling input can only be a percentage
 #: typed into a fraction field (a panel stat of 500% is not a build) —
 #: worth an error naming the unit, because the value would otherwise pass
@@ -185,6 +234,16 @@ class KitBuff:
     ``{"teammate_shares_attribute_or_faction": true}``) — the front ends
     use it to pre-check the toggle; the calculation itself always obeys
     the user's runtime choice.
+
+    ``self_duplicate_of`` (team buffs only) names the attacker-role slot
+    this buff mirrors — ``"core_passive"``, ``"additional_ability"`` or
+    ``"potential"``. Anby S's kit exists twice, once for each role: her
+    Silver Star CRIT DMG is a core passive when she is on-field and a
+    team buff when she supports. The two are the SAME in-game effect, so
+    activating both double-counts it (an in-game calibration on
+    2026-08-02 found a build doing exactly that). Front ends hide these
+    rows when the owner is the on-field agent, and ``api.calculate``
+    rejects the pair outright.
     """
 
     name: str
@@ -192,6 +251,7 @@ class KitBuff:
     effects: tuple[KitEffect, ...]
     note: str = ""
     condition: dict | None = None
+    self_duplicate_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -480,12 +540,41 @@ def _parse_kit_buff(raw, where: str) -> KitBuff:
                                  modes=modes, element=element,
                                  at_max_stacks=at_max))
     condition = raw.get("condition")
-    if condition is not None and not isinstance(condition, dict):
-        raise AgentError(f"{where}: 'condition' must be an object")
+    if condition is not None:
+        if not isinstance(condition, dict) or not condition:
+            raise AgentError(
+                f"{where}: 'condition' must be a non-empty object (omit it "
+                f"entirely for a manually-toggled buff)"
+            )
+        for ckey, cval in condition.items():
+            if ckey not in CONDITION_KEYS:
+                raise AgentError(
+                    f"{where}: unknown condition key {ckey!r}; "
+                    f"options: {list(CONDITION_KEYS)}"
+                )
+            if ckey in ("teammate_specialty_any_of",
+                        "potential_adds_specialty"):
+                if (not isinstance(cval, list) or not cval
+                        or any(s not in SPECIALTIES for s in cval)):
+                    raise AgentError(
+                        f"{where}: condition '{ckey}' must be a non-empty "
+                        f"list of specialties from {list(SPECIALTIES)}"
+                    )
+            elif cval is not True:
+                raise AgentError(
+                    f"{where}: condition '{ckey}' must be true"
+                )
+    mirrors = raw.get("self_duplicate_of")
+    if mirrors is not None and mirrors not in SELF_DUPLICATE_SLOTS:
+        raise AgentError(
+            f"{where}: 'self_duplicate_of' must be one of "
+            f"{list(SELF_DUPLICATE_SLOTS)}, got {mirrors!r}"
+        )
     return KitBuff(
         name=name,
         max_stacks=max_stacks,
         effects=tuple(effects),
+        self_duplicate_of=mirrors,
         note=str(raw.get("note", "")),
         condition=condition,
     )

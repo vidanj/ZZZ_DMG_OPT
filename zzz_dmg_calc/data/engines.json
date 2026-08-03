@@ -14,16 +14,26 @@
       "refinement": {
         "rank": 1,
         "max_rank": 5,
-        "conditional_buff": {
-          "name": "Lord of Seas: Ice DMG",
-          "element": "ice",
-          "per_stack_by_rank": [0.25, 0.315, 0.38, 0.445, 0.50],
-          "max_stacks": 1,
-          "auto": true,
-          "note": "Unconditional passive: the equipper's Ice DMG +25% (R1) to +50% (R5) - always active in-game, so auto-applied (default ON). If you previously entered it manually as external DMG bonus, remove that entry or it double-counts."
-        }
+        "conditional_buffs": [
+          {
+            "name": "Lord of Seas: Ice DMG",
+            "element": "ice",
+            "per_stack_by_rank": [0.25, 0.315, 0.38, 0.445, 0.50],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "Unconditional passive: the equipper's Ice DMG +25% (R1) to +50% (R5) - always active in-game, so auto-applied (default ON). If you previously entered it manually as external DMG bonus, remove that entry or it double-counts."
+          },
+          {
+            "name": "Lord of Seas: CRIT Rate (Basic / Ice Dash)",
+            "per_stack_by_rank": [0.10, 0.125, 0.15, 0.175, 0.20],
+            "max_stacks": 2,
+            "bracket": "crit_rate",
+            "auto": true,
+            "note": "Two independent CRIT Rate stacks of +10% (R1) to +20% (R5) each: stack 1 from a Basic Attack hit (8s), stack 2 from an Ice-dealing Dash Attack hit (15s). Both are trivially maintained in Ellen's loop - RAMP-UP, auto-applied at 2 (+20% R1 / +40% R5). Enter 1 if only the Basic half is up."
+          }
+        ]
       },
-      "passive_note": "Ellen's signature (the former dummy_engine renamed 2026-07-14 - same stats, so every DUMMY-era game validation still holds; Ice DMG modeled as an auto conditional buff 2026-07-22, zenless-optimizer datamine wengine params R1 [0.25, 0.1, 8, 0.1, 15] to R5 [0.5, 0.2, 8, 0.2, 15]). CRIT parts stay manual: Basic hit grants CRIT Rate +10/12.5/15/17.5/20% for 8s; an Ice-dealing Dash hit a further +10/12.5/15/17.5/20% for 15s - enter as external CRIT Rate when active."
+      "passive_note": "Ellen's signature (the former dummy_engine renamed 2026-07-14 - same stats, so every DUMMY-era game validation still holds; Ice DMG modeled as an auto conditional buff 2026-07-22, zenless-optimizer datamine wengine params R1 [0.25, 0.1, 8, 0.1, 15] to R5 [0.5, 0.2, 8, 0.2, 15]). The stack counter is the CRIT Rate half's 0-2 (was 0/1 before 2026-08-02); the Ice DMG part clamps at 1, so it stays full at any counter >= 1. Both CRIT Rate stacks are now auto-applied - do NOT also enter them as external CRIT Rate."
     },
     "severed_innocence": {
       "name": "Severed Innocence",
@@ -32,16 +42,28 @@
       "refinement": {
         "rank": 1,
         "max_rank": 5,
-        "conditional_buff": {
-          "name": "Tranquil Blossom (3 stacks): Electric DMG",
-          "element": "electric",
-          "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
-          "max_stacks": 1,
-          "auto": true,
-          "note": "At all 3 Tranquil Blossom stacks: the equipper's Electric DMG +20% (R1). Anby S maintains 3 stacks trivially (Basic/Special/Aftershock hits grant them) - RAMP-UP, auto-applied. Enter 1 (= at 3 stacks) or 0."
-        }
+        "passive_crit_dmg_by_rank": [0.30, 0.345, 0.39, 0.435, 0.48],
+        "conditional_buffs": [
+          {
+            "name": "Tranquil Blossom: CRIT DMG",
+            "per_stack_by_rank": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "max_stacks": 3,
+            "bracket": "crit_dmg",
+            "auto": true,
+            "note": "Per Tranquil Blossom stack: the equipper's CRIT DMG +10% (R1) / +16% (R5), max 3 stacks (+30% R1 / +48% R5). Anby S maintains 3 stacks trivially (Basic/Special/Aftershock hits grant them) - RAMP-UP, auto-applied at 3. This is ON TOP of the unconditional passive_crit_dmg_by_rank."
+          },
+          {
+            "name": "Tranquil Blossom (3 stacks): Electric DMG",
+            "element": "electric",
+            "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+            "max_stacks": 3,
+            "at_max_only": true,
+            "auto": true,
+            "note": "At ALL 3 Tranquil Blossom stacks (and only then): the equipper's Electric DMG +20% (R1) / +32% (R5). Shares the Tranquil Blossom counter with the CRIT DMG part, but is all-or-nothing - at 0-2 stacks it contributes nothing."
+          }
+        ]
       },
-      "passive_note": "Anby S's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 1, 0.1, 3, 30, 3, 0.2] at R1). Advanced stat CRIT DMG 48% (0.192 x 2.5 at Lv. 60). CRIT DMG parts NOT auto-applied (no crit bracket in the engine conditional system): base +30% (R1) / +48% (R5) unconditional, plus +10% (R1) / +16% (R5) per Tranquil Blossom stack (max 3, effectively always full) - enter the total as external CRIT DMG (R1 full stacks: 30 + 30 = 60; R5: 48 + 48 = 96). The Electric +20% at 3 stacks IS modeled (auto conditional buff)."
+      "passive_note": "Anby S's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 1, 0.1, 3, 30, 3, 0.2] at R1). Advanced stat CRIT DMG 48% (0.192 x 2.5 at Lv. 60). The stack counter is Tranquil Blossom stacks 0-3 (was 0/1 before 2026-08-02). CRIT DMG is now auto-applied in full: unconditional +30% (R1) / +48% (R5) via passive_crit_dmg_by_rank, plus +10% (R1) / +16% (R5) per stack - do NOT also enter it as external CRIT DMG (that double-counts; R1 full stacks total 60, R5 96). CONFIRMED in-game 2026-08-02 (Anby S calibration: panel +134 CRIT DMG decomposed as Trigger M2 24 + King of the Summit 30 + Seed 30 + this engine 50 at 2 stacks)."
     },
     "spectral_gaze": {
       "name": "Spectral Gaze",

@@ -982,8 +982,16 @@ function renderEngineBuff(engine, rank) {
     const bracket = b.bracket === "sheer_dmg" ? " Sheer"
       : b.bracket === "anomaly_buff" ? " (buff bracket)" : "";
     const word = b.bracket === "crit_dmg" ? "CRIT DMG"
+      : b.bracket === "crit_rate" ? "CRIT Rate"
       : `${b.element || "DMG"}${bracket}`;
-    return `+${+(value * 100).toFixed(1)}% ${word}${tags}`;
+    // Parts of one shared counter scale differently: all-or-nothing at
+    // the cap (Severed Innocence's Electric DMG), per stack, or flat
+    // once any stack is up (Deep Sea Visitor's Ice DMG caps at 1 while
+    // the counter runs to 2).
+    const gate = b.at_max_only ? ` at ${b.max_stacks} stacks`
+      : b.max_stacks > 1 ? " per stack"
+      : maxStacks > 1 ? " (from 1 stack)" : "";
+    return `+${+(value * 100).toFixed(1)}% ${word}${tags}${gate}`;
   }).join(" & ");
   const note = buffs.map(b => b.note).filter(Boolean).join(" | ");
   wrap.style.display = "";
@@ -1001,7 +1009,7 @@ function renderEngineBuff(engine, rank) {
     // average, so fractional stacks are legal there (e.g. 2.35).
     wrap.innerHTML = `
       <label title="${note.replace(/"/g, "&quot;")}">${buff.name}${autoTag}
-        stacks (0–${maxStacks}, ${per} each)</label>
+        stacks (0–${maxStacks}): ${per}</label>
       <input type="number" id="engine-buff-stacks" value="${previous || 0}"
              min="0" max="${maxStacks}" step="any">`;
   }
@@ -1257,35 +1265,55 @@ function conditionHint(condition, ownerKey) {
   if (!condition) return "";
   const onField = DB.agents[$("agent").value];
   const supports = supportKeys();
-  let met = false, text = "";
-  if (condition.teammate_specialty_any_of) {
-    const list = condition.teammate_specialty_any_of;
-    const others = ownerKey
-      ? [$("agent").value, ...supports.filter(k => k !== ownerKey)]
-      : supports;
-    met = others.some(k => DB.agents[k] && list.includes(DB.agents[k].specialty));
-    text = `needs ${list.join("/")} in squad`;
-  } else if (condition.teammate_shares_attribute_or_faction) {
-    // The condition is about the OWNER's attribute/faction: for an
-    // on-field ability the owner is the on-field agent; for a support's
-    // team buff (ownerKey set) it's that support, checked against the
-    // rest of the squad (on-field agent + other supports).
-    const owner = ownerKey ? DB.agents[ownerKey] : onField;
-    const others = ownerKey
-      ? [$("agent").value, ...supports.filter(k => k !== ownerKey)]
-      : supports;
-    met = others.some(k => {
-      const a = DB.agents[k];
-      return a && (a.attribute === owner.attribute
-        || (owner.faction && a.faction === owner.faction));
-    });
-    text = "needs a teammate sharing attribute/faction";
-  } else {
-    return "";
+  // The condition is about the OWNER: for an on-field ability the owner
+  // is the on-field agent; for a support's team buff (ownerKey set) it's
+  // that support, checked against the rest of the squad.
+  const owner = ownerKey ? DB.agents[ownerKey] : onField;
+  const others = ownerKey
+    ? [$("agent").value, ...supports.filter(k => k !== ownerKey)]
+    : supports;
+  const shares = (a, attr, fac) =>
+    (attr && a.attribute === owner.attribute)
+    || (fac && owner.faction && a.faction === owner.faction);
+
+  // Every real ZZZ requirement is a DISJUNCTION ("an Attack character OR
+  // one sharing the same Faction"), so each clause present is evaluated
+  // and the results OR-ed — modelling only one clause is what mis-stated
+  // 10 agents' requirements before the 2026-08-02 datamine audit.
+  const clauses = [];
+  let met = false;
+  const specialties = condition.teammate_specialty_any_of;
+  if (specialties) {
+    if (others.some(k => DB.agents[k]
+                         && specialties.includes(DB.agents[k].specialty)))
+      met = true;
+    clauses.push(`${specialties.join("/")} in squad`);
   }
-  return met
+  const attr = condition.teammate_shares_attribute;
+  const fac = condition.teammate_shares_faction;
+  const both = condition.teammate_shares_attribute_or_faction;
+  if (attr || fac || both) {
+    if (others.some(k => DB.agents[k]
+                         && shares(DB.agents[k], attr || both, fac || both)))
+      met = true;
+    clauses.push(both ? "a teammate sharing attribute/faction"
+                 : attr ? "a teammate sharing attribute"
+                 : "a teammate sharing faction");
+  }
+  if (!clauses.length) return "";
+
+  // Specialties the OWNER's Potential adds to the requirement. Reported
+  // separately: the base requirement is what every account has, so this
+  // never turns the hint green on its own.
+  const potAdds = condition.potential_adds_specialty;
+  const potNote = potAdds
+    ? ` <span class="note">(their Potential also accepts `
+      + `${potAdds.join("/")})</span>`
+    : "";
+  return (met
     ? ` <span style="color:var(--accent)">(condition met ✓)</span>`
-    : ` <span style="color:var(--error)">(${text} — not met)</span>`;
+    : ` <span style="color:var(--error)">(needs ${clauses.join(" or ")}`
+      + ` — not met)</span>`) + potNote;
 }
 
 /* Kit scaling inputs the ENGINE reads as fractions (0.78 = 78%). The page
@@ -1297,11 +1325,56 @@ function conditionHint(condition, ownerKey) {
 const PERCENT_SCALING_INPUTS = new Set(
   ["initial_crit_rate", "initial_crit_dmg", "pen_ratio"]);
 
-/* Label unit + placeholder for one scaling-input box. */
+/* Scaling inputs the CALCULATOR resolves from the build, so the page must
+   never render a box for them (agent.TOTAL_CRIT_DMG_INPUT). */
+const ENGINE_RESOLVED_SCALING_INPUTS = new Set(["total_crit_dmg"]);
+
+/* Scaling inputs that are a small ENUM, not a panel stat: rendered as a
+   dropdown so the box can't ask for "e.g. 27000" when it wants 1-5. */
+const ENUM_SCALING_INPUTS = {
+  potential_level: { label: "Potential level", options: [1, 2, 3, 4, 5] },
+};
+
+/* Friendlier wording than the raw input name, where the name understates
+   what the buff actually reads (Anby S's Silver Star takes her COMBAT
+   CRIT DMG, not the panel figure). */
+const SCALING_LABELS = {
+  initial_crit_dmg: "total CRIT DMG, incl. combat buffs",
+};
+
+/* Label unit + placeholder for one scaling-input box. Percent inputs are
+   typed as the PERCENTAGE (289.6 for 289.6%) and converted on send by
+   scalingPayload — never ask the page for a fraction. */
 function scalingUnitHint(name) {
+  if (name in ENUM_SCALING_INPUTS) return { unit: "1-5", placeholder: "" };
   return PERCENT_SCALING_INPUTS.has(name)
-    ? { unit: "panel %", placeholder: "e.g. 78" }
+    ? { unit: "%", placeholder: "e.g. 289.6" }
     : { unit: "panel value", placeholder: "e.g. 27000" };
+}
+
+/* One scaling-input control. `attr` is the data-attribute the reader
+   looks for (data-kitscaling on the main agent, data-scaling on a
+   support), `saved` the previously entered value. */
+function scalingInputHTML(ownerName, name, attr, saved = "") {
+  const enumSpec = ENUM_SCALING_INPUTS[name];
+  if (enumSpec) {
+    const opts = enumSpec.options
+      .map(v => `<option value="${v}"${String(saved) === String(v)
+                 ? " selected" : ""}>${v}</option>`)
+      .join("");
+    return `
+      <label>${ownerName}'s ${enumSpec.label}</label>
+      <select ${attr}="${name}">
+        <option value=""${saved ? "" : " selected"}>— none —</option>
+        ${opts}
+      </select>`;
+  }
+  const { unit, placeholder } = scalingUnitHint(name);
+  const label = SCALING_LABELS[name] || name.replace(/_/g, " ");
+  return `
+    <label>${ownerName}'s ${label} (${unit})</label>
+    <input type="number" ${attr}="${name}" min="0" step="any"
+           value="${saved}" placeholder="${placeholder}">`;
 }
 
 /* Page units -> engine units for one {input: value} map (send only: the
@@ -1334,7 +1407,8 @@ function effectInMode(effect) {
    invite a made-up number. */
 function neededScalingInputs(buffs) {
   return [...new Set(buffs.flatMap(b => b.effects
-    .filter(e => e.scaling && effectInMode(e))
+    .filter(e => e.scaling && effectInMode(e)
+                 && !ENGINE_RESOLVED_SCALING_INPUTS.has(e.scaling.input))
     .map(e => e.scaling.input)))];
 }
 
@@ -1371,10 +1445,35 @@ function renderKit() {
   // their owner too, and the main agent can't sit in the Team card — tick
   // here the parts that apply to the agent itself (each note says which;
   // e.g. Seed's Vanguard buffs target a TEAMMATE, skip those as main).
+  // SKIPPED: buffs that only exist as the support-role copy of a slot
+  // this very agent already has above (Anby S's Silver Star / Voltage
+  // Surge / Potential). Same in-game effect, so offering both invites a
+  // silent double-count — the API rejects the pair outright.
+  // Rows whose duplication is NOT declared stay visible — either copy
+  // may be the right one for a given rotation — but they are labelled
+  // with the twin so the pair is obvious before the API refuses it.
+  const slotTwins = [];
+  if (agent.core_passive)
+    slotTwins.push(["core passive", agent.core_passive]);
+  if (agent.additional_ability)
+    slotTwins.push(["additional ability", agent.additional_ability]);
+  for (const [lv, m] of Object.entries(agent.mindscapes || {}))
+    if (m.buff) slotTwins.push([`M${lv}`, m.buff]);
+  for (const [lv, p] of Object.entries(agent.potentials || {}))
+    if (p.buff) slotTwins.push([`P${lv}`, p.buff]);
+  const sameEffects = (a, b) => JSON.stringify(a.effects) ===
+                                JSON.stringify(b.effects);
+
   for (const b of agent.team_buffs || []) {
+    if (b.self_duplicate_of) continue;
+    const twin = slotTwins.find(([, sb]) => sameEffects(sb, b));
+    const warn = twin
+      ? ` <span class="note">(same effect as ${twin[0]} above — tick`
+        + ` only one)</span>`
+      : "";
     rows.push({ attr: `data-kit="tb" data-name="${b.name}"`, buff: b,
                 label: `Squad buff (self) — ${b.name}`,
-                hint: conditionHint(b.condition, "") });
+                hint: conditionHint(b.condition, "") + warn });
   }
   const skipped = Object.entries(agent.mindscapes || {})
     .filter(([, m]) => !m.buff)
@@ -1389,12 +1488,9 @@ function renderKit() {
   // (e.g. Zhao as attacker: her core-passive CRIT scales with her HP).
   const scalingInputs = neededScalingInputs(rows.map(row => row.buff));
   for (const name of scalingInputs) {
-    const { unit, placeholder } = scalingUnitHint(name);
     controls.insertAdjacentHTML("beforeend", `
       <div style="margin-bottom:10px">
-        <label>${agent.name}'s ${name.replace(/_/g, " ")} (${unit})</label>
-        <input type="number" data-kitscaling="${name}" min="0" step="any"
-               value="" placeholder="${placeholder}">
+        ${scalingInputHTML(agent.name, name, "data-kitscaling")}
       </div>`);
   }
 
@@ -1432,7 +1528,9 @@ function renderKit() {
      team: {buff name: stacks}, scaling: {name: value} }. */
 function kitState() {
   const state = { core: 0, aa: 0, mind: {}, pot: {}, team: {}, scaling: {} };
-  for (const inp of $("kit-controls").querySelectorAll("input")) {
+  // "select" too: enum scaling inputs (potential_level) render as
+  // a dropdown, not a number box.
+  for (const inp of $("kit-controls").querySelectorAll("input, select")) {
     if (inp.dataset.kitscaling !== undefined) {
       state.scaling[inp.dataset.kitscaling] = parseFloat(inp.value) || 0;
       continue;
@@ -1450,7 +1548,9 @@ function kitState() {
 
 function applyKit(state) {
   if (!state) return;
-  for (const inp of $("kit-controls").querySelectorAll("input")) {
+  // "select" too: enum scaling inputs (potential_level) render as
+  // a dropdown, not a number box.
+  for (const inp of $("kit-controls").querySelectorAll("input, select")) {
     if (inp.dataset.kitscaling !== undefined) {
       const saved = (state.scaling || {})[inp.dataset.kitscaling];
       if (saved) inp.value = saved;
@@ -1560,12 +1660,9 @@ function renderSupportBody(slot, prev) {
   const scalingInputs = neededScalingInputs(buffs);
   for (const name of scalingInputs) {
     const saved = prev && prev.scaling ? (prev.scaling[name] || "") : "";
-    const { unit, placeholder } = scalingUnitHint(name);
     body.insertAdjacentHTML("beforeend", `
       <div style="margin-top:8px">
-        <label>${agent.name}'s ${name.replace(/_/g, " ")} (${unit})</label>
-        <input type="number" data-scaling="${name}" min="0" step="any"
-               value="${saved}" placeholder="${placeholder}">
+        ${scalingInputHTML(agent.name, name, "data-scaling", saved)}
       </div>`);
   }
 

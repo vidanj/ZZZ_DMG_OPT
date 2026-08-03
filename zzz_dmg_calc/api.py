@@ -29,8 +29,8 @@ from dataclasses import dataclass, field
 
 from . import formulas
 from .agent import (
-    LUMIFLUX, PERCENT_SCALING_INPUT_MAX, PERCENT_SCALING_INPUTS, Agent,
-    aggregate_build, load_agents,
+    LUMIFLUX, PERCENT_SCALING_INPUT_MAX, PERCENT_SCALING_INPUTS,
+    TOTAL_CRIT_DMG_INPUT, Agent, aggregate_build, load_agents,
 )
 from .anomalies import AnomalyData, load_anomalies
 from .constants import Constants, load_constants
@@ -618,7 +618,8 @@ def _engine_buff_bonuses(
     buildup-weighted average (in-game finding, 2026-07-02), so e.g. 2.35
     expresses "buildup happened at a mix of 2 and 3 stacks". The per-stack
     value comes from the refinement ``rank``; a part with a lower stack cap
-    than the entered count clamps to its own cap.
+    than the entered count clamps to its own cap, and an ``at_max_only``
+    part contributes all-or-nothing at its cap (see ``EngineBuff``).
 
     A part is skipped when it doesn't apply: its ``bracket`` differs from
     the requested one, its ``modes`` gate excludes ``mode``, its
@@ -663,7 +664,7 @@ def _engine_buff_bonuses(
         if (buff.element is not None and not element_gate_waived
                 and buff.element != dealt_element):
             continue
-        value = buff.per_stack(rank) * min(stacks, buff.max_stacks)
+        value = buff.value_at(rank, stacks)
         if value:
             entries.append({"name": buff.name, "value": value})
     return entries
@@ -704,6 +705,32 @@ _LIST_KINDS = ("dmg_bonus", "dmg_taken", "daze_bonus", "anomaly_buff",
                "sheer_dmg")
 
 
+def _resolve_deferred_crit_dmg(
+    kit: dict, crit_dmg_total: float
+) -> tuple[float, list[dict]]:
+    """Resolve kit effects that scale with the owner's TOTAL CRIT DMG.
+
+    Called once ``crit_dmg_total`` holds every other CRIT DMG source
+    (build panel + external + kit + engine passive + engine conditional).
+    Anby S's Silver Star is the pilot: Aftershocks gain 35% of her total
+    CRIT DMG, so the input is everything *except* what this resolves.
+
+    Returns:
+        ``(added, items)`` — the total CRIT DMG to add, and one
+        buff-breakdown entry per contribution.
+    """
+    added = 0.0
+    items: list[dict] = []
+    for pending in kit["deferred_crit_dmg"]:
+        value = pending["scaling"].resolve(crit_dmg_total) * pending["stacks"]
+        if not value:
+            continue
+        added += value
+        items.append({"source": pending["source"],
+                      "kind": "crit_dmg", "value": value})
+    return added, items
+
+
 def _kit_contributions(
     agent: Agent, config: CalcConfig,
     agents: dict[str, Agent], disc_sets: dict[str, DiscSet],
@@ -738,6 +765,7 @@ def _kit_contributions(
               "refringe": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
               "anomaly_buff": [], "sheer_dmg": [],
+              "deferred_crit_dmg": [],
               "items": []}
 
     def record(source: str, kind: str, value: float) -> None:
@@ -767,6 +795,23 @@ def _kit_contributions(
             )
             if (effect.element is not None and not element_gate_waived
                     and effect.element != dealt_element):
+                continue
+            # Effects scaling on the owner's TOTAL combat CRIT DMG cannot
+            # be resolved yet: that total is only known once every other
+            # crit_dmg source (build, external, kit, engine) is summed.
+            # Park them; calculate()/calculate_sheer() resolve them last.
+            # Self-referential by construction, so the effect's own output
+            # is excluded from its input — Anby S's Silver Star takes 35%
+            # of everything *else* (in-game 2026-08-02).
+            if (effect.scaling is not None
+                    and effect.scaling.input == TOTAL_CRIT_DMG_INPUT):
+                if effect.at_max_stacks and stacks < buff.max_stacks:
+                    continue
+                totals["deferred_crit_dmg"].append({
+                    "source": f"{owner}{buff.name}",
+                    "scaling": effect.scaling,
+                    "stacks": 1.0 if effect.at_max_stacks else stacks,
+                })
                 continue
             if effect.scaling is not None:
                 inputs = scaling_inputs or {}
@@ -973,6 +1018,25 @@ def _kit_contributions(
     # Scaled effects read the main config's scaling_inputs.
     if config.own_team_buffs:
         own_by_name = {b.name: b for b in agent.team_buffs}
+        # Attacker-role slots currently switched ON, for the structural
+        # duplicate check below. Mirrors the slots ``apply``-ed above.
+        active_slots: list[tuple[str, object]] = []
+        if config.core_passive_active and agent.core_passive is not None:
+            active_slots.append(("core passive", agent.core_passive))
+        if (config.additional_ability_stacks
+                and agent.additional_ability is not None):
+            active_slots.append(
+                ("additional ability", agent.additional_ability))
+        for level_raw, slot_stacks in config.mindscapes.items():
+            entry = agent.mindscapes.get(int(level_raw))
+            if slot_stacks and entry is not None and entry.buff is not None:
+                active_slots.append((f"M{int(level_raw)}", entry.buff))
+        for level_raw, slot_stacks in config.potentials.items():
+            entry = agent.potentials.get(int(level_raw))
+            if slot_stacks and entry is not None and entry.buff is not None:
+                active_slots.append(
+                    (f"Potential P{int(level_raw)}", entry.buff))
+
         for name, stacks in config.own_team_buffs.items():
             buff = own_by_name.get(name)
             if buff is None:
@@ -982,6 +1046,42 @@ def _kit_contributions(
                 )
             check_stacks(stacks, buff.max_stacks,
                          f"{agent.name} (self): {buff.name}")
+            # A self_duplicate_of team buff is the SUPPORT-role copy of an
+            # effect this agent already has as an attacker-role slot — the
+            # same in-game buff, entered from the other side. On-field, the
+            # attacker-role slot is always the right one, so this copy is
+            # refused outright rather than only when the twin is switched
+            # on: the two copies can differ in what they ask for (Anby S's
+            # support copy takes a typed CRIT DMG, which the optimizer
+            # would then turn into an unreachable panel minimum).
+            if stacks and buff.self_duplicate_of is not None:
+                slot = buff.self_duplicate_of.replace("_", " ")
+                raise CalcError(
+                    f"Agent '{agent.name}': team buff '{buff.name}' is the "
+                    f"support-role copy of their {slot} — the same in-game "
+                    f"effect. As the ON-FIELD agent use the {slot} instead; "
+                    f"applying this copy as well would double-count it."
+                )
+            # Backstop for kits whose duplication is NOT declared in the
+            # data: an own team buff carrying exactly the same effects as
+            # an attacker-role slot that is also switched on is the same
+            # in-game effect entered twice. Refuse rather than skip — a
+            # silently halved buff is the failure mode this whole check
+            # exists to prevent. Only same-character pairs reach here, so
+            # kits whose two copies target DIFFERENT characters (Seed's
+            # M2: hers vs her Vanguard's) are unaffected: as a support
+            # her buffs arrive through ``supports``, never here.
+            if stacks:
+                for slot_label, slot_buff in active_slots:
+                    if slot_buff.effects == buff.effects:
+                        raise CalcError(
+                            f"Agent '{agent.name}': team buff "
+                            f"'{buff.name}' has the same effects as their "
+                            f"{slot_label} ('{slot_buff.name}'), which is "
+                            f"also active — the same in-game effect "
+                            f"entered twice. Keep whichever one matches "
+                            f"your rotation and clear the other."
+                        )
             if stacks:
                 apply(buff, stacks, config.scaling_inputs,
                       owner=f"{agent.name} (self): ")
@@ -1232,18 +1332,35 @@ def calculate(
         crit_rate += engine_crit
         buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
                            "kind": "crit_rate", "value": engine_crit})
-    # Engine conditional parts routed to the CRIT DMG total (Heartstring
-    # Nocturne's unconditional +50..80%) — added before the crit zones.
-    for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, attr, rank,
-        mode="direct", bracket="crit_dmg", skill_tag=config.skill_tag,
-        counts_as_aftershock=config.counts_as_aftershock,
-    ):
-        crit_dmg += part["value"]
+    engine_crit_dmg = engine.passive_crit_dmg(rank)
+    if engine_crit_dmg:
+        crit_dmg += engine_crit_dmg
         buff_items.append({
-            "source": f"{part['name']} (R{rank})",
-            "kind": "crit_dmg", "value": part["value"],
+            "source": f"{engine.name} passive CRIT DMG (R{rank})",
+            "kind": "crit_dmg", "value": engine_crit_dmg,
         })
+    # Engine conditional parts routed to the crit totals (Heartstring
+    # Nocturne's unconditional CRIT DMG, Deep Sea Visitor's CRIT Rate
+    # stacks) — added before the crit zones.
+    for bracket, total_kind in (("crit_dmg", "crit_dmg"),
+                                ("crit_rate", "crit_rate")):
+        for part in _engine_buff_bonuses(
+            engine, config.engine_buff_stacks, attr, rank,
+            mode="direct", bracket=bracket, skill_tag=config.skill_tag,
+            counts_as_aftershock=config.counts_as_aftershock,
+        ):
+            if total_kind == "crit_dmg":
+                crit_dmg += part["value"]
+            else:
+                crit_rate += part["value"]
+            buff_items.append({
+                "source": f"{part['name']} (R{rank})",
+                "kind": total_kind, "value": part["value"],
+            })
+    # LAST: effects taking a share of the owner's total CRIT DMG.
+    scaled_cd, scaled_items = _resolve_deferred_crit_dmg(kit, crit_dmg)
+    crit_dmg += scaled_cd
+    buff_items.extend(scaled_items)
     crit_none = formulas.crit_mult_non_crit()
     crit_full = formulas.crit_mult_crit(crit_dmg)
     crit_avg = formulas.crit_mult_average(
@@ -2006,18 +2123,34 @@ def calculate_sheer(
         crit_rate += engine_crit
         buff_items.append({"source": f"{engine.name} passive CRIT (R{rank})",
                            "kind": "crit_rate", "value": engine_crit})
-    # Engine conditional parts routed to the CRIT DMG total (Sheer hits
-    # crit normally, so the bracket applies here too).
-    for part in _engine_buff_bonuses(
-        engine, config.engine_buff_stacks, attr, rank,
-        mode="sheer", bracket="crit_dmg", skill_tag=config.skill_tag,
-        counts_as_aftershock=config.counts_as_aftershock,
-    ):
-        crit_dmg += part["value"]
+    engine_crit_dmg = engine.passive_crit_dmg(rank)
+    if engine_crit_dmg:
+        crit_dmg += engine_crit_dmg
         buff_items.append({
-            "source": f"{part['name']} (R{rank})",
-            "kind": "crit_dmg", "value": part["value"],
+            "source": f"{engine.name} passive CRIT DMG (R{rank})",
+            "kind": "crit_dmg", "value": engine_crit_dmg,
         })
+    # Engine conditional parts routed to the crit totals (Sheer hits crit
+    # normally, so both brackets apply here too).
+    for bracket, total_kind in (("crit_dmg", "crit_dmg"),
+                                ("crit_rate", "crit_rate")):
+        for part in _engine_buff_bonuses(
+            engine, config.engine_buff_stacks, attr, rank,
+            mode="sheer", bracket=bracket, skill_tag=config.skill_tag,
+            counts_as_aftershock=config.counts_as_aftershock,
+        ):
+            if total_kind == "crit_dmg":
+                crit_dmg += part["value"]
+            else:
+                crit_rate += part["value"]
+            buff_items.append({
+                "source": f"{part['name']} (R{rank})",
+                "kind": total_kind, "value": part["value"],
+            })
+    # LAST: effects taking a share of the owner's total CRIT DMG.
+    scaled_cd, scaled_items = _resolve_deferred_crit_dmg(kit, crit_dmg)
+    crit_dmg += scaled_cd
+    buff_items.extend(scaled_items)
     crit_none = formulas.crit_mult_non_crit()
     crit_full = formulas.crit_mult_crit(crit_dmg)
     crit_avg = formulas.crit_mult_average(
