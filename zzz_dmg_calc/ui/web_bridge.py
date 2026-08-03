@@ -92,7 +92,8 @@ def _refresh_user_data() -> None:
         _data,
         user_discs=user_discs,
         loadouts=load_loadouts(_data.disc_data, user_discs=user_discs,
-                               valid_agents=set(_data.agents)),
+                               valid_agents=set(_data.agents),
+                               valid_engines=set(_data.engines)),
     )
 
 
@@ -124,6 +125,9 @@ def _post_loadout(body: dict) -> dict:
     agent = str(body.get("agent_key") or "").strip() or None
     if agent is not None and agent not in _data.agents:
         raise ValueError(f"Unknown agent '{agent}'")
+    engine = str(body.get("engine_key") or "").strip() or None
+    if engine is not None and engine not in _data.engines:
+        raise ValueError(f"Unknown engine '{engine}'")
     discs = [_parse_disc(entry) for entry in body.get("discs", [])]
     if not discs:
         raise ValueError("A loadout needs at least one equipped disc")
@@ -133,7 +137,7 @@ def _post_loadout(body: dict) -> dict:
     disc_ids = [save_user_disc(d, _data.disc_data)[0] for d in discs]
     save_loadout(
         name, str(body.get("description", "")), disc_ids,
-        _data.disc_data, agent=agent, overwrite=overwrite,
+        _data.disc_data, agent=agent, engine=engine, overwrite=overwrite,
     )
     _refresh_user_data()
     return {

@@ -26,6 +26,7 @@ Vortex triggered when that element's anomaly meets an active Windswept
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Sequence
 
 from . import formulas
 from .agent import (
@@ -565,22 +566,31 @@ def attack_element(agent: Agent, config: CalcConfig) -> str:
             unknown element, or a ``mutated_element`` set for a
             non-Lumiflux agent (it would be silently ignored otherwise).
     """
+    return resolve_attack_element(agent, config.mutated_element)
+
+
+def resolve_attack_element(agent: Agent, mutated_element: str | None) -> str:
+    """:func:`attack_element` from the element alone (no ``CalcConfig``).
+
+    For callers that hold a build but no calculation — see
+    :func:`panel_stats_for_build`.
+    """
     if agent.attribute == LUMIFLUX:
-        if config.mutated_element is None:
+        if mutated_element is None:
             raise CalcError(
                 f"Agent '{agent.name}' has the Lumiflux attribute — her "
                 f"damage counts as the NEXT squad agent's attribute "
                 f"(Attribute Mutation). Set 'mutated_element' to one of "
                 f"{list(ELEMENTS)}"
             )
-        key = str(config.mutated_element).lower()
+        key = str(mutated_element).lower()
         if key not in ELEMENTS:
             raise CalcError(
                 f"'mutated_element' must be one of {list(ELEMENTS)}, "
-                f"got {config.mutated_element!r}"
+                f"got {mutated_element!r}"
             )
         return key
-    if config.mutated_element is not None:
+    if mutated_element is not None:
         raise CalcError(
             f"'mutated_element' only applies to Lumiflux agents — "
             f"{agent.name} always deals {agent.attribute} damage"
@@ -1179,24 +1189,61 @@ def panel_stats(
         CalcError: unknown agent or engine key.
         DiscError / AgentError: invalid discs.
     """
+    return panel_stats_for_build(
+        config.agent_key, config.engine_key, config.discs,
+        mutated_element=config.mutated_element, consts=consts,
+        disc_data=disc_data, agents=agents, engines=engines,
+        disc_sets=disc_sets,
+    )
+
+
+def panel_stats_for_build(
+    agent_key: str,
+    engine_key: str | None,
+    discs: Sequence[Disc],
+    *,
+    mutated_element: str | None = None,
+    consts: Constants | None = None,
+    disc_data: DiscData | None = None,
+    agents: dict[str, Agent] | None = None,
+    engines: dict[str, Engine] | None = None,
+    disc_sets: dict[str, DiscSet] | None = None,
+) -> dict[str, float]:
+    """:func:`panel_stats` for a bare build — no :class:`CalcConfig`.
+
+    The panel depends on nothing else: agent, W-Engine and discs are the
+    whole input. Callers that hold a build but no calculation (a saved
+    loadout, whose panel values a support's kit asks for) use this
+    instead of inventing a boss and a skill multiplier to satisfy
+    ``CalcConfig``.
+
+    Args:
+        engine_key: ``None`` uses the agent's ``default_engine``.
+        mutated_element: The dealt element for a Lumiflux agent; see
+            :func:`attack_element`.
+
+    Raises:
+        CalcError: unknown agent or engine key.
+        DiscError / AgentError: invalid discs.
+    """
     consts = consts if consts is not None else load_constants()
     disc_data = disc_data if disc_data is not None else load_disc_data()
     agents = agents if agents is not None else load_agents()
     engines = engines if engines is not None else load_engines()
     disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
 
-    if config.agent_key not in agents:
+    if agent_key not in agents:
         raise CalcError(
-            f"Unknown agent '{config.agent_key}'; options: {sorted(agents)}"
+            f"Unknown agent '{agent_key}'; options: {sorted(agents)}"
         )
-    agent = agents[config.agent_key]
-    engine_key = (config.engine_key if config.engine_key is not None
-                  else agent.default_engine)
-    if engine_key not in engines:
+    agent = agents[agent_key]
+    resolved_engine = (engine_key if engine_key is not None
+                       else agent.default_engine)
+    if resolved_engine not in engines:
         raise CalcError(
-            f"Unknown engine '{engine_key}'; options: {sorted(engines)}"
+            f"Unknown engine '{resolved_engine}'; options: {sorted(engines)}"
         )
-    engine = engines[engine_key]
+    engine = engines[resolved_engine]
 
     # The dealt element matters even out of combat: without it a Lumiflux
     # agent's would be "lumiflux", and every element-tagged disc (and
@@ -1205,12 +1252,12 @@ def panel_stats(
     # pre-fix behavior instead of failing — calculate() raises the real
     # error, and the UI only reaches here after a successful calculation.
     try:
-        attr = attack_element(agent, config)
+        attr = resolve_attack_element(agent, mutated_element)
     except CalcError:
         attr = None
     # set_stacks=None: 2pc bonuses only — 4pc stacks are combat state.
     build = aggregate_build(
-        agent, engine, config.discs, disc_data, consts,
+        agent, engine, discs, disc_data, consts,
         disc_sets=disc_sets, set_stacks=None, attack_element=attr,
     )
     other = build.other

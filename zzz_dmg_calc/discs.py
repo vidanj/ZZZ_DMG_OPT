@@ -754,6 +754,12 @@ class Loadout:
     its inventory discs are reserved — other agents cannot equip them and
     the optimizer skips them. ``None`` reserves nothing (legacy/test sets).
     ``disc_ids`` parallels ``discs``; inline (non-inventory) discs are None.
+
+    ``engine`` (a W-Engine key) completes the build: discs alone are not
+    enough to reproduce the character panel, and the panel is what a
+    support's kit asks for ("Astra's initial ATK"). ``None`` means the
+    loadout predates engine recording — no panel can be derived from it
+    until it is saved again.
     """
 
     name: str
@@ -761,6 +767,7 @@ class Loadout:
     discs: tuple[Disc, ...]
     agent: str | None = None
     disc_ids: tuple[str | None, ...] = ()
+    engine: str | None = None
 
 
 def load_loadouts(
@@ -768,6 +775,7 @@ def load_loadouts(
     user_discs: dict[str, Disc] | None = None,
     user_discs_path: Path = USER_DISCS_FILE,
     valid_agents: set[str] | None = None,
+    valid_engines: set[str] | None = None,
 ) -> dict[str, Loadout]:
     """Load saved disc loadouts and validate every disc in them.
 
@@ -784,11 +792,13 @@ def load_loadouts(
         valid_agents: Known agent keys to validate each loadout's optional
             ``agent`` against; ``None`` skips the check (callers without
             the agents database).
+        valid_engines: Known engine keys to validate each loadout's
+            optional ``engine`` against; ``None`` skips the check.
 
     Raises:
         DiscError: on malformed JSON, invalid discs, unknown ``disc_id``
-            references, an unknown ``agent`` key, or duplicate slots
-            within a loadout.
+            references, an unknown ``agent`` or ``engine`` key, or
+            duplicate slots within a loadout.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -818,6 +828,17 @@ def load_loadouts(
             if valid_agents is not None and agent not in valid_agents:
                 raise DiscError(
                     f"Loadout '{name}': unknown agent '{agent}'"
+                )
+
+        engine = entry.get("engine")
+        if engine is not None:
+            if not isinstance(engine, str) or not engine.strip():
+                raise DiscError(
+                    f"Loadout '{name}': 'engine' must be a non-empty string"
+                )
+            if valid_engines is not None and engine not in valid_engines:
+                raise DiscError(
+                    f"Loadout '{name}': unknown engine '{engine}'"
                 )
 
         discs: list[Disc] = []
@@ -861,6 +882,7 @@ def load_loadouts(
             discs=tuple(discs),
             agent=agent,
             disc_ids=tuple(disc_ids),
+            engine=engine,
         )
     return loadouts
 
@@ -1014,7 +1036,8 @@ def delete_user_disc(
 
 def save_loadout(
     name: str, description: str, disc_ids: list[str], disc_data: DiscData,
-    *, agent: str | None = None, overwrite: bool = False,
+    *, agent: str | None = None, engine: str | None = None,
+    overwrite: bool = False,
     path: Path = LOADOUTS_FILE, user_discs_path: Path = USER_DISCS_FILE,
 ) -> None:
     """Save a loadout as references into the user disc inventory.
@@ -1023,6 +1046,11 @@ def save_loadout(
     that agent. A disc already reserved by a different agent's loadout is
     rejected — a disc can only be equipped by one character. Loadouts of
     the same agent may share discs freely (alternate builds).
+
+    ``engine`` records the W-Engine the build wears, so the character
+    panel can be reproduced from the loadout later (see :class:`Loadout`).
+    Omitting it writes no ``engine`` key — the loadout stays valid, it
+    just cannot yield panel values until it is saved again with one.
 
     Raises:
         DiscError: empty name, unknown disc ids, duplicate slots, a disc
@@ -1074,6 +1102,8 @@ def save_loadout(
     entry: dict = {"description": str(description or "")}
     if agent:
         entry["agent"] = agent
+    if engine:
+        entry["engine"] = engine
     entry["discs"] = [{"disc_id": disc_id} for disc_id in disc_ids]
     raw["loadouts"][name] = entry
     _atomic_write_json(path, raw)

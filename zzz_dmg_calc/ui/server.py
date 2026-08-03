@@ -48,6 +48,7 @@ try:
     from ..api import (
         CalcConfig, LuminizeConfig, SupportConfig, attack_element, calculate,
         calculate_anomaly, calculate_sheer, panel_stats,
+        panel_stats_for_build,
     )
     from ..agent import Agent, load_agents
     from ..anomalies import AnomalyData, load_anomalies
@@ -73,6 +74,7 @@ except ImportError:
     from zzz_dmg_calc.api import (
         CalcConfig, LuminizeConfig, SupportConfig, attack_element, calculate,
         calculate_anomaly, calculate_sheer, panel_stats,
+        panel_stats_for_build,
     )
     from zzz_dmg_calc.agent import Agent, load_agents
     from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
@@ -121,17 +123,19 @@ def load_app_data() -> AppData:
     disc_data = load_disc_data()
     user_discs = load_user_discs(disc_data)
     agents = load_agents()
+    engines = load_engines()
     return AppData(
         consts=load_constants(),
         disc_data=disc_data,
         bosses=load_bosses(),
         agents=agents,
-        engines=load_engines(),
+        engines=engines,
         disc_sets=load_disc_sets(),
         anomalies=load_anomalies(),
         user_discs=user_discs,
         loadouts=load_loadouts(disc_data, user_discs=user_discs,
-                               valid_agents=set(agents)),
+                               valid_agents=set(agents),
+                               valid_engines=set(engines)),
     )
 
 
@@ -151,17 +155,50 @@ def user_discs_payload(data: AppData) -> dict:
     return {disc_id: _disc_json(d) for disc_id, d in data.user_discs.items()}
 
 
+def loadout_panel(data: AppData, loadout: Loadout) -> dict | None:
+    """The character panel a saved build produces, or ``None``.
+
+    These are the "initial value" numbers a support's kit asks for
+    (Astra's initial ATK, Zhao's initial Max HP): the out-of-combat
+    panel, no combat buffs — exactly what :func:`panel_stats` reports for
+    the build the loadout holds. Derived on every payload rather than
+    stored, so it always describes the loadout's current contents and no
+    saved number can go stale behind the user's back.
+
+    ``None`` when the panel cannot be derived: an untagged loadout (no
+    agent, so nothing to compute it for), one saved before engines were
+    recorded (the engine is a large part of the panel — assuming the
+    signature one would quietly report someone else's ATK), or a build
+    the calculation layer rejects. The page falls back to manual entry.
+    """
+    if not loadout.agent or not loadout.engine:
+        return None
+    try:
+        return panel_stats_for_build(
+            loadout.agent, loadout.engine, loadout.discs,
+            consts=data.consts, disc_data=data.disc_data, agents=data.agents,
+            engines=data.engines, disc_sets=data.disc_sets,
+        )
+    except ValueError:
+        # One unusable loadout must never break the whole page load.
+        return None
+
+
 def loadouts_payload(data: AppData) -> dict:
     """Loadouts with their discs fully resolved (references included).
 
     Each disc carries its inventory ``id`` (None for inline discs) and the
     loadout its owning ``agent``, so the page can mark discs reserved by
-    other characters' builds.
+    other characters' builds. ``engine`` and the derived ``panel`` let the
+    page fill a support's kit scaling inputs from a saved build (both
+    ``None`` for loadouts saved before engines were recorded).
     """
     return {
         name: {
             "description": l.description,
             "agent": l.agent,
+            "engine": l.engine,
+            "panel": loadout_panel(data, l),
             "discs": [
                 dict(_disc_json(d), id=disc_id)
                 for d, disc_id in zip(l.discs, l.disc_ids)
@@ -958,7 +995,8 @@ class UIRequestHandler(BaseHTTPRequestHandler):
             cls.app_data,
             user_discs=user_discs,
             loadouts=load_loadouts(disc_data, user_discs=user_discs,
-                                   valid_agents=set(cls.app_data.agents)),
+                                   valid_agents=set(cls.app_data.agents),
+                                   valid_engines=set(cls.app_data.engines)),
         )
 
     def _send_json(self, payload: dict, status: int = 200) -> None:
@@ -1058,15 +1096,20 @@ class UIRequestHandler(BaseHTTPRequestHandler):
         Each disc is first saved to the inventory (deduped), then the
         loadout is written referencing the resulting ids. ``agent_key``
         records whose build it is (its discs become reserved for that
-        agent; see :func:`~zzz_dmg_calc.discs.save_loadout`). A name
-        collision without ``overwrite`` returns 400 with ``"exists":
-        true`` so the page can ask the user to confirm.
+        agent; see :func:`~zzz_dmg_calc.discs.save_loadout`), and
+        ``engine_key`` the W-Engine it wears, which is what lets the page
+        derive the build's panel later. A name collision without
+        ``overwrite`` returns 400 with ``"exists": true`` so the page can
+        ask the user to confirm.
         """
         name = str(body.get("name", "")).strip()
         overwrite = bool(body.get("overwrite"))
         agent = str(body.get("agent_key") or "").strip() or None
         if agent is not None and agent not in self.app_data.agents:
             raise ValueError(f"Unknown agent '{agent}'")
+        engine = str(body.get("engine_key") or "").strip() or None
+        if engine is not None and engine not in self.app_data.engines:
+            raise ValueError(f"Unknown engine '{engine}'")
         discs = [_parse_disc(entry) for entry in body.get("discs", [])]
         if not discs:
             raise ValueError("A loadout needs at least one equipped disc")
@@ -1082,7 +1125,8 @@ class UIRequestHandler(BaseHTTPRequestHandler):
             ]
             save_loadout(
                 name, str(body.get("description", "")), disc_ids,
-                self.app_data.disc_data, agent=agent, overwrite=overwrite,
+                self.app_data.disc_data, agent=agent, engine=engine,
+                overwrite=overwrite,
             )
             self._refresh_user_data()
         self._send_json({

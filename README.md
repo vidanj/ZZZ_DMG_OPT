@@ -214,6 +214,14 @@ for their active stacks.
   can't equip them twice), and the result reports how many were
   excluded. Deleting a loadout frees its discs; the discs themselves
   stay in the inventory.
+- A loadout also records the **W-Engine** selected when you saved it, so
+  **Load** restores the whole build — and, more usefully, the app can
+  work out that build's character panel. Put that agent in a support
+  slot and their kit's "initial ATK / initial Max HP" boxes can be
+  filled from the build with **Fill from a saved build** instead of you
+  reading the numbers off the game; the boxes stay editable, and typing
+  in one takes it back over. Loadouts saved before this have no engine
+  on file and offer no values until you save them again.
 
 ## The optimizer
 
