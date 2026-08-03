@@ -50,7 +50,7 @@
             "max_stacks": 3,
             "bracket": "crit_dmg",
             "auto": true,
-            "note": "Per Tranquil Blossom stack: the equipper's CRIT DMG +10% (R1) / +16% (R5), max 3 stacks (+30% R1 / +48% R5). Anby S maintains 3 stacks trivially (Basic/Special/Aftershock hits grant them) - RAMP-UP, auto-applied at 3. This is ON TOP of the unconditional passive_crit_dmg_by_rank."
+            "note": "Per Tranquil Blossom stack: the equipper's CRIT DMG +10% (R1) / +16% (R5), max 3 stacks (+30% R1 / +48% R5), 30s per stack. ON TOP of the unconditional passive_crit_dmg_by_rank. RAMP-UP, auto-applied at 3 - but READ THIS BEFORE COMPARING TO AN IN-GAME NUMBER: a stack is granted 'once per use of a skill' on a Basic / Special / Aftershock HIT, and the hit that grants a stack does NOT benefit from it. So the FIRST skill of a rotation lands at 0 stacks, the second at 1, the third at 2 - a measured EX Special usually lands at 2, not 3. Two in-game calibrations (2026-08-02) both matched at 2 stacks while the config said 3. Enter the stacks that were already up WHEN THE HIT LANDED; 3 is right for sustained mid-rotation DPS, not for the stack-granting hit itself."
           },
           {
             "name": "Tranquil Blossom (3 stacks): Electric DMG",
@@ -63,7 +63,7 @@
           }
         ]
       },
-      "passive_note": "Anby S's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 1, 0.1, 3, 30, 3, 0.2] at R1). Advanced stat CRIT DMG 48% (0.192 x 2.5 at Lv. 60). The stack counter is Tranquil Blossom stacks 0-3 (was 0/1 before 2026-08-02). CRIT DMG is now auto-applied in full: unconditional +30% (R1) / +48% (R5) via passive_crit_dmg_by_rank, plus +10% (R1) / +16% (R5) per stack - do NOT also enter it as external CRIT DMG (that double-counts; R1 full stacks total 60, R5 96). CONFIRMED in-game 2026-08-02 (Anby S calibration: panel +134 CRIT DMG decomposed as Trigger M2 24 + King of the Summit 30 + Seed 30 + this engine 50 at 2 stacks)."
+      "passive_note": "Anby S's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.3, 1, 0.1, 3, 30, 3, 0.2] at R1). Advanced stat CRIT DMG 48% (0.192 x 2.5 at Lv. 60). The stack counter is Tranquil Blossom stacks 0-3 (was 0/1 before 2026-08-02). CRIT DMG is now auto-applied in full: unconditional +30% (R1) / +48% (R5) via passive_crit_dmg_by_rank, plus +10% (R1) / +16% (R5) per stack - do NOT also enter it as external CRIT DMG (that double-counts; R1 full stacks total 60, R5 96). Game text (nanoka 3.1, weapon 14138) verified 2026-08-02: 'CRIT DMG +30%. When the equipper lands a hit with a Basic Attack, Special Attack, or Aftershock, they gain 1 stack... +10% each, up to 3, 30s, can only be triggered once per use of a skill. With all 3 stacks, Electric DMG +20%.' CONFIRMED in-game three times on 2026-08-02, all within +0.012%: (1) team calibration at 2 stacks - panel +134 CRIT DMG = Trigger M2 24 + King of the Summit 30 + Seed 30 + this engine 50; (2) solo EX Special at 2 stacks, 53,992 measured vs 53,998 modeled; (3) the SAME solo hit at 3 stacks (an extra Basic first), 61,739 measured vs 61,746 modeled. (2) and (3) isolate the 2->3 transition, which adds BOTH the per-stack +10% CRIT DMG and the all-or-nothing Electric +20%: measured ratio 1.14348 vs modeled 1.14347 - the at_max_only gate on the Electric part is correct. See the CRIT DMG buff's note on why a measured EX Special lands at 2 unless you feed it a spare stack first."
     },
     "spectral_gaze": {
       "name": "Spectral Gaze",
