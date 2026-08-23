@@ -645,6 +645,24 @@
         ]
       },
       "passive_note": "Starlight Billy's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.2, 0.1, 2, 30] at R1; atk_base 48 -> Lv. 60 base 713, HP% 12 x 2.5 = 30). HP% feeds his HP -> Sheer Force conversion (0.1 SF per Max HP) - very valuable on him. The always-on CRIT Rate +20% (R1) to +32% (R5) is modeled as passive_crit (crit-capable modes). PROVISIONAL until Sheer calibration."
+    },
+    "knights_extolment": {
+      "name": "Knight's Extolment",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT DMG": 0.48 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buff": {
+          "name": "Battle Edge: CRIT DMG",
+          "bracket": "crit_dmg",
+          "per_stack_by_rank": [0.32, 0.368, 0.416, 0.464, 0.512],
+          "max_stacks": 2,
+          "auto": true,
+          "note": "Per Battle Edge stack: the equipper's CRIT DMG +32% (R1) to +51.2% (R5), 25s, max 2 stacks (+64% R1 / +102.4% R5). A stack comes from a Basic Attack hit OR an EX Special HEAVY attack hit, and EACH SKILL TYPE GRANTS AT MOST 1 - so both halves of the loop are needed for 2 stacks; repeat triggers refresh all stacks. RAMP-UP, auto-applied at 2. READ BEFORE COMPARING TO AN IN-GAME NUMBER (same caveat as Severed Innocence): the hit that GRANTS a stack does not benefit from it, so the first Basic of a rotation lands at 0 and the EX heavy that adds the second stack lands at 1. Enter the stacks that were already up WHEN THE HIT LANDED; 2 is right for sustained mid-rotation DPS, not for the stack-granting hit itself."
+        }
+      },
+      "passive_note": "Sigrid's signature (added 2026-08-23; nanoka 3.1 weapon 14159, code_name Weapon_S_1591 = character 1591 Sigrid, CONFIRMED against frzyc KnightsExtolment.json: rarity S, type attack, atk_base 48 -> Lv. 60 base 713, crit_dmg_ 0.192 x 2.5 = 48%, phase params R1 [1, 0.32, 25, 2, 1, 2, 0.2] to R5 [1, 0.512, 25, 2, 1, 2, 0.32]). Both sources agree to the digit; nanoka 'live' is 3.1, so this is SHIPPED content, not a leak. The CRIT DMG half of Knight's Rite is auto-applied in full via the conditional buff - do NOT also enter it as external CRIT DMG (that double-counts). NOT auto-applied: at 2 Battle Edge stacks the equipper gains BONECHILL - their DMG ignores 20% (R1) to 32% (R5) of the target's ICE RES. There is no equipper-side RES-ignore bracket in the engine system yet, so enter it as external RES shred when the wearer is the attacker at 2 stacks (same treatment as Heartstring Nocturne, Chief Sidekick and Sol Exuvia). Sigrid herself is not in agents.json yet - the engine is usable by Ellen or any other Ice/Attack agent in the meantime."
     }
   }
 }
