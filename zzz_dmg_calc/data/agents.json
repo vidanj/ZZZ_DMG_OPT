@@ -1572,8 +1572,8 @@
           "note": "Requires Nangong Yu at Mindscape 2 (Painless Tears). Misstep's Stun DMG Multiplier is raised by a further +30% (total +60%) - check TOGETHER with the Misstep buff."
         }
       ],
-      "default_engine": "hellfire_gears",
-      "_note": "Ether stunner / Abloom enabler (Team 8, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8373.87, ATK 671.50, DEF 622.62 -> stored 8373/671/622; Impact 120, AM 90, AP 93). CORE STAT BOOSTS: ATK+75, AM+36 (coreStats) PLUS the core passive's always-on AP+120 (rank F, datamine coreParams [60..120]) - folded into core_skill_bonuses.anomaly_proficiency since it is unconditional; M4 adds +40 more as a toggle. The AM->Impact conversion (+1 Impact per initial AM point above 110) affects Daze buildup only. DEFAULT ENGINE: Hellfire Gears (USER CHOICE 2026-07-15 - her signature engine is deliberately NOT in the DB; add it later if owned). VIBRATO ABLOOM (her signature mechanic, Vivian-style CALC RECIPE): during stun, squad Ablooms/Disorders/anomaly applications build Vibrato on the enemy (max 4; cleared at max while the enemy is anomalous, once per stun) -> she triggers an Abloom = a RATIO of the ORIGINAL anomaly's per-proc DMG. Base ratios by element: ether 720 / electric 360 / fire 900 / physical 63 / ice 90 / wind 36 (%), +25 points per Vibrato stack (at the usual 4 stacks: ether 820, fire 1000, ...; M2: +35 points/stack). RECIPE: run Anomaly mode as the anomaly's element with the multiplier OVERRIDE = anomaly_base_mult x (ratio/100) - same pattern as Vivian's Abloom. Her POLARITY DISORDER (ability, Dance Prowess: 2 stacks on squad stun): 25% of a full Disorder per trigger (vs Yanagi's 15%) - same recipe as Yanagi's (Disorder mode, take 25% per trigger; does NOT clear the anomaly; also triggers with Aria per the ability text). M6 is the unstunned Vibrato variant (see its note). Not yet panel-checked; PROVISIONAL until calibration (frzyc formula sheet still a stub)."
+      "default_engine": "neon_fantasies",
+      "_note": "Ether stunner / Abloom enabler (Team 8, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8373.87, ATK 671.50, DEF 622.62 -> stored 8373/671/622; Impact 120, AM 90, AP 93). CORE STAT BOOSTS: ATK+75, AM+36 (coreStats) PLUS the core passive's always-on AP+120 (rank F, datamine coreParams [60..120]) - folded into core_skill_bonuses.anomaly_proficiency since it is unconditional; M4 adds +40 more as a toggle. The AM->Impact conversion (+1 Impact per initial AM point above 110) affects Daze buildup only. DEFAULT ENGINE: her signature Neon Fantasies (added 2026-10-17, user choice; squad DMG +15..24% per stack x2 plus equipper AP - see its engine entry). Hellfire Gears (Koleda's signature) was her default from 2026-07-15 to 2026-10-17 and stays selectable. VIBRATO ABLOOM (her signature mechanic, Vivian-style CALC RECIPE): during stun, squad Ablooms/Disorders/anomaly applications build Vibrato on the enemy (max 4; cleared at max while the enemy is anomalous, once per stun) -> she triggers an Abloom = a RATIO of the ORIGINAL anomaly's per-proc DMG. Base ratios by element: ether 720 / electric 360 / fire 900 / physical 63 / ice 90 / wind 36 (%), +25 points per Vibrato stack (at the usual 4 stacks: ether 820, fire 1000, ...; M2: +35 points/stack). RECIPE: run Anomaly mode with the multiplier OVERRIDE = anomaly_base_mult x (ratio/100) and set the Abloom element to the afflicted anomaly's (since 2026-10-17 that sets the dealt element, its RES and element gates; before, the override always dealt her own Ether) - same pattern as Vivian's Abloom. Her POLARITY DISORDER (ability, Dance Prowess: 2 stacks on squad stun): 25% of a full Disorder per trigger (vs Yanagi's 15%) - same recipe as Yanagi's (Disorder mode, take 25% per trigger; does NOT clear the anomaly; also triggers with Aria per the ability text). M6 is the unstunned Vibrato variant (see its note). Not yet panel-checked; PROVISIONAL until calibration (frzyc formula sheet still a stub)."
     },
     "yanagi": {
       "name": "Tsukishiro Yanagi",
@@ -1792,56 +1792,11 @@
           "max_stacks": 1,
           "effects": [ { "kind": "dmg_bonus", "value": 0.15, "element": "electric" } ],
           "note": "Requires Rina at Mindscape 6. Her EX Special / Chain / Ultimate hit: ALL squad members' Electric DMG +15% for 8s. Verified 2026-07-04 (datamine mindscapeParams M6 [0.15, 8])."
-        },
-        {
-          "name": "P2 (Big Cleanup II): squad flat ATK from her PEN",
-          "max_stacks": 1,
-          "effects": [
-            { "kind": "flat_atk",
-              "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 3.0, "cap": 576.0 } }
-          ],
-          "note": "Awakened Potential: Perfect Service, in-game level II. While the Core Passive buff is active: for every 1% of RINA's PEN Ratio all squad members gain 3 flat ATK, capped at +576. Check TOGETHER with the core PEN buff (same trigger, same 'pen_ratio' input), and check only the ONE level you own. The twin squad DEF buff (2.5 per 1%, cap 468) is not modeled - no damage in this calculator scales off DEF. PROVISIONAL (nanoka 3.1 display text; frzyc potentialParams is still empty)."
-        },
-        {
-          "name": "P3 (Big Cleanup III): squad flat ATK from her PEN",
-          "max_stacks": 1,
-          "effects": [
-            { "kind": "flat_atk",
-              "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 4.2, "cap": 576.0 } }
-          ],
-          "note": "Awakened Potential: Perfect Service, in-game level III. 4.2 flat ATK per 1% of Rina's PEN Ratio, cap +576. Check together with the core PEN buff; only one potential level at a time. Squad DEF half (3.5 per 1%, cap 468) not modeled. PROVISIONAL."
-        },
-        {
-          "name": "P4 (Big Cleanup IV): squad flat ATK from her PEN",
-          "max_stacks": 1,
-          "effects": [
-            { "kind": "flat_atk",
-              "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 5.5, "cap": 576.0 } }
-          ],
-          "note": "Awakened Potential: Perfect Service, in-game level IV. 5.5 flat ATK per 1% of Rina's PEN Ratio, cap +576. Check together with the core PEN buff; only one potential level at a time. Squad DEF half (4.5 per 1%, cap 468) not modeled. PROVISIONAL."
-        },
-        {
-          "name": "P5 (Big Cleanup V): squad flat ATK from her PEN",
-          "max_stacks": 1,
-          "effects": [
-            { "kind": "flat_atk",
-              "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 6.7, "cap": 576.0 } }
-          ],
-          "note": "Awakened Potential: Perfect Service, in-game level V. 6.7 flat ATK per 1% of Rina's PEN Ratio, cap +576. Check together with the core PEN buff; only one potential level at a time. Squad DEF half (5.5 per 1%, cap 468) not modeled. PROVISIONAL."
-        },
-        {
-          "name": "P6 (Big Cleanup VI): squad flat ATK from her PEN",
-          "max_stacks": 1,
-          "effects": [
-            { "kind": "flat_atk",
-              "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 8.0, "cap": 576.0 } }
-          ],
-          "note": "Awakened Potential: Perfect Service, in-game level VI (max). 8 flat ATK per 1% of Rina's PEN Ratio, cap +576 - reached at exactly 72% Rina PEN, the same point her core PEN buff caps. Check together with the core PEN buff; only one potential level at a time. Squad DEF half (6.5 per 1%, cap 468) not modeled. PROVISIONAL."
         }
       ],
       "potential": {
         "name": "Awakened Potential: Perfect Service",
-        "note": "Track 'Big Cleanup I-VI'. Level I is a KIT REWORK with no stat line; levels II-VI grant Rina PEN Ratio +1.6% (this block, self-facing) plus a SQUAD flat ATK/DEF conversion. The squad half cannot ride this block - potentials apply to the on-field attacker only, and Rina is normally an off-field support - so it lives in team_buffs as 'P2'..'P6' (check the level you own there). Levels replace each other. Sourced 2026-08-01 from nanoka 3.1/3.2.1 character 1211 (potential_detail + potential-gated basic-attack variants); frzyc potentialParams is EMPTY, so every number here is PROVISIONAL.",
+        "note": "Track 'Big Cleanup I-VI'. Level I is a KIT REWORK with no stat line; levels II-VI grant Rina PEN Ratio +1.6% (self-only) plus a SQUAD flat ATK/DEF conversion (squad: true). As a SUPPORT pick the level you own in her support slot's Potential select - only the squad flat ATK reaches the on-field agent; as the ON-FIELD agent the level gives her both halves. Levels replace each other. The squad half lived in duplicated team_buffs 'P2'..'P6' from 2026-08-01 until 2026-10-17, when supports gained a Potential path (Koleda's squad-wide Potential prompted it). Sourced 2026-08-01 from nanoka 3.1/3.2.1 character 1211 (potential_detail + potential-gated basic-attack variants); frzyc potentialParams is EMPTY, so every number here is PROVISIONAL.",
         "levels": {
           "1": {
             "name": "Big Cleanup I",
@@ -1850,37 +1805,57 @@
           "2": {
             "name": "Big Cleanup II",
             "max_stacks": 1,
-            "effects": [ { "kind": "pen_ratio", "value": 0.016 } ],
-            "note": "Rina's own PEN Ratio +1.6% (flat, identical at levels II-VI). Only affects HER damage - relevant when she is the attacker (off-field damage feature). It does NOT feed the team-buff scaling automatically: that reads the panel PEN Ratio you type in, which already includes this in-game. Squad half: team_buff 'P2'. PROVISIONAL."
+            "effects": [
+              { "kind": "pen_ratio", "value": 0.016 },
+              { "kind": "flat_atk", "squad": true,
+                "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 3, "cap": 576.0 } }
+            ],
+            "note": "Two effects. (1) Rina's own PEN Ratio +1.6% (flat, identical at levels II-VI; self-only - it never reaches the on-field agent, and it does NOT feed the scaling below: that reads the panel PEN Ratio you type, which already includes it in-game). (2) SQUAD: while the Core Passive buff is active, for every 1% of RINA's PEN Ratio all squad members gain 3 flat ATK, capped at +576 - use together with the core PEN buff (same trigger, same 'pen_ratio' input = HER panel PEN Ratio). The twin squad DEF buff (2.5 per 1%, cap 468) is not modeled - no damage in this calculator scales off DEF. PROVISIONAL (nanoka 3.1 display text)."
           },
           "3": {
             "name": "Big Cleanup III",
             "max_stacks": 1,
-            "effects": [ { "kind": "pen_ratio", "value": 0.016 } ],
-            "note": "Rina's own PEN Ratio +1.6% (unchanged from level II). Squad half: team_buff 'P3'. PROVISIONAL."
+            "effects": [
+              { "kind": "pen_ratio", "value": 0.016 },
+              { "kind": "flat_atk", "squad": true,
+                "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 4.2, "cap": 576.0 } }
+            ],
+            "note": "Rina's own PEN Ratio +1.6% (self-only, unchanged from level II) plus SQUAD flat ATK 4.2 per 1% of Rina's PEN Ratio, cap +576. Use together with the core PEN buff. Squad DEF half (3.5 per 1%, cap 468) not modeled. PROVISIONAL."
           },
           "4": {
             "name": "Big Cleanup IV",
             "max_stacks": 1,
-            "effects": [ { "kind": "pen_ratio", "value": 0.016 } ],
-            "note": "Rina's own PEN Ratio +1.6% (unchanged from level II). Squad half: team_buff 'P4'. PROVISIONAL."
+            "effects": [
+              { "kind": "pen_ratio", "value": 0.016 },
+              { "kind": "flat_atk", "squad": true,
+                "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 5.5, "cap": 576.0 } }
+            ],
+            "note": "Rina's own PEN Ratio +1.6% (self-only, unchanged from level II) plus SQUAD flat ATK 5.5 per 1% of Rina's PEN Ratio, cap +576. Use together with the core PEN buff. Squad DEF half (4.5 per 1%, cap 468) not modeled. PROVISIONAL."
           },
           "5": {
             "name": "Big Cleanup V",
             "max_stacks": 1,
-            "effects": [ { "kind": "pen_ratio", "value": 0.016 } ],
-            "note": "Rina's own PEN Ratio +1.6% (unchanged from level II). Squad half: team_buff 'P5'. PROVISIONAL."
+            "effects": [
+              { "kind": "pen_ratio", "value": 0.016 },
+              { "kind": "flat_atk", "squad": true,
+                "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 6.7, "cap": 576.0 } }
+            ],
+            "note": "Rina's own PEN Ratio +1.6% (self-only, unchanged from level II) plus SQUAD flat ATK 6.7 per 1% of Rina's PEN Ratio, cap +576. Use together with the core PEN buff. Squad DEF half (5.5 per 1%, cap 468) not modeled. PROVISIONAL."
           },
           "6": {
             "name": "Big Cleanup VI",
             "max_stacks": 1,
-            "effects": [ { "kind": "pen_ratio", "value": 0.016 } ],
-            "note": "Rina's own PEN Ratio +1.6% (unchanged from level II). Squad half: team_buff 'P6'. PROVISIONAL."
+            "effects": [
+              { "kind": "pen_ratio", "value": 0.016 },
+              { "kind": "flat_atk", "squad": true,
+                "scaling": { "input": "pen_ratio", "per_step": 0.01, "per_value": 8, "cap": 576.0 } }
+            ],
+            "note": "Rina's own PEN Ratio +1.6% (self-only, unchanged from level II) plus SQUAD flat ATK 8 per 1% of Rina's PEN Ratio, cap +576 - the cap is reached at exactly 72% Rina PEN, the same point her core PEN buff caps. Use together with the core PEN buff. Squad DEF half (6.5 per 1%, cap 468) not modeled. PROVISIONAL."
           }
         }
       },
       "default_engine": "weeping_cradle",
-      "_note": "Electric support (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 8609 / ATK 642 / DEF 601, Impact 83, AM 93, AP 92; max core ATK+75, PEN Ratio+14.4%). Her value is the squad PEN Ratio buff (scales with her own PEN) + Electric DMG buffs. Modeled as team_buffs (support role); M2 is self-only. Bangboo-summon mechanics (Drusilla/Anastella deployment) are the trigger conditions - the user toggles what's active. M1/M3/M4/M5 not modeled (uptime/energy/MV). PEN Ratio +14.4% core folded into core_skill_bonuses. Potential Awakening 'Perfect Service' added 2026-08-01 (nanoka only, PROVISIONAL): the self PEN +1.6% sits in the 'potential' block, the squad flat-ATK conversion in team_buffs P2..P6 (potentials never reach an off-field support). Not yet panel-checked in-game."
+      "_note": "Electric support (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 8609 / ATK 642 / DEF 601, Impact 83, AM 93, AP 92; max core ATK+75, PEN Ratio+14.4%). Her value is the squad PEN Ratio buff (scales with her own PEN) + Electric DMG buffs. Modeled as team_buffs (support role); M2 is self-only. Bangboo-summon mechanics (Drusilla/Anastella deployment) are the trigger conditions - the user toggles what's active. M1/M3/M4/M5 not modeled (uptime/energy/MV). PEN Ratio +14.4% core folded into core_skill_bonuses. Potential Awakening 'Perfect Service' added 2026-08-01 (nanoka only, PROVISIONAL): self PEN +1.6% plus the squad flat-ATK conversion, both in the 'potential' block; the squad half is marked squad: true so it reaches the on-field agent through her support slot's Potential select (migrated 2026-10-17 from duplicated team_buffs P2..P6). Not yet panel-checked in-game."
     },
     "yixuan": {
       "name": "Yixuan",
@@ -2228,6 +2203,7 @@
       "team_buffs": [
         {
           "name": "Tea Party Etiquette: squad Windswept & Vortex DMG",
+          "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
           "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_attribute": true },
           "effects": [
@@ -2394,6 +2370,7 @@
       "luminize": {
         "ap_scaling": 0.002,
         "m4_multiplier": 1.12,
+        "m1_res_ignore": 0.50,
         "max_voidflares": 3,
         "note": "LUMINIZE MODE data. Each stored Voidflare fires one Attribute Anomaly instance whose multiplier is the skill's own value x (1 + ap_scaling x REMIELLE's Anomaly Proficiency) - MULTIPLICATIVE, not additive (Lin-0's worked example: 500 AP turns a 320% Assist into 640%, not 420%). x1.12 more at her M4. Multipliers are max skill level (project convention); all four confirmed by Lin-0 2026-07-29. The instance scales off the TRIGGERING TEAMMATE's Effect Strength, so the calculation runs with that teammate as the attacker. A Voidflare stores that anomaly's Effect Strength AND element but NOT its type (Lin-0: a Voidflare from Jane's Assault gives a Physical Luminize, not Assault DMG), and Ablooms / Disorders / Vortexes never create one - only an anomaly APPLICATION does. Voidflares from different teammates therefore differ: run one calculation per source agent and sum them.",
         "skills": {
@@ -2690,6 +2667,225 @@
       ],
       "default_engine": "box_cutter",
       "_note": "Physical A-RANK STUNNER / Aftershock enabler (Team 9, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 7612.79, ATK 590.83, DEF 606.60 -> stored 7612/590/606; Impact 118, AM 92, AP 90; max core ATK+75, Impact+18 not folded - buildup only). Sons of Calydon (Caesar/Lighter/Lucy/Burnice). DUAL-TYPE SPECIAL: her Special Attack: Rending Claw - Nightmare Shadow is natively Special + Aftershock (datamine: damageType1 'special', damageType2 'aftershock') - tag it 'special' and tick 'also counts as Aftershock' so it takes both Special-gated and Aftershock-gated buffs (incl. her own Binding Trap and Box Cutter's trigger). Her value: the Binding Trap +30% squad Aftershock DMG debuff for Trigger / Anby S / Sons of Calydon teams. NO core_passive block: her Core (Hunter's Instinct - EX Special/Assist Follow-Up/Chain/Ultimate enters Hunter's Gait 6s, Daze SHE DEALS +30% at rank F, datamine coreParams dazeInc [0.15..0.3]) is Daze BUILDUP only, never a damage term - not modeled (unlike Trigger's core, which debuffs the target's Stun DMG Multiplier); Hunter's Gait still matters as the gate for M2. Her attacker-role Additional Ability and the 'Binding Trap' team buff are the SAME effect - never apply both at once. Not yet panel-checked in-game; PROVISIONAL until calibration."
+    },
+    "koleda": {
+      "name": "Koleda",
+      "attribute": "fire",
+      "specialty": "stun",
+      "faction": "belobog_heavy_industries",
+      "level": 60,
+      "base_hp": 8127,
+      "base_atk": 660,
+      "base_def": 594,
+      "impact": 116,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 97,
+      "anomaly_proficiency": 96,
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
+      "additional_ability": {
+        "name": "Belobog Management: Chain DMG vs Stunned",
+        "max_stacks": 2,
+        "condition": { "teammate_specialty_any_of": ["rupture"], "teammate_shares_attribute_or_faction": true, "potential_adds_specialty": ["armorer"] },
+        "effects": [ { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "chain" } ],
+        "note": "Additional Ability - needs another squadmate who is a Rupture agent or shares her Attribute (fire) or Faction (Belobog Heavy Industries); her Potential also accepts an Armorer squadmate. Each EX Special explosion hit applies a debuff (max 2 stacks): while the target is STUNNED, Chain Attacks deal +35% DMG per stack (+70% at 2). Resets when the stun ends. STUNNED ONLY - read the STUNNED column of a Chain Attack and ignore the unstunned one. Self-facing copy for when Koleda is the attacker; as a support use the 'Belobog Management' team buff (same effect - never both). Datamine abilityParams [0.35, 2]; frzyc codes it as a team Chain DMG% buff gated on 3 Fire/Belobog/Rupture/Armorer squad counts (Koleda herself counts for 2)."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Beat of the Hammer",
+          "note": "Special / EX Special launched right after the 2nd or 4th Basic hit (or the enhanced Basic): Daze +15% - buildup only, not modeled."
+        },
+        "2": {
+          "name": "Kinetic Recovery",
+          "note": "EX Special hit: recover 60 Energy, once every 45s - resource only, not modeled."
+        },
+        "3": {
+          "name": "\"Mind Your Own!\"",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "Furnace's Glow",
+          "max_stacks": 2,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.18, "skill_tag": "chain" },
+            { "kind": "dmg_bonus", "value": 0.18, "skill_tag": "ultimate" }
+          ],
+          "note": "Each enhanced Basic that consumes Furnace Fire grants 1 Charge (max 2). Her Chain Attack: Natural Disaster or Ultimate: Hammerquake consumes all Charge for +18% DMG per stack (+36% at 2). Stacks = Charge held when the Chain/Ultimate lands. Self-only. Datamine mindscapeParams [2, 0.18]."
+        },
+        "5": {
+          "name": "\"You Dare Underestimate Me?\"",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Saturated Blast",
+          "note": "When an EX Special, Chain Attack or Ultimate explosion hits: additional DMG equal to 360% of her ATK. EXTRA-HIT RECIPE: run a direct hit with multiplier 3.6, damage type UNTYPED (frzyc customDmg 'elemental' - not EX/Chain/Ult-tagged), Fire. Datamine mindscapeParams [3.6]."
+        }
+      },
+      "potential": {
+        "name": "Potential Awakening: Demolition Ops",
+        "note": "Track 'Get Workin'! I-VI' (in-game levels I..VI stored as 1..6). Every level includes the level-I rework; II..VI add a squad CRIT DMG ladder. Almost the whole Potential is SQUAD-FACING (squad: true): as a SUPPORT pick the level you own in her support slot's Potential select; as the ON-FIELD agent the level applies to her too. Levels replace each other. NOT MODELED: (a) the Armorer half of II..VI (Armorer agents +4/6/8/10/12% Laceration DMG - the Sharp DMG / Laceration formula is not in this calculator and no Armorer is in the roster; the CRIT DMG ladder is gated to NON-Armorer agents, which today means everyone); (b) the rework's self part, the enhanced Basic 2nd hit +10% DMG and +20% Daze per Furnace Fire stack consumed (max 2) - enter +10%/stack as external DMG% on that one hit. Sources: nanoka 3.2 (live) character 1101 potential_detail + potential-gated skill/passive variants; frzyc potentialParams [[0, 0.04..0.12], [0, 0.11..0.35]] and Koleda.ts agree to the digit (P1 35% = teamBuff common_dmg_, the ordinary DMG% bracket). Not yet calibrated in-game.",
+        "levels": {
+          "1": {
+            "name": "Get Workin'! I",
+            "max_stacks": 1,
+            "effects": [ { "kind": "dmg_bonus", "value": 0.35, "squad": true } ],
+            "note": "Kit rework: Furnace Fire now stacks to 2 and the enhanced Basic consumes all stacks; whenever Furnace Fire is consumed, ALL agents deal +35% DMG for 40s (repeats reset the timer - near-permanent in her loop). Modeled as a squad DMG% buff (datamine common_dmg_, which sums into the DMG% bracket). Also: the enhanced Basic becomes a two-hit move, switching out during hit 1 lets her finish hit 2 on her own, and her EX / Ultimate / Dodge Counter / Assist Follow-Up can chain into Dash: Tremble! (QoL)."
+          },
+          "2": {
+            "name": "Get Workin'! II",
+            "max_stacks": 1,
+            "effects": [
+              { "kind": "dmg_bonus", "value": 0.35, "squad": true },
+              { "kind": "crit_dmg", "value": 0.11, "squad": true }
+            ],
+            "note": "Level I's squad DMG +35% plus non-Armorer squad CRIT DMG +11% (Armorers get Laceration DMG +4% instead - not modeled)."
+          },
+          "3": {
+            "name": "Get Workin'! III",
+            "max_stacks": 1,
+            "effects": [
+              { "kind": "dmg_bonus", "value": 0.35, "squad": true },
+              { "kind": "crit_dmg", "value": 0.17, "squad": true }
+            ],
+            "note": "Level I's squad DMG +35% plus non-Armorer squad CRIT DMG +17% (Armorer Laceration +6% not modeled)."
+          },
+          "4": {
+            "name": "Get Workin'! IV",
+            "max_stacks": 1,
+            "effects": [
+              { "kind": "dmg_bonus", "value": 0.35, "squad": true },
+              { "kind": "crit_dmg", "value": 0.23, "squad": true }
+            ],
+            "note": "Level I's squad DMG +35% plus non-Armorer squad CRIT DMG +23% (Armorer Laceration +8% not modeled)."
+          },
+          "5": {
+            "name": "Get Workin'! V",
+            "max_stacks": 1,
+            "effects": [
+              { "kind": "dmg_bonus", "value": 0.35, "squad": true },
+              { "kind": "crit_dmg", "value": 0.29, "squad": true }
+            ],
+            "note": "Level I's squad DMG +35% plus non-Armorer squad CRIT DMG +29% (Armorer Laceration +10% not modeled)."
+          },
+          "6": {
+            "name": "Get Workin'! VI",
+            "max_stacks": 1,
+            "effects": [
+              { "kind": "dmg_bonus", "value": 0.35, "squad": true },
+              { "kind": "crit_dmg", "value": 0.35, "squad": true }
+            ],
+            "note": "Max level: level I's squad DMG +35% plus non-Armorer squad CRIT DMG +35% (Armorer Laceration +12% not modeled)."
+          }
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Belobog Management: Chain DMG vs Stunned",
+          "self_duplicate_of": "additional_ability",
+          "max_stacks": 2,
+          "condition": { "teammate_specialty_any_of": ["rupture"], "teammate_shares_attribute_or_faction": true, "potential_adds_specialty": ["armorer"] },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.35, "skill_tag": "chain" } ],
+          "note": "Additional Ability (needs another Rupture / Fire / Belobog squadmate; Armorer too with her Potential). Her EX Special explosion debuffs the target (max 2 stacks): while it is STUNNED, every squad member's Chain Attacks deal +35% DMG per stack. STUNNED ONLY - read the STUNNED column of a Chain Attack. Resets when the stun ends."
+        }
+      ],
+      "default_engine": "hellfire_gears",
+      "_note": "Fire stunner, Belobog Heavy Industries (Team 10, added 2026-10-17, zenless-optimizer datamine: Lv. 60 HP 8127.31, ATK 660.84, DEF 594.59 -> stored 8127/660/594; Impact 116, AM 97, AP 96; max core ATK+75, Impact+18 - nanoka 3.2 agrees). CORE PASSIVE (Demolition Hammer) is Daze-only (EX Special / enhanced Basic Daze +60% at rank F) - nothing to model, so there is no core_passive block. Her damage value is support-side: the Additional Ability's Chain DMG vs Stunned and, since 3.2, her squad-wide Potential Awakening (squad DMG +35%, squad CRIT DMG up to +35%), delivered through the support slot's Potential select. Furnace Fire comes from her EX Special, Chain Attack, Ultimate and Assist Follow-Up; the enhanced Basic consumes it. Ben coordinated-attack (Teamwork) multipliers are separate MVs, entered by hand. Default engine: her signature Hellfire Gears (no damage-relevant passive). PROVISIONAL until an in-game calibration."
+    },
+    "phoenix": {
+      "name": "Phoenix",
+      "attribute": "fire",
+      "specialty": "anomaly",
+      "faction": "krampus",
+      "level": 60,
+      "base_hp": 7673,
+      "base_atk": 797,
+      "base_def": 612,
+      "impact": 86,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 116,
+      "anomaly_proficiency": 118,
+      "core_skill_bonuses": { "base_atk": 75, "anomaly_mastery": 36, "anomaly_proficiency": 85 },
+      "core_passive": {
+        "name": "Nirvana: Sear (Anomaly DMG can crit)",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "anomaly_crit_rate", "modes": ["anomaly", "disorder", "vortex"],
+            "scaling": { "input": "anomaly_mastery", "base": 0.30, "threshold": 155, "per_step": 1, "per_value": 0.007, "cap": 1.0 } },
+          { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] },
+          { "kind": "anomaly_crit_dmg", "value": 0.40, "abloom_only": true }
+        ],
+        "note": "Core passive, max rank F. Any squad Anomaly DMG puts the enemy in SEAR (20s, refreshed - permanent in an anomaly team); Anomaly DMG against a Seared enemy can CRIT: CRIT Rate 30% +0.7% per point of Phoenix's INITIAL Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. Enter her panel (out-of-combat) AM as 'anomaly_mastery'; the optimizer then keeps builds at or above it. Reaching the cap: (116 base + 36 core) x (1 + 30% slot-6 AM% + 30% Plume of Rebirth + 8% Phaethon's Melody 2pc) = 255.4 AM. A build's CRIT stats never reach anomaly crits. Third effect (Abloom only): her own Ablooms (Purifying Flame, Soul-Searching Blaze) get +40% CRIT DMG when they crit - it applies only with an Abloom multiplier override set. Not modeled: the Sear DoT (25..50% ATK every 8s, Fire, counts as EX Special DMG - direct-mode recipe: multiplier 0.50, tag EX Special), Pyre / Combustion Attacks / Wither and Bloom / Rebirth (resources and QoL). The core's Anomaly Proficiency +85 is folded into core_skill_bonuses (unconditional, Nangong precedent). Self-facing copy; as a support use the 'Sear' team buff (same effect - never both)."
+      },
+      "additional_ability": {
+        "name": "Krampus Ace: Sear Anomaly CRIT DMG",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
+        "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "disorder", "vortex"] } ],
+        "note": "Additional Ability - needs another Anomaly squadmate or one sharing her Faction (Krampus Compliance Authority: Zhao, Dialyn). Anomaly DMG against Seared enemies: CRIT DMG +15% (squad-wide; this is the self-facing copy - as a support use the 'Krampus Ace' team buff, never both)."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Lingering Pain and Thrilling Procession",
+          "max_stacks": 1,
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "note": "Anomaly DMG against Seared enemies: CRIT DMG +25% more (squad-wide in-game - as a support use the 'M1' team buff instead). Ascension on entering the field and Pyre +15% on Combustion Attacks are resource-only."
+        },
+        "2": {
+          "name": "Curiosity Won't Kill the Cat",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30 } ],
+          "note": "Phoenix's DMG against Seared enemies +30% (self-only; Sear is near-permanent in an anomaly team - direct hits and her anomalies alike). Her Burn lasts 2s longer: 4 more ticks at the 0.5s interval - add them by hand to a full-duration Burn total."
+        },
+        "3": {
+          "name": "Scarecrow Complex",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled (project convention). Raises her Abloom MVs too: Purifying Flame 225+20 per level above 1, Soul-Searching Blaze 300+27 per level above 1."
+        },
+        "4": {
+          "name": "Life's End and the Heartless Wonderland",
+          "note": "When the Soul-Searching Blaze or Purifying Flame finisher hits an anomalous enemy: 1 ADDITIONAL Abloom at a fixed 600% multiplier. RECIPE: one more Abloom run with the override at 6.00 (see her _note). Whether the +40% Abloom CRIT DMG rider covers this extra instance is not stated; the calculator applies it (the rider is Abloom-gated, not skill-gated) - unconfirmed until frzyc or an in-game check."
+        },
+        "5": {
+          "name": "Carnival of Madness",
+          "note": "Basic Attack / Dodge / Assist / Special / Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Notes From Confinement",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.15 },
+            { "kind": "def_red", "value": 0.40, "abloom_only": true }
+          ],
+          "note": "Phoenix ignores 15% of All-Attribute RES (all of her damage), and Ablooms she triggers ignore 40% of enemy DEF (applies only with an Abloom multiplier override set). Ascension from Dazzling Flare is resource-only."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Sear: squad Anomaly DMG can crit",
+          "self_duplicate_of": "core_passive",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "anomaly_crit_rate", "modes": ["anomaly", "disorder", "vortex"],
+              "scaling": { "input": "anomaly_mastery", "base": 0.30, "threshold": 155, "per_step": 1, "per_value": 0.007, "cap": 1.0 } },
+            { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] }
+          ],
+          "note": "Core passive, max rank F: any squad Anomaly DMG Sears the enemy, and ALL Anomaly DMG it takes can crit - CRIT Rate 30% +0.7% per point of PHOENIX's initial Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. Enter HER panel AM as 'anomaly_mastery'. The on-field agent's anomaly procs, Disorders and Vortexes all crit; their build CRIT stats do not apply."
+        },
+        {
+          "name": "Krampus Ace: Sear Anomaly CRIT DMG",
+          "self_duplicate_of": "additional_ability",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "note": "Additional Ability (needs another Anomaly squadmate or a Krampus one). Anomaly DMG against Seared enemies: CRIT DMG +15%. Check together with the Sear buff."
+        },
+        {
+          "name": "M1: Sear Anomaly CRIT DMG +25%",
+          "max_stacks": 1,
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "note": "Requires Phoenix at Mindscape 1. Anomaly DMG against Seared enemies: CRIT DMG +25% more. Check together with the Sear buff."
+        }
+      ],
+      "default_engine": "plume_of_rebirth",
+      "_note": "Fire ANOMALY, Krampus Compliance Authority (Team 10, added 2026-10-17). PROVISIONAL - nanoka 3.3 BETA build 3.3.12+19629936, character 1641 (code name 'Pheony'); frzyc has no entry yet, Lin-0 has no guide. Lv. 60 stats from the nanoka growth curves (same formula that reproduces frzyc's Pyrois / Koleda): HP 7673.70, ATK 797.57, DEF 612.60 -> stored 7673/797/612; Impact 86, AM 116, AP 118 (nanoka element_abnormal_power = AM, element_mystery = AP - checked against Koleda in frzyc); core ATK+75, AM+36, plus the core passive's AP+85. HER MECHANIC: SEAR makes squad Anomaly DMG crit (core_passive / 'Sear' team buff). ABLOOM RECIPES (she triggers them; run Anomaly mode as Phoenix with the multiplier OVERRIDE and the Abloom element set to the anomaly already on the target - any attribute): Basic Attack: Purifying Flame finisher (90 Pyre) = 225% + 20% per skill level above 1 -> 4.45 at Lv. 12; Soul-Searching Blaze finisher (re-entry after her Ultimate / Chain) = 300% + 27% per level -> 5.97 at Lv. 12; M4 adds one more at a fixed 6.00. The override IS the multiplier, NOT a scale on the anomaly's base: her text 'resolving the corresponding Attribute Anomaly at a X% multiplier' / 'a fixed 600% multiplier' is Velina's wording, which was confirmed in-game as the direct multiplier (2026-07-04); a single number for all six attributes only makes sense that way (Nangong and Vivian instead list per-element ratios OF the original anomaly). Each of her Ablooms gets +40% CRIT DMG when it crits (core_passive's Abloom-only rider) and, at M6, ignores 40% DEF. Ultimate: Perpetual Resurrection 1813.9% +164.9%/level (consumes her HP, then Wither); Chain Attack 882.7% +80.3%/level - direct hits. NOT MODELED: the Sear DoT (recipe in the core note), Pyre/Ascension/Wither resources, Combustion Attack tags (no damage gate uses them). Re-verify everything when 3.3 goes live or frzyc adds her."
     }
   }
 }

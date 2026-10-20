@@ -139,7 +139,8 @@
       "name": "Hellfire Gears",
       "base_atk": 684,
       "advanced_stat": { "Impact%": 0.18 },
-      "passive_note": "Koleda's signature, assigned as Nangong Yu's DEFAULT engine (user choice 2026-07-15; zenless-optimizer datamine, wengine params [0.6, 0.1, 10, 2] at R1; atk_base 46 -> Lv. 60 base 684, Impact% 7.2 x 2.5 = 18). Passive 'Passionate Construction' has NO damage-formula effect: off-field Energy Regen +0.6/s (R1) to +1.2/s (R5) is resource-only, and the EX Special Impact +10%/stack x2 (R1; 20% R5) affects Daze buildup only - nothing to model or enter."
+      "refinement": { "rank": 1, "max_rank": 5 },
+      "passive_note": "Koleda's signature and her default engine (zenless-optimizer datamine, wengine params [0.6, 0.1, 10, 2] at R1; atk_base 46 -> Lv. 60 base 684, Impact% 7.2 x 2.5 = 18). It was Nangong Yu's default from 2026-07-15 until 2026-10-17, when her own signature Neon Fantasies was added; any stunner can still wear it. Passive 'Passionate Construction' has NO damage-formula effect: off-field Energy Regen +0.6/s (R1) to +1.2/s (R5) is resource-only, and the EX Special Impact +10%/stack x2 (R1; 20% R5) affects Daze buildup only - nothing to model or enter."
     },
     "ode_of_resurrected_wings": {
       "name": "Ode of Resurrected Wings",
@@ -663,6 +664,58 @@
         }
       },
       "passive_note": "Sigrid's signature (added 2026-08-23; nanoka 3.1 weapon 14159, code_name Weapon_S_1591 = character 1591 Sigrid, CONFIRMED against frzyc KnightsExtolment.json: rarity S, type attack, atk_base 48 -> Lv. 60 base 713, crit_dmg_ 0.192 x 2.5 = 48%, phase params R1 [1, 0.32, 25, 2, 1, 2, 0.2] to R5 [1, 0.512, 25, 2, 1, 2, 0.32]). Both sources agree to the digit; nanoka 'live' is 3.1, so this is SHIPPED content, not a leak. The CRIT DMG half of Knight's Rite is auto-applied in full via the conditional buff - do NOT also enter it as external CRIT DMG (that double-counts). NOT auto-applied: at 2 Battle Edge stacks the equipper gains BONECHILL - their DMG ignores 20% (R1) to 32% (R5) of the target's ICE RES. There is no equipper-side RES-ignore bracket in the engine system yet, so enter it as external RES shred when the wearer is the attacker at 2 stacks (same treatment as Heartstring Nocturne, Chief Sidekick and Sol Exuvia). Sigrid herself is not in agents.json yet - the engine is usable by Ellen or any other Ice/Attack agent in the meantime."
+    },
+    "neon_fantasies": {
+      "name": "Neon Fantasies",
+      "base_atk": 713,
+      "advanced_stat": { "Anomaly Mastery%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [90, 103, 117, 130, 145],
+        "conditional_buffs": [
+          {
+            "name": "Disco Demon (2 stacks): equipper AP",
+            "bracket": "anomaly_proficiency",
+            "modes": ["anomaly", "disorder", "vortex"],
+            "per_stack_by_rank": [60, 69, 78, 87, 96],
+            "max_stacks": 2,
+            "at_max_only": true,
+            "auto": true,
+            "note": "At 2 Disco Demon stacks (and only then): the equipper's Anomaly Proficiency +60 (R1) to +96 (R5), on top of the unconditional passive AP. All-or-nothing at 2 stacks - at 0-1 it adds nothing. Flat AP, anomaly modes only. This counter is SEPARATE from the squad DMG buff's counter: keep both at the same stack count (2 in a sustained loop)."
+          }
+        ],
+        "squad_buffs": [
+          {
+            "name": "Disco Demon: squad DMG",
+            "kind": "dmg_bonus",
+            "values": [0.15, 0.17, 0.195, 0.21, 0.24],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "When the equipper's EX Special or Basic Attack deals ETHER DMG: ALL squad members' DMG +15% (R1) to +24% (R5) per stack for 40s, max 2 stacks (+30% R1 / +48% R5); once per skill use, repeats refresh. Nangong Yu (Ether) keeps it at 2 in her loop - RAMP-UP, auto-applied at 2. Ordinary DMG% bracket (datamine common_dmg_). Only one instance per squad. The R3/R4 values (19.5% / 21%) are irregular in the datamine itself, not a typo."
+          }
+        ]
+      },
+      "passive_note": "Nangong Yu's signature and her default engine (added 2026-10-17; zenless-optimizer datamine NeonFantasies: rarity S, type stun, atk_base 48 -> Lv. 60 base 713, anomMas_ 0.12 x 2.5 = 30%; phase params R1 [90, 0.15, 40, 2, 2, 60] to R5 [145, 0.24, 40, 2, 2, 96]; nanoka 3.2 weapon 14151 R1-R5 text matches to the digit). The unconditional Anomaly Proficiency +90 (R1) to +145 (R5) is auto-applied via passive_ap_by_rank (anomaly modes). Its Anomaly Mastery% advanced stat only affects buildup, which this calculator does not model - except as a panel stat and an optimizer constraint."
+    },
+    "plume_of_rebirth": {
+      "name": "Plume of Rebirth",
+      "base_atk": 713,
+      "advanced_stat": { "Anomaly Mastery%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_ap_by_rank": [90, 99, 108, 117, 126],
+        "conditional_buff": {
+          "name": "Hatching Day: Fire DMG on Anomaly crit",
+          "element": "fire",
+          "per_stack_by_rank": [0.40, 0.44, 0.48, 0.52, 0.56],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "When Anomaly DMG dealt by ANY squad member crits: the equipper's Fire DMG +40% (R1) to +56% (R5) for 20s, refreshed on repeat. Anomaly DMG can only crit through an anomaly-crit source such as Phoenix's Sear, which keeps it up in her loop - RAMP-UP, auto-applied. Untick it in a squad with no anomaly-crit source. Ordinary DMG% bracket, Fire only (a non-Fire Abloom does not get it)."
+        }
+      },
+      "passive_note": "Phoenix's signature (added 2026-10-17; PROVISIONAL - nanoka 3.3 BETA build 3.3.12+19629936, weapon 14164, code_name Weapon_S_1641 = character 1641 Phoenix; frzyc has no entry yet). Base 48 -> Lv. 60 base ATK 713 (the standard 48 -> 713 curve), Anomaly Mastery 12% x 2.5 = 30%. The unconditional Anomaly Proficiency +90 (R1) to +126 (R5) is auto-applied via passive_ap_by_rank (anomaly modes). Its AM% advanced stat counts toward Phoenix's INITIAL Anomaly Mastery, which sets her Sear CRIT Rate (see her agent entry). Re-verify every number when 3.3 goes live or frzyc adds it."
     }
   }
 }

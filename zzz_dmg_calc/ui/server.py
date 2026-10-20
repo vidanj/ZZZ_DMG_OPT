@@ -18,7 +18,10 @@ Endpoints::
     POST   /calculate   CalcConfig fields as JSON -> CalcResults as JSON
     POST   /optimize    same payload + an ``optimize`` options object ->
                         best build from the saved disc inventory
-                        (DOCS/optimizer_plan.md)
+                        (DOCS/optimizer_plan.md); an optional
+                        ``optimize.search_id`` makes it stoppable
+    POST   /optimize/cancel  {search_id} -> stop that running search
+                        (it answers 409 with ``"cancelled": true``)
     POST   /discs       save one disc to the inventory (deduped) -> its id
     DELETE /discs/{id}  remove an inventory disc (blocked if referenced)
     POST   /loadouts    save equipped discs as a loadout of inventory
@@ -41,7 +44,7 @@ import webbrowser
 from dataclasses import asdict, dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Timer
+from threading import Event, Lock, Timer
 from urllib.parse import unquote
 
 try:
@@ -62,8 +65,8 @@ try:
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
     from ..optimizer import (
-        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeOptions, optimize,
-        optimize_anomaly, optimize_sheer,
+        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeCancelled, OptimizeOptions,
+        optimize, optimize_anomaly, optimize_sheer,
     )
 except ImportError:
     # Executed directly as a script (``py server.py``): no parent package,
@@ -88,8 +91,8 @@ except ImportError:
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
     from zzz_dmg_calc.optimizer import (
-        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeOptions, optimize,
-        optimize_anomaly, optimize_sheer,
+        DEFAULT_MAXIMIZE_TOLERANCE, OptimizeCancelled, OptimizeOptions,
+        optimize, optimize_anomaly, optimize_sheer,
     )
 
 
@@ -224,6 +227,8 @@ def frontend_payload(data: AppData) -> dict:
                     "modes": list(e.modes) if e.modes else None,
                     "element": e.element,
                     "at_max_stacks": e.at_max_stacks,
+                    "squad": e.squad,
+                    "abloom_only": e.abloom_only,
                     "scaling": (
                         None if e.scaling is None else {
                             "input": e.scaling.input,
@@ -282,6 +287,11 @@ def frontend_payload(data: AppData) -> dict:
                         "name": p.name,
                         "note": p.note,
                         "buff": kit_buff(p.buff),
+                        # Offered in a SUPPORT slot's Potential select only
+                        # when the level reaches the squad (Koleda, Rina).
+                        "has_squad_effects": (
+                            p.buff is not None
+                            and p.buff.squad_part() is not None),
                     }
                     for level, p in sorted(a.potentials.items())
                 },
@@ -387,6 +397,10 @@ def frontend_payload(data: AppData) -> dict:
                         "per_stack": s.bonus_4pc.per_stack,
                         "max_stacks": s.bonus_4pc.max_stacks,
                         "auto": s.bonus_4pc.auto,
+                        # Optimizer team-element gate (§18): the page
+                        # notes it on the 4pc control.
+                        "needs_squad_element":
+                            s.bonus_4pc.needs_squad_element,
                         "note": s.bonus_4pc.note,
                     }
                 ),
@@ -587,6 +601,10 @@ def _build_config(body: dict) -> CalcConfig:
         engine_buffs_raw = entry.get("engine_buffs") or {}
         if not isinstance(engine_buffs_raw, dict):
             raise ValueError("Support 'engine_buffs' must be an object")
+        support_potentials_raw = entry.get("potentials") or {}
+        if not isinstance(support_potentials_raw, dict):
+            raise ValueError(
+                "Support 'potentials' must be an object of level -> stacks")
         rank_raw = entry.get("engine_rank")
         supports.append(SupportConfig(
             agent_key=str(entry.get("agent_key", "")),
@@ -599,6 +617,9 @@ def _build_config(body: dict) -> CalcConfig:
             engine_rank=None if rank_raw in (None, "") else int(rank_raw),
             engine_buffs={str(n): int(s)
                           for n, s in engine_buffs_raw.items() if int(s)},
+            potentials={int(level): int(stacks)
+                        for level, stacks in support_potentials_raw.items()
+                        if int(stacks)},
         ))
 
     return CalcConfig(
@@ -746,6 +767,10 @@ def run_calculation(data: AppData, body: dict) -> dict:
             "full_stunned": floor.full_stunned,
             "atk_final": floor.atk_final,
             "anomaly_proficiency": floor.anomaly_proficiency,
+            "per_proc_non_crit": floor.per_proc_non_crit,
+            "per_proc_crit": floor.per_proc_crit,
+            "per_proc_non_crit_stunned": floor.per_proc_non_crit_stunned,
+            "per_proc_crit_stunned": floor.per_proc_crit_stunned,
         }
     # Echo the applied set bonuses so the page can display them (the
     # calculation already validated the discs, so this cannot raise).
@@ -773,12 +798,16 @@ def run_calculation(data: AppData, body: dict) -> dict:
     return payload
 
 
-def run_optimization(data: AppData, body: dict) -> dict:
+def run_optimization(data: AppData, body: dict,
+                     cancel: Event | None = None) -> dict:
     """Search the saved disc inventory for the best build (plan §3/§7).
 
     The body is the same payload as ``/calculate`` plus an ``optimize``
     object: ``{objective, set_assumption, locked_slots, top_n, min_stats,
-    required_4pc, maximize_stat, maximize_tolerance}``. Direct mode runs
+    required_4pc, required_2pc, maximize_stat, maximize_tolerance}``.
+    The response also lists ``gated_sets`` — sets whose 4pc the search
+    credited at 0 stacks because no squad member has the anomaly
+    element that triggers it (§18). Direct mode runs
     :func:`~zzz_dmg_calc.optimizer.optimize`; rupture mode runs
     :func:`~zzz_dmg_calc.optimizer.optimize_sheer` (same crit objectives,
     Sheer-specific constraint stats); anomaly / Disorder / Vortex modes
@@ -792,11 +821,13 @@ def run_optimization(data: AppData, body: dict) -> dict:
     serializes :class:`~zzz_dmg_calc.optimizer.OptimizeResult`; each
     build carries its discs (with inventory ids), the 4-piece stacks it
     was evaluated at (for Apply), and its full verified results table.
+    ``cancel`` is the search's stop token (see ``/optimize/cancel``).
 
     Raises:
         ValueError: invalid body/options, an invalid baseline config, or
             an over-budget search (OptimizeError) — all with user-facing
             messages.
+        OptimizeCancelled: ``cancel`` was set before the search finished.
     """
     mode = _body_mode(body)
     config = _build_config(body)
@@ -825,6 +856,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
         min_stats={str(stat): float(minimum)
                    for stat, minimum in min_stats_raw.items()},
         required_4pc=opt_raw.get("required_4pc") or None,
+        required_2pc=opt_raw.get("required_2pc") or None,
         slot_main_stats={int(slot): str(main)
                          for slot, main in slot_mains_raw.items()
                          if str(main)},
@@ -844,6 +876,7 @@ def run_optimization(data: AppData, body: dict) -> dict:
         # long that takes. The page warns and recommends filters instead.
         **({"combo_budget": 10 ** 15}
            if opt_raw.get("ignore_budget") else {}),
+        cancel=cancel,
     )
 
     # Discs reserved by another agent's loadout are off-limits: the
@@ -946,6 +979,10 @@ def run_optimization(data: AppData, body: dict) -> dict:
         "already_optimal": result.already_optimal,
         "min_stats": result.min_stats,
         "required_4pc": result.required_4pc,
+        "required_2pc": result.required_2pc,
+        # Team-element gate (§18): set key -> the element no squad member
+        # has; those 4pcs were credited at 0 stacks.
+        "gated_sets": result.gated_sets,
         "slot_main_stats": {
             str(slot): main for slot, main in result.slot_main_stats.items()
         },
@@ -985,6 +1022,16 @@ class UIRequestHandler(BaseHTTPRequestHandler):
     server_version = "ZZZDmgUI/0.1"
     app_data: AppData
     write_lock = Lock()
+    # Stop tokens of running searches, by the page's search_id. Both the
+    # search and its cancel use setdefault, so a Stop that lands before
+    # the search registers still stops it.
+    searches: dict[str, Event] = {}
+    searches_lock = Lock()
+
+    @classmethod
+    def _search_event(cls, search_id: str) -> Event:
+        with cls.searches_lock:
+            return cls.searches.setdefault(search_id, Event())
 
     @classmethod
     def _refresh_user_data(cls) -> None:
@@ -1024,6 +1071,7 @@ class UIRequestHandler(BaseHTTPRequestHandler):
         routes = {
             "/calculate": self._post_calculate,
             "/optimize": self._post_optimize,
+            "/optimize/cancel": self._post_optimize_cancel,
             "/discs": self._post_disc,
             "/loadouts": self._post_loadout,
         }
@@ -1076,7 +1124,29 @@ class UIRequestHandler(BaseHTTPRequestHandler):
         self._send_json(run_calculation(self.app_data, body))
 
     def _post_optimize(self, body: dict) -> None:
-        self._send_json(run_optimization(self.app_data, body))
+        opt_raw = body.get("optimize")
+        search_id = (str(opt_raw.get("search_id") or "")
+                     if isinstance(opt_raw, dict) else "")
+        cancel = self._search_event(search_id) if search_id else None
+        try:
+            payload = run_optimization(self.app_data, body, cancel=cancel)
+        except OptimizeCancelled:
+            self._send_json({"error": "Search stopped.", "cancelled": True},
+                            status=409)
+            return
+        finally:
+            if search_id:
+                with self.searches_lock:
+                    self.searches.pop(search_id, None)
+        self._send_json(payload)
+
+    def _post_optimize_cancel(self, body: dict) -> None:
+        """Stop the running search with this ``search_id`` (Stop button)."""
+        search_id = str(body.get("search_id") or "")
+        if not search_id:
+            raise ValueError("'search_id' is required")
+        self._search_event(search_id).set()
+        self._send_json({"stopped": True})
 
     def _post_disc(self, body: dict) -> None:
         """Save one disc to the inventory (validated, deduped)."""

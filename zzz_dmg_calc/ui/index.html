@@ -170,6 +170,8 @@
   button.primary:hover { background: #e2fc60; }
   button.primary.optimize { background: #7fd0ff; margin-top: 10px; }
   button.primary.optimize:hover { background: #a5deff; }
+  button.primary.optimize-stop { background: var(--error); margin-top: 6px; }
+  button.primary.optimize-stop:hover { background: #ff8f8f; }
   button.primary:disabled { opacity: .55; cursor: wait; }
 
   /* Optimizer comparison panel */
@@ -360,7 +362,7 @@
       <div id="engine-buff-wrap" style="display:none"></div>
     </div>
     <div class="row c3" id="anomaly-inputs-1" style="display:none">
-      <div id="anom-mv-wrap"><label>Anomaly multiplier override % — leave blank for a normal proc; set for an Abloom (its own mult, REPLACES the base). Velina (fixed): 145 Condensed / 255 Sweeping / 680 Ultimate. Vivian (AP-scaled): base_mult × (MV/100) × (AP/10), MV Ether 6.15 / Elec 3.2 / Fire 8 / Phys 0.75 / Ice 1.08 / Wind 0.32 (see her note)</label>
+      <div id="anom-mv-wrap"><label>Anomaly multiplier override % — leave blank for a normal proc; set for an Abloom (its own mult, REPLACES the base; pick the anomaly it resolves below). Velina (fixed): 145 Condensed / 255 Sweeping / 680 Ultimate. Phoenix (fixed, Lv. 12): 445 Purifying Flame / 597 Soul-Searching Blaze / 600 M4. Vivian (AP-scaled): base_mult × (MV/100) × (AP/10), MV Ether 6.15 / Elec 3.2 / Fire 8 / Phys 0.75 / Ice 1.08 / Wind 0.32 (see her note)</label>
         <input type="number" id="anom-mv" placeholder="normal proc" min="1" step="any"></div>
       <div id="conv-element-wrap"><label id="conv-element-label">Element</label>
         <select id="conv-element"></select></div>
@@ -375,7 +377,7 @@
         <span>— a separate instance = MV% × AP/10 of the anomaly's DMG</span>
       </div>
       <div id="abloom-element-wrap" style="display:none;max-width:360px;margin-top:4px">
-        <label>Anomaly the Abloom triggers on (default her own Corruption/ether)</label>
+        <label>Anomaly the Abloom resolves (the one already on the target — sets the element dealt; defaults to the agent's own)</label>
         <select id="abloom-element"></select>
       </div>
     </div>
@@ -461,6 +463,10 @@
           <select id="opt-required"></select></div>
       </div>
       <div class="row c3">
+        <div><label title="Force at least 2 pieces of this set — for a 2-piece bonus the damage math can't value (e.g. King of the Summit's Daze +6% on a stunner), which the search would otherwise never pick. With a 4pc set above as well, the build is exactly 4pc + 2pc.">Also require a 2pc set (e.g. stun/utility)</label>
+          <select id="opt-required-2pc"></select></div>
+      </div>
+      <div class="row c3">
         <div><label title="Rank builds by this stat FIRST and by damage second: the search reports the build carrying the most of it among those within the allowed damage loss of the best build found. For a stat the chosen damage does not use at all — Remielle's Luminize scales with her Anomaly Proficiency, which her direct hits ignore. Like the minimum-stat constraints, this reads the COMBAT total (engine passive + assumed 4pc stacks + kit/team buffs included), which is higher than the out-of-combat Final stats panel.">Maximize stat (outranks damage)</label>
           <select id="opt-maximize"></select></div>
         <div id="opt-maximize-tol-wrap" style="display:none">
@@ -495,6 +501,11 @@
               title="Minimums are checked against COMBAT totals — agent base + core + discs + set 2pc, plus the always-on engine passive, the assumed 4pc stacks and kit/team buffs. The Final stats card shows the out-of-combat panel, which excludes the last three and is lower.">
         + Minimum-stat constraint</button>
       <button class="primary optimize" id="optimize">Optimize discs</button>
+      <button class="primary optimize-stop" id="optimize-stop" hidden
+              title="Abort the running search (its results are discarded) — fix the inputs and optimize again">
+        ■ Stop search</button>
+      <p class="note" id="opt-stopped" hidden>Search stopped — adjust the
+      inputs and optimize again.</p>
       <p class="hint">Uses everything above as-is and only swaps discs —
       candidates are your saved inventory plus what's equipped. Tick 🔒 on a
       disc card to keep that slot's current disc. Constraints require the
@@ -506,7 +517,8 @@
       ⚠ An unrestricted search — no 🔒 locks, no required 4pc set, no
       required mains, no constraints — considers every saved disc and can
       take <b>minutes</b> on a large inventory; narrowing it with any of
-      the above speeds it up.</p>
+      the above speeds it up. Spotted a wrong input mid-search? <b>Stop
+      search</b> aborts it right away.</p>
     </div>
   </div>
 </div>
@@ -586,6 +598,7 @@ let DB = null;
 let autoCalc = false;
 let lastResults = null;    // last /calculate response (optimizer baseline)
 let lastOptimize = null;   // last /optimize response (for Apply buttons)
+let activeSearch = null;   // running optimize: {id, stopped, btnText}
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = "zzz-dmg-ui-state";
 const SLOTS = [1, 2, 3, 4, 5, 6];
@@ -632,6 +645,8 @@ function buildStaticSelects() {
              byLabel(elementsList().map(e => [e, e])));
   $("mutated-element").value = "physical";   // neutral on most bosses
   fillSelect($("opt-required"), [["", "(none — any sets)"],
+    ...sortedSets().map(([k, s]) => [k, s.name])]);
+  fillSelect($("opt-required-2pc"), [["", "(none)"],
     ...sortedSets().map(([k, s]) => [k, s.name])]);
   refreshMaximizeStats();
   for (const slot of [4, 5, 6])
@@ -1126,8 +1141,13 @@ function updateModeUI() {
   // manual override). Show the Abloom toggle in anomaly mode; when on, hide
   // the manual override and show the element picker.
   const abloomOn = mode === "anomaly" && $("abloom").checked;
+  // An override is an Abloom too (Velina, Nangong, Phoenix): it resolves
+  // the anomaly already on the target, so the element picker shows for it.
+  const overrideOn = mode === "anomaly" && !luminize && !abloomOn
+    && $("anom-mv").value.trim() !== "";
   show("abloom-wrap", mode === "anomaly");
-  $("abloom-element-wrap").style.display = abloomOn ? "" : "none";
+  $("abloom-element-wrap").style.display =
+    abloomOn || overrideOn ? "" : "none";
   show("anom-mv-wrap", mode === "anomaly" && !abloomOn);
   if (mode === "anomaly" && $("abloom-element").options.length === 0) {
     fillSelect($("abloom-element"), byLabel(Object.entries(DB.anomalies)
@@ -1222,6 +1242,7 @@ const KIT_KIND_LABELS = {
   sheer_force: "flat Sheer Force", hp_pct: "Max HP%",
   sheer_dmg: "Sheer DMG (dedicated bracket)", def_red: "enemy DEF reduction",
   refringe: "Refringe (Lumiflux zone)",
+  anomaly_crit_rate: "Anomaly CRIT Rate", anomaly_crit_dmg: "Anomaly CRIT DMG",
 };
 
 //: Kit kinds whose values are plain numbers, not fractions.
@@ -1261,12 +1282,15 @@ function effectLabel(effect, maxStacks) {
   // (e.g. Ellen's Potential Ice RES ignore at 10 Rising Storm stacks).
   const perStack = effect.at_max_stacks ? " (only at MAX stacks)"
     : (maxStacks > 1 ? "/stack" : "");
-  // Mode/element gates (e.g. Velina's Vortex-only RES ignore)
+  // Mode/element gates (e.g. Velina's Vortex-only RES ignore), Abloom-only
+  // riders (Phoenix), and Potential effects that reach the whole squad.
   const gates = [
     ...(effect.modes || []),
     ...(effect.element ? [effect.element] : []),
+    ...(effect.abloom_only ? ["Abloom only"] : []),
   ];
-  const gate = gates.length ? ` [${gates.join("/")}]` : "";
+  const gate = (gates.length ? ` [${gates.join("/")}]` : "")
+    + (effect.squad ? " (squad)" : "");
   if (effect.scaling) return `${kind} (scales with ${effect.scaling.input.replace(/_/g, " ")})${effect.at_max_stacks ? perStack : ""}${gate}`;
   if (FLAT_KINDS.has(effect.kind)) return `${kind} +${effect.value}${perStack}${gate}`;
   const tag = effect.skill_tag ? ` on ${DB.skill_tags[effect.skill_tag] || effect.skill_tag}` : "";
@@ -1447,6 +1471,21 @@ function neededScalingInputs(buffs) {
     .map(e => e.scaling.input)))];
 }
 
+/* JSON with object keys sorted at every level — equality that ignores
+   key order (kit effect / condition comparisons). */
+function canonicalJSON(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJSON).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.keys(value).sort().map(k =>
+      `${JSON.stringify(k)}:${canonicalJSON(value[k])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+/* Own team buffs renderKit hid as interchangeable with a kit slot:
+   [buff name, kit kind ("core" | "aa" | "m" | "p"), level] — so
+   applyKit can move a tick saved on the hidden copy to the slot. */
+let kitHiddenTwins = [];
+
 function renderKit() {
   const agent = DB.agents[$("agent").value];
   const previous = kitState();
@@ -1469,13 +1508,11 @@ function renderKit() {
                             buff: m.buff, label: `M${level} — ${m.name}` });
   }
   // Potential Awakening levels — mindscape-like, but the levels REPLACE
-  // each other: activate only the level this copy has unlocked.
-  for (const [level, p] of Object.entries(agent.potentials || {})) {
-    if (p.buff) rows.push({ attr: `data-kit="p" data-level="${level}"`,
-                            buff: p.buff,
-                            label: `${agent.potential_name || "Potential"} P${level} — ${p.name}`,
-                            hint: ` <span class="note">(activate at most ONE potential level)</span>` });
-  }
+  // each other, so they render as ONE dropdown (the level this copy has
+  // unlocked) at this position — see potentialControl().
+  const potLevels = Object.entries(agent.potentials || {})
+    .filter(([, p]) => p.buff);
+  if (potLevels.length) rows.push({ potential: potLevels });
   // The agent's OWN team buffs: squad-wide buffs and enemy debuffs cover
   // their owner too, and the main agent can't sit in the Team card — tick
   // here the parts that apply to the agent itself (each note says which;
@@ -1484,24 +1521,43 @@ function renderKit() {
   // this very agent already has above (Anby S's Silver Star / Voltage
   // Surge / Potential). Same in-game effect, so offering both invites a
   // silent double-count — the API rejects the pair outright.
-  // Rows whose duplication is NOT declared stay visible — either copy
-  // may be the right one for a given rotation — but they are labelled
-  // with the twin so the pair is obvious before the API refuses it.
-  const slotTwins = [];
+  // Undeclared copies that are INTERCHANGEABLE with a slot (same effects
+  // in any order, same stacks, same team condition) are skipped too:
+  // ticking either does exactly the same. Twins that differ in stacks
+  // or condition stay visible — either may fit a given rotation — but
+  // are labelled so the pair is obvious before the API refuses it.
+  const slotTwins = [];       // [label, buff, kit kind, level]
   if (agent.core_passive)
-    slotTwins.push(["core passive", agent.core_passive]);
+    slotTwins.push(["core passive", agent.core_passive, "core"]);
   if (agent.additional_ability)
-    slotTwins.push(["additional ability", agent.additional_ability]);
+    slotTwins.push(["additional ability", agent.additional_ability, "aa"]);
   for (const [lv, m] of Object.entries(agent.mindscapes || {}))
-    if (m.buff) slotTwins.push([`M${lv}`, m.buff]);
+    if (m.buff) slotTwins.push([`M${lv}`, m.buff, "m", lv]);
   for (const [lv, p] of Object.entries(agent.potentials || {}))
-    if (p.buff) slotTwins.push([`P${lv}`, p.buff]);
-  const sameEffects = (a, b) => JSON.stringify(a.effects) ===
-                                JSON.stringify(b.effects);
+    if (p.buff) slotTwins.push([`P${lv}`, p.buff, "p", lv]);
+  // Order-insensitive: Velina's Tea Party Etiquette lists the same two
+  // effects in swapped order in its squad copy.
+  const effectsKey = buff => buff.effects.map(canonicalJSON).sort().join("|");
+  const sameEffects = (a, b) => effectsKey(a) === effectsKey(b);
+  const interchangeable = (a, b) => sameEffects(a, b)
+    && a.max_stacks === b.max_stacks
+    && canonicalJSON(a.condition || null) === canonicalJSON(b.condition || null);
+  kitHiddenTwins = [];
 
+  // A declared copy names its slot; it only ever carries over to THAT one.
+  const DECLARED_KIND = { core_passive: "core", additional_ability: "aa",
+                          potential: "p" };
   for (const b of agent.team_buffs || []) {
-    if (b.self_duplicate_of) continue;
     const twin = slotTwins.find(([, sb]) => sameEffects(sb, b));
+    // Checked before the declared skip, so a tick saved on a copy that
+    // only became declared later (Velina, 2026-10-20) still carries over.
+    if (twin && interchangeable(twin[1], b)
+        && (!b.self_duplicate_of
+            || DECLARED_KIND[b.self_duplicate_of] === twin[2])) {
+      kitHiddenTwins.push([b.name, twin[2], twin[3]]);
+      continue;
+    }
+    if (b.self_duplicate_of) continue;
     const warn = twin
       ? ` <span class="note">(same effect as ${twin[0]} above — tick`
         + ` only one)</span>`
@@ -1521,7 +1577,8 @@ function renderKit() {
 
   // Owner-stat inputs for the ON-FIELD agent's scaled effects
   // (e.g. Zhao as attacker: her core-passive CRIT scales with her HP).
-  const scalingInputs = neededScalingInputs(rows.map(row => row.buff));
+  const scalingInputs = neededScalingInputs(rows.flatMap(row =>
+    row.potential ? row.potential.map(([, p]) => p.buff) : [row.buff]));
   for (const name of scalingInputs) {
     controls.insertAdjacentHTML("beforeend", `
       <div style="margin-bottom:10px">
@@ -1530,6 +1587,10 @@ function renderKit() {
   }
 
   for (const row of rows) {
+    if (row.potential) {
+      controls.appendChild(potentialControl(agent, row.potential));
+      continue;
+    }
     const effects = row.buff.effects
       .map(e => effectLabel(e, row.buff.max_stacks)).join(", ");
     const hint = row.hint || "";
@@ -1558,6 +1619,57 @@ function renderKit() {
   }
 }
 
+/* The on-field agent's Potential Awakening as ONE dropdown: the levels
+   replace each other, so the user picks the level this copy has
+   unlocked (or none). A level whose effect stacks (Ellen's rides Rising
+   Storm, 0-10) gets a stacks box under it; kitState reads the pair back
+   as pot: {level: stacks}, the shape the API and saved states use. */
+function potentialControl(agent, levels) {
+  const div = document.createElement("div");
+  div.className = "pot-control";
+  div.style.marginBottom = "10px";
+  div.innerHTML = `
+    <label>${agent.potential_name || "Potential Awakening"} — the level you own</label>
+    <select data-kit="psel"></select>
+    <div class="pot-stacks"></div>
+    <p class="note pot-note" style="margin:2px 0 0"></p>`;
+  const sel = div.querySelector("select");
+  fillSelect(sel, [["", "— none / not unlocked —"],
+    ...levels.map(([level, p]) => [level, `P${level} — ${p.name}`])]);
+  // A fresh pick starts at full stacks (picking a level means it's on);
+  // the body-level listener then saves and recalculates.
+  sel.addEventListener("change", () => renderPotentialBody(div));
+  renderPotentialBody(div);
+  return div;
+}
+
+/* The chosen level's effects, stacks box (multi-stack levels only) and
+   note. ``stacks`` = the value to show; default full stacks. */
+function renderPotentialBody(div, stacks) {
+  const agent = DB.agents[$("agent").value];
+  const level = (agent.potentials || {})[div.querySelector("select").value];
+  const box = div.querySelector(".pot-stacks");
+  const note = div.querySelector(".pot-note");
+  box.innerHTML = "";
+  if (!level || !level.buff) {
+    note.textContent = agent.potential_note || "";
+    return;
+  }
+  const buff = level.buff;
+  const effects = buff.effects
+    .map(e => effectLabel(e, buff.max_stacks)).join(", ");
+  if (buff.max_stacks > 1) {
+    const value = stacks != null ? stacks : buff.max_stacks;
+    box.innerHTML = `
+      <label style="margin-top:6px">Stacks (0–${buff.max_stacks}) — ${effects}</label>
+      <input type="number" min="0" max="${buff.max_stacks}" step="1"
+             value="${value}" data-kit="pstacks">`;
+  } else {
+    box.innerHTML = `<p class="note" style="margin:4px 0 0">${effects}</p>`;
+  }
+  note.textContent = buff.note || level.note || "";
+}
+
 /* Read the kit controls:
    { core: 0|1, aa: stacks, mind: {level: stacks}, pot: {level: stacks},
      team: {buff name: stacks}, scaling: {name: value} }. */
@@ -1570,11 +1682,18 @@ function kitState() {
       state.scaling[inp.dataset.kitscaling] = parseFloat(inp.value) || 0;
       continue;
     }
+    if (inp.dataset.kit === "psel" || inp.dataset.kit === "pstacks") {
+      if (inp.dataset.kit === "psel" && inp.value) {
+        const box = inp.closest(".pot-control")
+          .querySelector('[data-kit="pstacks"]');
+        state.pot[inp.value] = box ? (parseInt(box.value, 10) || 0) : 1;
+      }
+      continue;
+    }
     const value = inp.type === "checkbox" ? (inp.checked ? 1 : 0)
                                           : (parseInt(inp.value, 10) || 0);
     if (inp.dataset.kit === "core") state.core = value;
     else if (inp.dataset.kit === "aa") state.aa = value;
-    else if (inp.dataset.kit === "p") state.pot[inp.dataset.level] = value;
     else if (inp.dataset.kit === "tb") state.team[inp.dataset.name] = value;
     else state.mind[inp.dataset.level] = value;
   }
@@ -1583,6 +1702,20 @@ function kitState() {
 
 function applyKit(state) {
   if (!state) return;
+  // A tick saved on a squad-buff copy renderKit now hides (it is
+  // interchangeable with a kit slot) carries over to that slot, unless
+  // the slot has a saved value of its own.
+  for (const [name, kind, level] of kitHiddenTwins) {
+    const stacks = (state.team || {})[name];
+    if (!stacks) continue;
+    state = { ...state, mind: { ...(state.mind || {}) },
+              pot: { ...(state.pot || {}) } };
+    if (kind === "core" && !state.core) state.core = stacks;
+    else if (kind === "aa" && !state.aa) state.aa = stacks;
+    else if (kind === "m" && !state.mind[level]) state.mind[level] = stacks;
+    else if (kind === "p" && !Object.values(state.pot).some(v => v > 0))
+      state.pot[level] = stacks;
+  }
   // "select" too: enum scaling inputs (potential_level) render as
   // a dropdown, not a number box.
   for (const inp of $("kit-controls").querySelectorAll("input, select")) {
@@ -1591,9 +1724,23 @@ function applyKit(state) {
       if (saved) inp.value = saved;
       continue;
     }
+    if (inp.dataset.kit === "psel") {
+      // The level saved with stacks > 0; a legacy state with several
+      // levels ticked (one checkbox per level, before the dropdown)
+      // keeps the highest — the API accepts only one.
+      const levels = new Set([...inp.options].map(o => o.value));
+      const pick = Object.entries(state.pot || {})
+        .filter(([level, stacks]) => stacks > 0 && levels.has(level))
+        .sort((a, b) => b[0] - a[0])[0];
+      if (pick) {
+        inp.value = pick[0];
+        renderPotentialBody(inp.closest(".pot-control"), pick[1]);
+      }
+      continue;
+    }
+    if (inp.dataset.kit === "pstacks") continue;   // set with its level
     const saved = inp.dataset.kit === "core" ? state.core
       : inp.dataset.kit === "aa" ? state.aa
-      : inp.dataset.kit === "p" ? (state.pot || {})[inp.dataset.level]
       : inp.dataset.kit === "tb" ? (state.team || {})[inp.dataset.name]
       : (state.mind || {})[inp.dataset.level];
     if (saved == null) continue;
@@ -1617,9 +1764,11 @@ function supportSlotState(slot) {
   if (!sel || !sel.value) return null;
   const state = { agent: sel.value, buffs: {}, scaling: {}, set: "",
                   setStacks: 0, engine: "", engineRank: 0, engineBuffs: {},
-                  build: "" };
+                  build: "", potential: "" };
   const buildSel = slot.querySelector(".support-build");
   if (buildSel) state.build = buildSel.value;   // saved build filling the boxes
+  const potSel = slot.querySelector(".support-potential");
+  if (potSel) state.potential = potSel.value;   // "" = none / not unlocked
   for (const inp of slot.querySelectorAll("[data-sbuff]")) {
     state.buffs[inp.dataset.sbuff] = inp.type === "checkbox"
       ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
@@ -1769,14 +1918,21 @@ function renderSupportBody(slot, prev) {
   if (!key) return;
   const agent = DB.agents[key];
   const buffs = agent.team_buffs || [];
-  if (!buffs.length) {
+  // Potential Awakening levels that reach the squad (Koleda, Rina): only
+  // their squad-facing effects leave a support, so only those are listed.
+  const squadPotentials = Object.entries(agent.potentials || {})
+    .filter(([, p]) => p.has_squad_effects)
+    .map(([level, p]) => [level, p,
+      { ...p.buff, effects: p.buff.effects.filter(e => e.squad) }]);
+  if (!buffs.length && !squadPotentials.length) {
     body.innerHTML = `<p class="note">${agent.name} has no modeled team
       buffs — their presence still counts for team conditions.</p>`;
   }
 
   // Owner-stat inputs for scaled buffs (e.g. Zhao's initial Max HP),
   // fillable from one of that support's own saved builds.
-  const scalingInputs = neededScalingInputs(buffs);
+  const scalingInputs = neededScalingInputs(
+    [...buffs, ...squadPotentials.map(([, , squad]) => squad)]);
   const picker = scalingInputs.some(n => n in SCALING_PANEL_STAT)
     ? renderBuildPicker(body, key, prev && prev.build) : null;
   for (const name of scalingInputs) {
@@ -1813,6 +1969,32 @@ function renderSupportBody(slot, prev) {
         <p class="note" style="margin:2px 0 0">${buff.note || ""}</p>`;
     }
     body.appendChild(div);
+  }
+
+  // The support's Potential level — the levels replace each other, so it
+  // is ONE select (the level this copy has unlocked), never checkboxes.
+  if (squadPotentials.length) {
+    const div = document.createElement("div");
+    div.style.marginTop = "8px";
+    div.innerHTML = `
+      <label>${agent.potential_name || "Potential Awakening"} — the level you own (squad part)</label>
+      <select class="support-potential"></select>
+      <p class="note support-potential-note" style="margin:2px 0 0"></p>`;
+    body.appendChild(div);
+    const psel = div.querySelector(".support-potential");
+    fillSelect(psel, [["", "None / not unlocked"],
+      ...squadPotentials.map(([level, p, squad]) => [level,
+        `P${level} ${p.name} — ${squad.effects
+          .map(e => effectLabel(e, squad.max_stacks)).join(", ")}`])]);
+    if (prev && prev.potential && squadPotentials.some(([lv]) => lv === prev.potential))
+      psel.value = prev.potential;
+    const pnote = div.querySelector(".support-potential-note");
+    const showNote = () => {
+      const hit = squadPotentials.find(([lv]) => lv === psel.value);
+      pnote.textContent = hit ? hit[1].note || "" : (agent.potential_note || "");
+    };
+    showNote();
+    psel.addEventListener("change", showNote);
   }
 
   // W-Engine worn by this support — any engine, not just the signature
@@ -1969,6 +2151,10 @@ function renderSupports(savedList) {
 function onAgentChange() {
   $("engine").value = DB.agents[$("agent").value].default_engine;
   refreshMutationControl();
+  // The Abloom picker starts on the new agent's own anomaly; a leftover
+  // pick would silently move an override Abloom to another element.
+  if ($("abloom-element").options.length)
+    $("abloom-element").value = dealtElement();
   updateDerived(true);
   // Re-render support slots: a slot holding the new on-field agent is
   // cleared (they can't support themselves), others keep their state.
@@ -2089,7 +2275,9 @@ const USER_FILES_KEYS = {
 };
 let pyWorker = null;          // null = talking HTTP to the local server
 let rpcId = 0;
-const rpcPending = new Map(); // id -> {resolve, reject}
+const rpcPending = new Map(); // id -> {resolve, reject, msg}
+let optimizeRpcId = 0;        // the latest /optimize request (Stop target)
+let workerRestarting = false; // Stop is re-booting the worker
 
 function mirrorUserFiles(files) {
   if (!files) return;
@@ -2149,17 +2337,45 @@ function importUserData(file) {
 function workerCall(method, path, payload) {
   return new Promise((resolve, reject) => {
     const id = ++rpcId;
-    rpcPending.set(id, { resolve, reject });
-    pyWorker.postMessage({
+    const msg = {
       id, method, path,
       body: payload === undefined ? null : JSON.stringify(payload),
-    });
+    };
+    // The message stays with its promise so a restarted worker can be
+    // asked again (see restartPyodideWorker).
+    rpcPending.set(id, { resolve, reject, msg });
+    if (path === "/optimize") optimizeRpcId = id;
+    if (!workerRestarting) pyWorker.postMessage(msg);
   });
 }
 
-function bootPyodideWorker() {
+// Stop on the static site: the search runs synchronously inside the
+// worker, so it can't hear a cancel message — terminate the worker and
+// boot a fresh one (Pyodide is browser-cached, so a few seconds). Safe:
+// /optimize writes nothing, and the worker serves one request at a time,
+// so no disc/loadout write can be mid-flight behind it. Requests queued
+// behind the search never reached Python and are re-sent afterwards.
+async function restartPyodideWorker() {
+  const stopped = rpcPending.get(optimizeRpcId);
+  if (!stopped) return;       // the search already answered
+  pyWorker.terminate();
+  rpcPending.delete(optimizeRpcId);
+  const err = new Error("Search stopped.");
+  err.data = { cancelled: true };
+  stopped.reject(err);
+  workerRestarting = true;
+  try {
+    await bootPyodideWorker("Stopping the search…");
+  } finally {
+    workerRestarting = false;
+  }
+  for (const { msg } of rpcPending.values()) pyWorker.postMessage(msg);
+}
+
+function bootPyodideWorker(title = "ZZZ DMG Optimizer") {
   const overlay = $("boot-overlay");
   const stageLine = $("boot-stage");
+  overlay.querySelector("h2").textContent = title;
   overlay.hidden = false;
   return new Promise((resolve, reject) => {
     const fail = (message) => {
@@ -2759,6 +2975,7 @@ function collectConfig() {
       engine_key: st.engine || null,
       engine_rank: st.engineRank || null,
       engine_buffs: st.engineBuffs,
+      potentials: st.potential ? { [st.potential]: 1 } : {},
     });
   }
 
@@ -2977,10 +3194,12 @@ function renderSheerResults(r) {
     ${buffSummary(r)}`;
 }
 
-/* Anomaly / Disorder / Vortex results: no crit table — per-proc (and
-   full-duration for multi-tick anomalies) in normal and stunned states,
-   plus the anomaly-specific zones (AP, level mult, burst mult, the
-   separate Buff Multiplier bracket). */
+/* Anomaly / Disorder / Vortex results: per-proc (and full-duration for
+   multi-tick anomalies) in normal and stunned states, plus the
+   anomaly-specific zones (AP, level mult, burst mult, the separate Buff
+   Multiplier bracket). Anomalies crit only through an anomaly-crit source
+   (Phoenix's Sear): then a proc gets Non-crit / Crit / Average rows, and
+   every other number is the expected value. */
 function renderAnomalyResults(r) {
   const bonuses = Object.entries(r.set_bonuses || {})
     .map(([s, v]) => `${s} +${v < 1 ? (v * 100).toFixed(1) + "%" : v}`)
@@ -2991,18 +3210,37 @@ function renderAnomalyResults(r) {
     ? `${fmtNum(f[key])} – ${fmtNum(r[key])}`
     : fmtNum(r[key]);
   const lum = !!r.luminize_skill;
+  const crits = (r.anomaly_crit_rate || 0) > 0;
   const perLabel = lum ? "Per Voidflare" : "Per tick/proc";
   const allLabel = lum ? `All ${r.hits} Voidflares`
                        : `Full duration (×${r.hits})`;
-  const rows = r.hits > 1
-    ? `<tr><td>${perLabel}</td><td class="num">${cell("per_proc")}</td>
+  const oneLabel = r.hits > 1 ? perLabel : (lum ? "One Voidflare" : "Burst");
+  const avgSuffix = crits ? " — average" : "";
+  const critRows = crits
+    ? `<tr><td>${oneLabel} — non-crit</td>
+         <td class="num">${cell("per_proc_non_crit")}</td>
+         <td class="num">${cell("per_proc_non_crit_stunned")}</td></tr>
+       <tr><td>${oneLabel} — crit</td>
+         <td class="num">${cell("per_proc_crit")}</td>
+         <td class="num">${cell("per_proc_crit_stunned")}</td></tr>`
+    : "";
+  const rows = critRows + (r.hits > 1
+    ? `<tr${crits ? ' class="avg"' : ""}><td>${perLabel}${avgSuffix}</td>
+         <td class="num">${cell("per_proc")}</td>
          <td class="num">${cell("per_proc_stunned")}</td></tr>
-       <tr class="avg"><td>${allLabel}</td>
+       <tr class="avg"><td>${allLabel}${avgSuffix}</td>
          <td class="num">${cell("full")}</td>
          <td class="num">${cell("full_stunned")}</td></tr>`
-    : `<tr class="avg"><td>${lum ? "One Voidflare" : "Burst"}</td>
+    : `<tr class="avg"><td>${oneLabel}${avgSuffix}</td>
          <td class="num">${cell("per_proc")}</td>
-         <td class="num">${cell("per_proc_stunned")}</td></tr>`;
+         <td class="num">${cell("per_proc_stunned")}</td></tr>`);
+  const critNote = crits
+    ? averageNote({ crit_rate: r.anomaly_crit_rate,
+                    crit_dmg: r.anomaly_crit_dmg })
+      + `<p class="note">Anomaly crits come only from anomaly-crit sources
+         (Phoenix's Sear) — the build's own CRIT Rate / CRIT DMG never
+         apply to anomalies.</p>`
+    : "";
   $("out").className = "";
   $("out").innerHTML = `
     <div class="stat-line"><span>${r.anomaly_name} — dealt as</span>
@@ -3025,12 +3263,15 @@ function renderAnomalyResults(r) {
     <div class="stat-line"><span>RES zone</span><b>×${r.res_mult.toFixed(2)}</b></div>
     <div class="stat-line"><span>DMG taken zone</span><b>×${r.dmg_taken_mult.toFixed(2)}</b></div>
     <div class="stat-line"><span>Stun zone (stunned)</span><b>×${r.stun_mult.toFixed(2)}</b></div>
+    ${crits ? `<div class="stat-line"><span>Anomaly CRIT Rate / DMG</span>
+      <b>${(r.anomaly_crit_rate * 100).toFixed(1)}% / ${(r.anomaly_crit_dmg * 100).toFixed(1)}%</b></div>` : ""}
     ${bonuses ? `<div class="stat-line"><span>Set bonuses</span><b>${bonuses}</b></div>` : ""}
     <table>
       <thead><tr><th>Scenario</th><th>Normal</th><th>Stunned</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <p class="note">Anomalies cannot crit. Attacker-side buffs snapshot
+    ${critNote}
+    <p class="note">${crits ? "" : "Anomalies cannot crit without an anomaly-crit source (Phoenix's Sear). "}Attacker-side buffs snapshot
     during BUILDUP, so results are a range: the high end assumes your
     entered buffs held for 100% of the buildup; the low end assumes 70% —
     the other 30% counts as unbuffed/teammate-diluted buildup (plain
@@ -3271,6 +3512,7 @@ async function runOptimize() {
     top_n: 5,
     min_stats: collectMinStats(),
     required_4pc: $("opt-required").value || null,
+    required_2pc: $("opt-required-2pc").value || null,
     slot_main_stats: slotMains,
     sets_only: $("opt-sets-only").checked,
     candidate_cap: $("opt-fast").checked ? 15 : 0,
@@ -3280,14 +3522,21 @@ async function runOptimize() {
       0, parseFloat($("opt-max-tolerance").value) || 0) / 100,
     ignore_budget: $("opt-no-budget").checked,
     ignore_reserved: $("bypass-locks").checked,
+    // Lets Stop find this search on the local server (/optimize/cancel).
+    search_id: newSearchId(),
   };
   const btn = $("optimize");
-  const original = btn.textContent;
+  const search = activeSearch = {
+    id: body.optimize.search_id, stopped: false, btnText: btn.textContent,
+  };
   btn.disabled = true;
+  $("optimize-stop").hidden = false;
+  $("opt-stopped").hidden = true;
   // An unrestricted search over a big inventory can run for minutes —
   // say so on the button instead of looking frozen.
   const opt = body.optimize;
   const unrestricted = !opt.required_4pc
+    && !opt.required_2pc
     && !opt.sets_only
     && !opt.candidate_cap
     && !opt.locked_slots.length
@@ -3306,6 +3555,7 @@ async function runOptimize() {
     btn.textContent += ` · maximizing ${opt.maximize_stat} (two passes)`;
   try {
     const data = await postJSON("/optimize", body);
+    if (search.stopped) return;     // answered after Stop: discard
     lastOptimize = data;
     // Snapshot what's equipped right now, so the per-slot diff can show
     // "was -> becomes" even after the user keeps editing the form.
@@ -3314,10 +3564,43 @@ async function runOptimize() {
       lastOptimize.currentBySlot[disc.slot] = disc;
     renderOptimize(data);
   } catch (exc) {
-    showError(exc.message);
+    if (!search.stopped && !(exc.data && exc.data.cancelled))
+      showError(exc.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = original;
+    // After Stop the controls were already reset — and a new search may
+    // own them by now.
+    if (!search.stopped) {
+      activeSearch = null;
+      btn.disabled = false;
+      btn.textContent = search.btnText;
+      $("optimize-stop").hidden = true;
+    }
+  }
+}
+
+function newSearchId() {
+  return (crypto.randomUUID && crypto.randomUUID())
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/* Stop button: abort the running search and discard it (the user stops
+   because an input was wrong). The controls reset at once so the inputs
+   can be fixed and the search re-run without waiting for the old one. */
+function stopOptimize() {
+  const search = activeSearch;
+  if (!search) return;
+  search.stopped = true;
+  activeSearch = null;
+  const btn = $("optimize");
+  btn.disabled = false;
+  btn.textContent = search.btnText;
+  $("optimize-stop").hidden = true;
+  $("opt-stopped").hidden = false;
+  if (pyWorker) {
+    restartPyodideWorker().catch(exc => showError(exc.message));
+  } else {
+    // The server's search thread checks its stop token and answers 409.
+    postJSON("/optimize/cancel", { search_id: search.id }).catch(() => {});
   }
 }
 
@@ -3395,6 +3678,10 @@ function constraintsNote(data) {
     const set = DB.sets[data.required_4pc];
     parts.push(`build around ${set ? set.name : data.required_4pc} 4pc`);
   }
+  if (data.required_2pc) {
+    const set = DB.sets[data.required_2pc];
+    parts.push(`also wear ${set ? set.name : data.required_2pc} 2pc`);
+  }
   if (data.sets_only) parts.push("every disc completes a set bonus (2pc priority)");
   for (const [slot, main] of Object.entries(data.slot_main_stats || {}))
     parts.push(`slot ${slot} main = ${main}`);
@@ -3416,6 +3703,21 @@ function constraintsNote(data) {
     ? ` <span class="note">Stat totals are ${COMBAT_TOTAL_NOTE}, not the
        out-of-combat Final stats panel.</span>` : "";
   return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}${units}</p>`;
+}
+
+/* Team-element gate (§18): 4pc effects no squad member can trigger were
+   credited at 0 stacks — say which, or a missing Thunder Metal
+   recommendation reads like a bug. */
+function gatedNote(data) {
+  const parts = Object.entries(data.gated_sets || {}).map(([key, element]) => {
+    const set = DB.sets[key];
+    const elem = element.charAt(0).toUpperCase() + element.slice(1);
+    return `${set ? set.name : key} 4pc (needs ${elem})`;
+  });
+  return parts.length
+    ? `<p class="note">Not credited — no agent of that element in the squad
+       (your agent + supports): ${parts.join(" · ")}.</p>`
+    : "";
 }
 
 function renderOptimize(data) {
@@ -3459,7 +3761,7 @@ function renderOptimize(data) {
         for ${target}.</div>
       <p class="note">No combination of your saved discs beats the equipped
       build for this calculation.</p>
-      ${maximizeNote(data)}${constraintsNote(data)}${searched}`;
+      ${maximizeNote(data)}${constraintsNote(data)}${gatedNote(data)}${searched}`;
     return;
   }
 
@@ -3498,7 +3800,7 @@ function renderOptimize(data) {
        ${objectiveLabel} (${best.changed_slots.length} disc change(s))`;
   out.innerHTML = `
     <div class="verdict better">${verdict}</div>
-    ${maximizeNote(data)}${constraintsNote(data)}
+    ${maximizeNote(data)}${constraintsNote(data)}${gatedNote(data)}
     <table>
       <thead><tr><th>Scenario</th><th>Current</th><th>Best found</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -3743,8 +4045,10 @@ async function init() {
   $("conv-element").addEventListener("change", updateModeUI);
   $("polarity-disorder").addEventListener("change", updateModeUI);
   $("abloom").addEventListener("change", updateModeUI);
+  $("anom-mv").addEventListener("input", updateModeUI);
   $("calc").addEventListener("click", runCalc);
   $("optimize").addEventListener("click", runOptimize);
+  $("optimize-stop").addEventListener("click", stopOptimize);
   $("opt-maximize").addEventListener("change", refreshMaximizeTolerance);
   $("opt-add-constraint").addEventListener("click", () => {
     addConstraintRow().querySelector(".constraint-min").focus();

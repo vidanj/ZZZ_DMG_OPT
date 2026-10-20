@@ -447,10 +447,21 @@ def run() -> None:
             override_pct = _ask_percent(
                 "Anomaly multiplier OVERRIDE, replaces the base (Enter = "
                 f"normal {anomaly.name} proc; Velina Ablooms: 145 Condensed "
-                "/ 255 Sweeping / 680 Ultimate - each a SEPARATE popup)",
+                "/ 255 Sweeping / 680 Ultimate; Phoenix Lv. 12: 445 / 597 / "
+                "600 - each a SEPARATE popup)",
                 0.0,
             )
             anomaly_mult_override = override_pct if override_pct > 0 else None
+            if anomaly_mult_override is not None:
+                # An override Abloom resolves the anomaly already on the
+                # target, which may be another attribute's (Phoenix).
+                options = [
+                    f"{a.name} [{e}]"
+                    for e, a in anomaly_data.anomalies.items() if a.supported
+                ]
+                print("Anomaly the Abloom resolves (the one on the target):")
+                picked = _choose("Element", options)
+                abloom_element = picked.split("[")[1].rstrip("]")
     elif mode == "Disorder":
         # Polarity Disorder (Yanagi) fires on the enemy's EXISTING anomaly
         # (incl. her own Shock, same element) without replacing it - 15% of
@@ -635,6 +646,33 @@ def run() -> None:
                 if stacks:
                     buffs[team_buff.name] = stacks
 
+        # The support's Potential level: only the squad-facing parts of a
+        # level reach the on-field agent (Koleda, Rina), so only levels
+        # that have any are offered — one level, since they replace
+        # each other.
+        support_potentials: dict[int, int] = {}
+        squad_levels = {level: p for level, p in member.potentials.items()
+                        if p.buff is not None and p.buff.squad_part()}
+        if squad_levels:
+            print(f"{member.potential_name}: {member.potential_note}")
+            level = int(_ask_float(
+                f"Potential level owned (0 = none; squad levels "
+                f"{', '.join(str(lv) for lv in sorted(squad_levels))})", 0
+            ))
+            if level:
+                potential = squad_levels.get(level)
+                if potential is None:
+                    print("  (that level has no squad-facing effect - skipped)")
+                else:
+                    for eff in potential.buff.squad_part().effects:
+                        if (eff.scaling is not None
+                                and eff.scaling.input not in scaling):
+                            scaling[eff.scaling.input] = _ask_float(
+                                f"{member.name}'s "
+                                f"{eff.scaling.input.replace('_', ' ')}", 0
+                            )
+                    support_potentials[level] = 1
+
         engine_buffs: dict[str, int] = {}
         support_rank = None
         support_engine = engines.get(member.default_engine)
@@ -679,6 +717,7 @@ def run() -> None:
             agent_key=support_key, buffs=buffs, scaling_inputs=scaling,
             squad_set=squad_set, squad_set_stacks=squad_set_stacks,
             engine_rank=support_rank, engine_buffs=engine_buffs,
+            potentials=support_potentials,
         ))
 
     if mode in ("Direct hit", "Sheer (Rupture)"):
@@ -896,7 +935,13 @@ def run() -> None:
               f"{refringe}"
               f"DEF x{r.def_mult:.4f} | RES x{r.res_mult:.2f} | "
               f"Taken x{r.dmg_taken_mult:.2f} | Stun x{r.stun_mult:.2f}")
-        print("(anomalies cannot crit)")
+        crits = r.anomaly_crit_rate > 0
+        if crits:
+            print(f"Anomaly CRIT Rate {min(r.anomaly_crit_rate, 1.0):.1%} / "
+                  f"CRIT DMG {r.anomaly_crit_dmg:.1%} (anomaly-crit source, "
+                  f"e.g. Phoenix's Sear; totals below are the average)")
+        else:
+            print("(anomalies cannot crit without an anomaly-crit source)")
         if r.buff_breakdown:
             print("Active buffs:")
             for item in r.buff_breakdown:
@@ -907,6 +952,11 @@ def run() -> None:
         header = f"{'Scenario':<22}{'Normal':>14}{'Stunned':>14}"
         print("\n" + header)
         print("-" * len(header))
+        if crits:
+            print(f"{'One proc - non-crit':<22}{r.per_proc_non_crit:>14,.1f}"
+                  f"{r.per_proc_non_crit_stunned:>14,.1f}")
+            print(f"{'One proc - crit':<22}{r.per_proc_crit:>14,.1f}"
+                  f"{r.per_proc_crit_stunned:>14,.1f}")
         if r.hits > 1:
             print(f"{'Per tick/proc':<22}{r.per_proc:>14,.1f}"
                   f"{r.per_proc_stunned:>14,.1f}")

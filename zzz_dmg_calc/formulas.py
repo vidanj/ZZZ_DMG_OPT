@@ -206,9 +206,9 @@ def stun_mult(
 def ap_mult(anomaly_proficiency: float) -> float:
     """Anomaly Proficiency multiplier: ``AP / 100``.
 
-    ⚠️ Provisional form — one community source suggests ``1 + AP/100``;
-    the first in-game Assault calibration discriminates (~2× apart). If it
-    turns out to be the other form, only this function changes.
+    Confirmed in-game 2026-07-02 (DOCS/sources.md: the ``1 + AP/100`` form
+    one community source suggested would read ~48% high) and matching the
+    zenless-optimizer datamine (``prep.ts``: AP × 0.01).
 
     Args:
         anomaly_proficiency: Total AP (e.g. 118 -> 1.18).

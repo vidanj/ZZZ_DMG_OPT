@@ -17,18 +17,35 @@ let the optimizer search your saved discs for a better build.
 > Zenless Zone Zero and all game content are trademarks of
 > miHoYo/HoYoverse. Code licensed under the [MIT License](LICENSE).
 
-## Recent additions (patch 3.1)
+## Recent additions (patch 3.3)
 
-- **Remielle Dan**, the first **Lumiflux** agent, with the whole of the
-  attribute's machinery: **Attribute Mutation**, the **Refringe**
-  multiplier, and a dedicated **Luminize** calculation mode. See
-  [Lumiflux agents](#lumiflux-agents-remielle) for how to drive it.
-- Her signature **Ode of Resurrected Wings** and the craftable
-  **Weeping Gemini** (whose stacking Anomaly Proficiency is a new kind of
-  engine buff), plus the **Feathered Fate** drive set.
-- The optimizer now works in Luminize mode too.
-- Every dropdown (agents, W-Engines, bosses, sets, stats…) is sorted
-  alphabetically.
+- **Phoenix**, the first agent whose anomalies can **crit**: her Sear
+  gives the squad's Anomaly DMG a CRIT Rate (scaling with her initial
+  Anomaly Mastery) and CRIT DMG, so Anomaly mode now shows non-crit /
+  crit rows and averages the totals. Her Ablooms run through the
+  multiplier override, and her signature **Plume of Rebirth** is
+  included. ⚠️ Built from 3.3 *beta* data — provisional until the patch
+  goes live.
+- **Koleda**, with her 3.2 Potential Awakening (squad DMG +35%, squad
+  CRIT DMG up to +35%). Supports can now carry the **Potential level
+  they own** when it reaches the squad (Koleda, Rina).
+- New W-Engines: **Neon Fantasies** (Nangong Yu's signature, now her
+  default), **Plume of Rebirth** (Phoenix) and **Knight's Extolment**
+  (Sigrid's signature; usable by Ellen or any Ice attacker until Sigrid
+  joins the roster).
+- **Abloom element**: an Abloom entered through the multiplier override
+  can resolve an anomaly other than the agent's own — pick it, and the
+  dealt element, boss RES and element gates follow.
+- **Fanged Metal**'s 4pc +35% is generic DMG once triggered, so it now
+  also counts for Disorder and Vortex bursts dealt as another element.
+- **Optimizer**: searches are now exact and fast (about a second over a
+  ~650-disc inventory), can be stopped mid-run, can require a 2-piece
+  set alongside a 4-piece, and only credit an anomaly-triggered 4-piece
+  when the squad has that element. Also new since the last update:
+  **Maximize stat**, and **Fill from a saved build** for supports.
+
+Remielle Dan and the Lumiflux attribute (patch 3.1) have their own
+section: [Lumiflux agents](#lumiflux-agents-remielle).
 
 ## Use it online (no install)
 
@@ -57,10 +74,13 @@ loadouts live in plain JSON files
 makes them trivial to back up or hand-edit. Local mode is noticeably
 faster than the browser build for heavy optimizer searches.
 
-(There is also a CLI — `python run.py` — that asks the same questions as
-numbered prompts. Same engine, same validation; the UI is the
-recommended way to use the tool and the rest of this README describes
-it.)
+> **The CLI is deprecated.** There is also a CLI — `python run.py` —
+> that asks the same questions as numbered prompts on the same engine.
+> It is kept as-is but **frozen**: it gets no new features or fixes, it
+> already lacks some of the UI's options (Maximize stat, the 2pc
+> requirement, the loadout-lock bypass…), and a future change may break
+> it without notice. All development now targets the web UI, which the
+> rest of this README describes.
 
 ## The main form
 
@@ -79,11 +99,14 @@ inputs are remembered between sessions.
 - **Agent Kit** — the agent's conditionals as real controls: core
   passive toggle, Additional Ability stacks (with a live "condition
   met" hint based on your team), mindscape (M1–M6) toggles/stacks, and
-  Potential levels where an agent has them. Only damage-relevant parts
-  are modeled; unmodeled ones are listed as reference notes so you can
-  add them as external buffs.
+  a Potential dropdown (the one level you own, plus its stacks where it
+  stacks) where an agent has one. A squad buff that is the same effect
+  as one of these slots is shown once, under the slot. Only
+  damage-relevant parts are modeled; unmodeled ones are listed as
+  reference notes so you can add them as external buffs.
 - **Team** — up to two **off-field supports**: their team buffs (with
-  owner-stat inputs where a buff scales off the support's stats), their
+  owner-stat inputs where a buff scales off the support's stats), the
+  Potential level they own when it reaches the squad (Koleda, Rina), their
   engine's squad buffs at its own rank, and any squad-facing 4-piece
   set they wear (Swing Jazz, Proto Punk, Astral Voice…).
 - **Drive Discs** — the six disc cards (see below).
@@ -108,7 +131,7 @@ inputs it uses, so nothing stale leaks between modes.
 | Mode | What it computes |
 |---|---|
 | **Direct hit** | The classic crit-table damage of one move: non-crit / crit / average, normal and stunned. |
-| **Anomaly proc** | Your attribute anomaly (Assault, Burn, Shatter, Shock, Corruption): per-proc/tick and full-duration totals. Anomalies can't crit. |
+| **Anomaly proc** | Your attribute anomaly (Assault, Burn, Shatter, Shock, Corruption): per-proc/tick and full-duration totals. Anomalies crit only through an anomaly-crit source (Phoenix's Sear); then a proc also gets non-crit / crit rows and the totals are the average. An Abloom is this mode with a multiplier override, plus the anomaly it resolves on the target. |
 | **Disorder burst** | Triggering a second anomaly while one is active: pick the replaced element and its remaining/elapsed time. |
 | **Vortex burst** | The Windswept + second-anomaly interaction (wind teams). |
 | **Sheer damage (Rupture)** | Sheer Force agents: Sheer damage crits like a direct hit, so it gets the full crit table, plus Sheer-specific inputs (flat Sheer Force, Sheer DMG%). |
@@ -214,6 +237,10 @@ for their active stacks.
   can't equip them twice), and the result reports how many were
   excluded. Deleting a loadout frees its discs; the discs themselves
   stay in the inventory.
+- **Bypass loadout locks 🔒** (Drive Discs toolbar) lifts that
+  reservation for the current agent: reserved discs can be equipped and
+  the optimizer searches them too. The loadouts themselves are not
+  changed, and the box is unticked again on every reload.
 - A loadout also records the **W-Engine** selected when you saved it, so
   **Load** restores the whole build — and, more usefully, the app can
   work out that build's character panel. Put that agent in a support
@@ -252,8 +279,18 @@ is constant during the search. The page states this above the controls.
   at max stacks (default, itemized in the result) or *never assume* and
   count only 2-piece values. With conditional 4-piece effects the
   optimistic assumption can overrate a set — check the itemization.
+- **Team-element gate (automatic)** — a 4-piece that triggers off an
+  anomaly is only credited when someone in the squad (your agent or an
+  entered support) has that element: Thunder Metal needs Electric
+  (Shock), Fanged Metal Physical (Assault), Inferno Metal Fire (Burn),
+  Chaotic Metal Ether (Corruption). Otherwise the search values it at 0
+  stacks — including on your current build — and the result says which
+  sets were not credited.
 - **Build around a 4pc set** — force the build to include a chosen
   4-piece. The optimizer doesn't judge synergy; that part is your call.
+- **Also require a 2pc set** — force at least 2 pieces of a set whose
+  2-piece the damage math can't value (e.g. King of the Summit's Daze for
+  a stunner). Together with a 4pc set the build is exactly 4pc + 2pc.
 - **Required slot 4/5/6 main stats** — pin the main-stat types.
 - **2pc priority** — every disc must complete a set bonus (no set-less
   or singleton pieces).
@@ -288,15 +325,17 @@ is constant during the search. The page states this above the controls.
 - **Bypass search budget** — by default the search stops at a work
   budget and returns the best build found so far (flagged when the
   budget was exhausted). This option runs until the search truly
-  finishes: exact, but an unrestricted search over a large inventory
-  can take **very** long — prefer adding locks, a required set,
-  required mains, or Fast search first.
+  finishes. Normal searches finish well inside the budget, so it is
+  rarely needed.
 
-**Caveats:** an unrestricted search grows combinatorially with your
-inventory (hundreds of discs → minutes, or much more with the budget
-bypassed), and the in-browser build runs the same search a few times
-slower than local Python. Any filter above cuts the space dramatically.
-Discs reserved by other agents' loadouts never enter the pool.
+**Caveats:** the search is exact and normally fast — about a second for
+an unrestricted search over a ~650-disc inventory on a desktop — but the
+in-browser build runs the same search a few times slower than local
+Python. If a search ever reports an exhausted budget, locks, a required
+set, required mains or Fast search cut the space dramatically. A running
+search can be aborted with **■ Stop search** (its results are
+discarded). Discs reserved by other agents' loadouts never enter the
+pool unless **Bypass loadout locks** is ticked.
 
 ## Units cheat-sheet
 

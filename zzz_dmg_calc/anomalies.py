@@ -20,6 +20,10 @@ Model notes (see DOCS/anomaly_plan.md):
   ``mult``/``time_mult`` and a 30s window. Additive "Disorder DMG
   Multiplier" buffs (Velina's Windbite, Yuzuha M6) add to both bursts'
   base multiplier — the API layer passes them in.
+- Two agent mechanics live here too, as data rather than code constants:
+  Vivian's AP-scaled Abloom MV table (:class:`AbloomRule`) and Yanagi's
+  Polarity Disorder fraction / AP-term coefficient
+  (:class:`PolarityRule`).
 """
 
 from __future__ import annotations
@@ -104,12 +108,41 @@ class VortexRule:
 
 
 @dataclass(frozen=True)
+class AbloomRule:
+    """Vivian's Abloom (Dirge of Destiny): an AP-scaled extra instance of
+    the anomaly on the target.
+
+    ``mult = anomaly base mult × (mv_per_10_ap[element] / 100) × (AP / 10)``,
+    × ``m2_factor`` at her M2; dealt as that element.
+    """
+
+    mv_per_10_ap: dict[str, float]
+    m2_factor: float
+
+
+@dataclass(frozen=True)
+class PolarityRule:
+    """Yanagi's Polarity Disorder: ``fraction`` × the base Disorder plus an
+    AP term ``coefficient(level) × AP / 100``."""
+
+    fraction: float
+    ap_coeff_base: float
+    ap_coeff_per_level: float
+
+    def coefficient(self, special_level: int) -> float:
+        """The AP-term coefficient at her Special Attack skill level."""
+        return self.ap_coeff_base + special_level * self.ap_coeff_per_level
+
+
+@dataclass(frozen=True)
 class AnomalyData:
     """Validated view of ``data/anomalies.json``."""
 
     anomalies: dict[str, Anomaly]
     disorder: dict[str, DisorderRule]
     vortex: dict[str, VortexRule]
+    abloom: AbloomRule
+    polarity: PolarityRule
 
 
 def _rule_number(rule: dict, key: str, where: str,
@@ -237,4 +270,39 @@ def load_anomalies(path: Path = DATA_FILE) -> AnomalyData:
             window=_rule_number(rule, "window", where),
         )
 
-    return AnomalyData(anomalies=anomalies, disorder=disorder, vortex=vortex)
+    abloom_raw = raw.get("abloom")
+    if not isinstance(abloom_raw, dict):
+        raise AnomalyError("'abloom' must be an object (Vivian's Abloom rule)")
+    mv_raw = abloom_raw.get("mv_per_10_ap")
+    if not isinstance(mv_raw, dict) or not mv_raw:
+        raise AnomalyError(
+            "'abloom.mv_per_10_ap' must be a non-empty object of element -> MV"
+        )
+    unknown = sorted(set(mv_raw) - set(ELEMENTS))
+    if unknown:
+        raise AnomalyError(f"Unknown elements in 'abloom.mv_per_10_ap': {unknown}")
+    abloom = AbloomRule(
+        mv_per_10_ap={element: _rule_number(mv_raw, element, "Abloom MV")
+                      for element in mv_raw},
+        m2_factor=_rule_number(abloom_raw, "m2_factor", "Abloom rule",
+                               minimum=1.0),
+    )
+
+    polarity_raw = raw.get("polarity_disorder")
+    if not isinstance(polarity_raw, dict):
+        raise AnomalyError(
+            "'polarity_disorder' must be an object (Yanagi's Polarity rule)"
+        )
+    where = "Polarity Disorder rule"
+    fraction = _rule_number(polarity_raw, "fraction", where)
+    if fraction > 1:
+        raise AnomalyError(f"{where}: 'fraction' must be <= 1")
+    polarity = PolarityRule(
+        fraction=fraction,
+        ap_coeff_base=_rule_number(polarity_raw, "ap_coeff_base", where),
+        ap_coeff_per_level=_rule_number(polarity_raw, "ap_coeff_per_level",
+                                        where),
+    )
+
+    return AnomalyData(anomalies=anomalies, disorder=disorder, vortex=vortex,
+                       abloom=abloom, polarity=polarity)

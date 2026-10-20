@@ -255,6 +255,12 @@ class SetBonus4pc:
     4-piece grants only while the effect sits at ``max_stacks`` (Yunkui
     Tales: "at 3 stacks, Sheer DMG +10%" — calibrated in-game
     2026-07-10). ``None`` = no extra part.
+
+    ``needs_squad_element``: the element whose anomaly triggers the
+    effect (Thunder Metal's Shocked enemy = ``"electric"``). The
+    OPTIMIZER credits it at 0 stacks when no squad member has that
+    element; the calculation itself still uses the entered stacks.
+    ``None`` = no team requirement.
     """
 
     stat: str
@@ -263,6 +269,7 @@ class SetBonus4pc:
     auto: bool = False
     at_max_extra_stat: str | None = None
     at_max_extra_value: float = 0.0
+    needs_squad_element: str | None = None
     note: str = ""
 
 
@@ -446,6 +453,14 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                     raise DiscError(
                         f"Set '{key}': 'at_max_extra' value must be positive"
                     )
+            # Team-element gate (optimizer-only): the anomaly element a
+            # squad member must have for the 4pc to trigger at all.
+            squad_element = raw_4pc.get("needs_squad_element")
+            if squad_element is not None and squad_element not in ELEMENTS:
+                raise DiscError(
+                    f"Set '{key}': 4pc 'needs_squad_element' must be one of "
+                    f"{list(ELEMENTS)}, got {squad_element!r}"
+                )
             bonus_4pc = SetBonus4pc(
                 stat=stat,
                 per_stack=float(per_stack),
@@ -453,6 +468,7 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 auto=bool(raw_4pc.get("auto", False)),
                 at_max_extra_stat=extra_stat,
                 at_max_extra_value=float(extra_value or 0.0),
+                needs_squad_element=squad_element,
                 note=str(raw_4pc.get("note", "")),
             )
 

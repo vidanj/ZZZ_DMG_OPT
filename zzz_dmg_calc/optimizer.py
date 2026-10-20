@@ -17,21 +17,38 @@ Entry points::
 Layering: this module is front-end-agnostic (the UI's ``/optimize``
 endpoint is a thin consumer, the CLI can adopt it later).
 
-Search (plan §6 + §11 E2): per-slot dominance pruning, then an exact
-**branch-and-bound** depth-first search. Damage is monotone in every
-stat bucket, so a partial build whose optimistic upper bound (component-
-wise max of everything the remaining slots could still add, plus every
-candidate set bonus at once) cannot beat the current top-N threshold is
-skipped whole. The winner and every reported runner-up are re-run
-through :func:`~.api.calculate` and must match to 1e-9 (the exactness
-guarantee, plan §4), so the reported numbers are exactly what the user
-gets after equipping the build.
+Search (plan §6 + §11 E2 + §17): per-slot dominance pruning, then an
+exact **branch-and-bound** depth-first search. A partial build whose
+upper bound cannot beat the current top-N threshold is skipped whole.
+The bound (§17, :mod:`.linear_bound`) is a linear upper bound on
+log(damage) valid over every reachable stat vector, so each disc gets
+ONE scalar score and a node's bound is its score so far plus each
+remaining slot's best score plus a count-aware set score — O(1) per
+node, with no phantom disc carrying every main stat at once (the older
+per-stat bound, still the fallback, was ~2x loose). Set-pattern seeds
+give the search a near-optimal incumbent from the start. The winner and
+every reported runner-up are re-run through :func:`~.api.calculate` and
+must match to 1e-9 (the exactness guarantee, plan §4), so the reported
+numbers are exactly what the user gets after equipping the build.
+
+The three entry points share one implementation (:func:`_optimize`);
+each mode contributes only its constant folding and fast path
+(:class:`_ModeModel`).
 
 Set-bonus policy per candidate combination (plan §5): 2-piece bonuses
 always apply; a modeled 4-piece effect uses the user's entered stacks
 when the set is also 4-piece in the baseline build, and otherwise —
 depending on ``OptimizeOptions.set_assumption`` — ``max_stacks``
-(``"max"``, default) or 0 (``"current"``).
+(``"max"``, default) or 0 (``"current"``). Team-element gate (§18): a
+4-piece whose trigger needs an anomaly element no squad member has
+(``needs_squad_element`` — Thunder Metal's Shock needs an Electric main
+or support) is credited at 0 stacks in every build, the baseline
+included; ``OptimizeResult.gated_sets`` lists them.
+
+Required sets (§11b, §18): ``OptimizeOptions.required_4pc`` /
+``required_2pc`` force the build to wear >= 4 / >= 2 pieces of a set —
+the 2pc one exists for utility bonuses the damage math can't value
+(King of the Summit's Daze).
 
 Constraints (§11 E3): ``OptimizeOptions.min_stats`` filters the search
 to builds meeting minimum final-build totals; constrained stats join the
@@ -46,14 +63,19 @@ the PRIMARY ranking key and damage a bounded constraint — two passes,
 from __future__ import annotations
 
 import heapq
+import math
+import threading
 from dataclasses import dataclass, field, replace
-from itertools import product
+from itertools import combinations, product
 
 from . import formulas
 from .agent import Agent, load_agents
+from .linear_bound import (
+    LinearBoundError, LogLinear, affine, affine_combine, crit_zone_log_upper,
+    golden_min, mccormick_upper, step_scaling_upper,
+)
 from .anomalies import AnomalyData, load_anomalies
 from .api import (
-    POLARITY_DISORDER_FRACTION, VIVIAN_ABLOOM_M2_FACTOR, VIVIAN_ABLOOM_MV,
     AnomalyResults, CalcConfig, CalcResults, attack_element, calculate,
     calculate_anomaly, calculate_sheer, _engine_buff_bonus,
     _engine_passive_bonuses, _kit_contributions, _resolve_engine_rank,
@@ -63,7 +85,7 @@ from .discs import (
     Disc, DiscData, DiscSet, disc_stats, load_disc_data, load_disc_sets,
     load_user_discs, set_4pc_max_stacks, set_4pc_stats,
 )
-from .enemies import Boss, load_bosses
+from .enemies import ELEMENTS, Boss, load_bosses
 from .engines import Engine, load_engines
 
 #: Result fields a search may maximize (crit outcome × boss state).
@@ -130,20 +152,39 @@ _MAXIMIZE_TIE_WEIGHT = 1e-6
 _B_ATK_PCT, _B_COMBAT_ATK_PCT, _B_ATK_FLAT, _B_CRIT_RATE, _B_CRIT_DMG, \
     _B_PEN_RATIO, _B_PEN_FLAT, _B_ATTR_DMG, _B_AP, _B_AM, \
     _B_HP_PCT, _B_HP_FLAT, _B_SHEER_DMG, \
-    _B_DEF_PCT, _B_DEF_FLAT, _B_IMPACT, _B_ER, _B_AM_PCT = range(18)
+    _B_DEF_PCT, _B_DEF_FLAT, _B_IMPACT, _B_ER, _B_AM_PCT, \
+    _B_GEN_DMG = range(19)
 
-_N_BUCKETS = 18
-_DAMAGE_INDICES = tuple(range(8))
+_N_BUCKETS = 19
+#: Generic (element-agnostic) DMG% — Fanged Metal 4pc, tag-gated 2pc DMG%
+#: — has its own bucket (18): it joins the same additive bracket as
+#: Attribute DMG% in every mode, but unlike it still applies to a
+#: Disorder / Vortex dealt as another element.
+_DAMAGE_INDICES = tuple(range(8)) + (_B_GEN_DMG,)
+
+#: The linear bound (§17) works on the bucket vector plus the two set
+#: tag channels ``evaluate`` takes separately: the ordinary DMG% bracket
+#: part and the Anomaly Buff bracket part of 4pc bonuses.
+_T_DMG = _N_BUCKETS
+_T_ANOM = _N_BUCKETS + 1
+_N_LINEAR = _N_BUCKETS + 2
+
+#: Safety margin (in log space, ~1e-9 relative) before the linear bound
+#: may prune — float rounding in the score sums must never cut a build
+#: that ties or beats the threshold.
+_LOG_MARGIN = 1e-9
 
 #: Anomaly damage-relevant buckets: the ATK / PEN / Attribute-DMG% / AP
-#: stats. CRIT (indices 3-4) never affects an anomaly (they cannot crit);
+#: stats. A build's CRIT (indices 3-4) never affects an anomaly — anomaly
+#: crit (Phoenix's Sear) comes from its own kit stats, never disc CRIT;
 #: AP (index 8) DOES, unlike direct hits. ``_B_ATTR_DMG`` is included here
 #: but dropped by the caller when the burst deals an element other than the
 #: agent's own attribute (cross-element Disorder/Vortex): the fast path
 #: mirrors ``calculate_anomaly``, which credits the build's Attribute DMG%
 #: only when ``dealt_element == agent.attribute``.
 _ANOMALY_DAMAGE_INDICES = (_B_ATK_PCT, _B_COMBAT_ATK_PCT, _B_ATK_FLAT,
-                           _B_PEN_RATIO, _B_PEN_FLAT, _B_ATTR_DMG, _B_AP)
+                           _B_PEN_RATIO, _B_PEN_FLAT, _B_ATTR_DMG, _B_AP,
+                           _B_GEN_DMG)
 _ANOMALY_DAMAGE_INDICES_NO_ATTR = tuple(
     i for i in _ANOMALY_DAMAGE_INDICES if i != _B_ATTR_DMG
 )
@@ -157,7 +198,7 @@ _ANOMALY_DAMAGE_INDICES_NO_ATTR = tuple(
 #: HP constraint watches them — see :func:`optimize_sheer`.
 _SHEER_DAMAGE_INDICES = (_B_ATK_PCT, _B_COMBAT_ATK_PCT, _B_ATK_FLAT,
                          _B_CRIT_RATE, _B_CRIT_DMG, _B_ATTR_DMG,
-                         _B_SHEER_DMG)
+                         _B_SHEER_DMG, _B_GEN_DMG)
 _SHEER_HP_INDICES = (_B_HP_PCT, _B_HP_FLAT)
 
 #: Buckets a min-stat constraint watches (composed totals like ATK or
@@ -216,8 +257,9 @@ _BUCKET_BY_STAT = {
     "Attribute DMG%": _B_ATTR_DMG,
     # Generic (element-agnostic) DMG% — e.g. Fanged Metal 4pc's +35% — joins
     # the SAME additive DMG% bracket as Attribute DMG% (mirrors
-    # agent._fold_stat), so it shares the _B_ATTR_DMG bucket.
-    "DMG%": _B_ATTR_DMG,
+    # agent._fold_stat) but in its own bucket: it still applies to a
+    # Disorder / Vortex dealt as another element.
+    "DMG%": _B_GEN_DMG,
     "Anomaly Proficiency": _B_AP,
     "Anomaly Mastery": _B_AM,
     # Sheer-mode stats (mirroring agent._fold_stat): sheet HP% scales the
@@ -243,6 +285,13 @@ class OptimizeError(ValueError):
     constraints no combination can meet."""
 
 
+class OptimizeCancelled(Exception):
+    """Raised when :attr:`OptimizeOptions.cancel` is set mid-search (the
+    page's Stop button). Not a ValueError: a stopped search is not an
+    input error, and it carries no partial result — the user stops
+    because the inputs were wrong."""
+
+
 class _BudgetExhausted(Exception):
     """Internal: the DFS hit the evaluation budget — the heap holds the
     best builds found so far (anytime behavior, not an error)."""
@@ -253,11 +302,16 @@ class _BudgetExhausted(Exception):
 #: above it descend anyway, so the second bound would be wasted work.
 _TIGHT_BOUND_MARGIN = 1.5
 
-#: Wide searches first run an INTERNAL fast pass capped at this many
-#: candidates per slot (budget-sliced): it finds set-coherent optima the
-#: greedy ascent cannot reach (completing a 4pc takes coordinated swaps),
-#: giving the full DFS a near-optimal incumbent before the main budget.
+#: Wide searches WITHOUT a linear bound (§17 fallback) first run an
+#: INTERNAL fast pass capped at this many candidates per slot
+#: (budget-sliced): it finds set-coherent optima the greedy ascent cannot
+#: reach (completing a 4pc takes coordinated swaps), giving the full DFS a
+#: near-optimal incumbent before the main budget. With a linear bound the
+#: pattern seeds (:data:`_PATTERN_SEEDS`) do that job in milliseconds.
 _SEED_STAGE_CAP = 15
+
+#: Set-pattern seeds (§17) evaluated exactly, best linear score first.
+_PATTERN_SEEDS = 24
 
 
 @dataclass(frozen=True)
@@ -289,6 +343,13 @@ class OptimizeOptions:
             around (synergy the model can't value); ``None`` = no
             requirement. Any registry set is allowed, modeled 4pc or
             not. Feasibility semantics mirror ``min_stats``.
+        required_2pc: Set key the build MUST wear >= 2 pieces of (§18) —
+            for a 2-piece the damage math can't value (King of the
+            Summit's Daze +6% for a stunner), so the search would never
+            pick it on its own. Must differ from ``required_4pc`` (a
+            4-piece already includes its 2-piece); with both set the build
+            is exactly 4pc + 2pc. Feasibility semantics mirror
+            ``min_stats``.
         slot_main_stats: slot (4/5/6) -> main stat the slot's disc MUST
             have — for kit-required stats the damage math can't value
             (e.g. an Energy Regen% slot 6). Only discs with that main
@@ -301,8 +362,8 @@ class OptimizeOptions:
             alone it also allows 2+2+2 / 3+3 / 6. Feasibility semantics
             mirror ``min_stats``.
         candidate_cap: fast search — keep only the best N candidates per
-            slot (by solo value; the equipped disc and the required 4pc
-            set survive the cut). APPROXIMATE by design: the true
+            slot (by solo value; the equipped disc and the required
+            4pc / 2pc sets survive the cut). APPROXIMATE by design: the true
             optimum may use a disc outside the cap. 0 = exact search.
         min_panel_stats: like ``min_stats``, but checked against the
             PANEL totals (agent base + core + engine + discs + set
@@ -324,6 +385,9 @@ class OptimizeOptions:
             may give up vs the best build found, in ``[0, 1)`` (0.05 =
             accept up to 5% less damage; 0 = only exact-damage ties).
             Ignored without ``maximize_stat``.
+        cancel: Stop token — once set (from another thread), the search
+            raises :class:`OptimizeCancelled` at its next checkpoint
+            (every 256 interior nodes). ``None`` = not stoppable.
     """
 
     objective: str = "average"
@@ -333,12 +397,15 @@ class OptimizeOptions:
     combo_budget: int = DEFAULT_COMBO_BUDGET
     min_stats: dict[str, float] = field(default_factory=dict)
     required_4pc: str | None = None
+    required_2pc: str | None = None
     slot_main_stats: dict[int, str] = field(default_factory=dict)
     sets_only: bool = False
     candidate_cap: int = 0
     min_panel_stats: dict[str, float] = field(default_factory=dict)
     maximize_stat: str | None = None
     maximize_tolerance: float = DEFAULT_MAXIMIZE_TOLERANCE
+    cancel: threading.Event | None = field(
+        default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -412,6 +479,11 @@ class OptimizeResult:
     maximize_tolerance: float = 0.0
     damage_ceiling: float | None = None
     damage_floor: float | None = None
+    # Required 2-piece set (§18), or None.
+    required_2pc: str | None = None
+    # Team-element gate (§18): set key -> the element no squad member
+    # has, for every relevant set whose 4pc was credited at 0 stacks.
+    gated_sets: dict[str, str] = field(default_factory=dict)
 
 
 def _bucket_vector(stats: dict[str, float]) -> tuple[float, ...]:
@@ -529,14 +601,17 @@ def _prune_dominated(
 def _validate_options(
     options: OptimizeOptions, objectives: tuple,
     constraint_stats: tuple = CONSTRAINT_STATS,
-) -> str | None:
+) -> dict[str, int]:
     """Validate the pre-load parts of ``options`` (shared by the search
-    entry points); return the ``required_4pc`` key (or None).
+    entry points); return the set requirements as ``{set key: minimum
+    pieces}`` — 4 for ``required_4pc``, 2 for ``required_2pc`` (empty
+    when neither is set).
 
     Raises:
         OptimizeError: unknown objective/assumption, bad top_n/budget,
-            invalid locked slots or min-stat constraints, or a malformed
-            ``required_4pc``.
+            invalid locked slots or min-stat constraints, a malformed
+            ``required_4pc`` / ``required_2pc``, or both naming the same
+            set.
     """
     if options.objective not in objectives:
         raise OptimizeError(
@@ -591,10 +666,20 @@ def _validate_options(
                 f"(fraction of damage the search may give up), "
                 f"got {tolerance!r}"
             )
-    required = options.required_4pc
-    if required is not None and (
-            not isinstance(required, str) or not required.strip()):
-        raise OptimizeError("'required_4pc' must be a set key or None")
+    requirements: dict[str, int] = {}
+    for name, key, pieces in (("required_4pc", options.required_4pc, 4),
+                              ("required_2pc", options.required_2pc, 2)):
+        if key is None:
+            continue
+        if not isinstance(key, str) or not key.strip():
+            raise OptimizeError(f"'{name}' must be a set key or None")
+        if key in requirements:
+            raise OptimizeError(
+                f"'required_2pc' and 'required_4pc' are both '{key}': a "
+                f"4-piece already includes its 2-piece bonus — pick a "
+                f"different 2pc set or clear it"
+            )
+        requirements[key] = pieces
     for slot, main in options.slot_main_stats.items():
         if slot not in (4, 5, 6):
             raise OptimizeError(
@@ -606,7 +691,7 @@ def _validate_options(
                 f"Main-stat requirement for slot {slot} must be a "
                 f"non-empty stat name"
             )
-    return required
+    return requirements
 
 
 def _validate_slot_mains(
@@ -724,6 +809,164 @@ def _sets_coverage_ok(discs) -> bool:
             return False
         counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
     return all(count >= 2 for count in counts.values())
+
+
+def _squad_elements(
+    main_element: str, config: CalcConfig, agents: dict[str, Agent]
+) -> frozenset[str]:
+    """The anomaly elements the squad can apply (§18): the element the
+    main agent's damage is dealt as (a Lumiflux main's mutated element)
+    plus every entered support's attribute. A Lumiflux support adds
+    nothing — her mutated element copies another squad member's."""
+    elements = {main_element}
+    elements.update(agents[support.agent_key].attribute
+                    for support in config.supports)
+    return frozenset(e for e in elements if e in ELEMENTS)
+
+
+def _gated_sets(
+    disc_sets: dict[str, DiscSet], squad: frozenset[str]
+) -> dict[str, str]:
+    """Sets whose 4pc needs an anomaly element no squad member has
+    (``needs_squad_element``), mapped to that element (§18)."""
+    return {
+        key: entry.bonus_4pc.needs_squad_element
+        for key, entry in disc_sets.items()
+        if entry.bonus_4pc is not None
+        and entry.bonus_4pc.needs_squad_element is not None
+        and entry.bonus_4pc.needs_squad_element not in squad
+    }
+
+
+@dataclass(frozen=True)
+class _StatModel:
+    """The disc-independent pieces of the constraint / maximize-stat
+    totals — the numbers the results panel reports — shared by every
+    mode (each optimizer fills in its own constants).
+
+    :meth:`total` is a stat's exact final total for a bucket vector;
+    :meth:`upper` an affine upper bound of it on a box of bucket vectors
+    (§17), for the maximize-stat ranking bound. Every total is
+    non-decreasing in every bucket.
+    """
+
+    atk_base: float           # agent + engine base ATK
+    kit_atk_pct: float
+    kit_flat_atk: float
+    hp_base: float
+    core_hp_pct: float
+    kit_hp_mult: float
+    def_base: float
+    crit_rate_base: float     # base + core CRIT Rate
+    crit_dmg_base: float      # base + core CRIT DMG
+    deferred_cd: tuple        # total-CRIT-DMG-scaled kit effects
+    pen_ratio_base: float
+    impact_base: float
+    er_base: float
+    ap_base: float
+    am_base: float
+    crit_rate_extra: float = 0.0  # kit / external / engine CRIT Rate
+    crit_dmg_extra: float = 0.0   # kit / external / engine CRIT DMG
+    sf_atk_conv: float = 0.0  # Sheer Force (rupture mode only)
+    sf_hp_conv: float = 0.0
+    sf_flat: float = 0.0
+
+    def crit_dmg_total(self, total: float) -> float:
+        """CRIT DMG after effects that take a share of the total."""
+        if not self.deferred_cd:
+            return total
+        return total + sum(p["scaling"].resolve(total) * p["stacks"]
+                           for p in self.deferred_cd)
+
+    def atk(self, buckets) -> float:
+        atk_pre_combat = (self.atk_base * (1.0 + buckets[_B_ATK_PCT])
+                          + buckets[_B_ATK_FLAT])
+        return (atk_pre_combat
+                * (1.0 + buckets[_B_COMBAT_ATK_PCT] + self.kit_atk_pct)
+                + self.kit_flat_atk)
+
+    def hp(self, buckets) -> float:
+        return (self.hp_base * (1.0 + self.core_hp_pct + buckets[_B_HP_PCT])
+                + buckets[_B_HP_FLAT]) * self.kit_hp_mult
+
+    def total(self, stat: str, buckets) -> float:
+        """``stat``'s final total (keys validated by the caller)."""
+        if stat == "ATK":
+            return self.atk(buckets)
+        if stat == "HP":
+            return self.hp(buckets)
+        if stat == "Sheer Force":
+            return (self.atk(buckets) * self.sf_atk_conv
+                    + self.hp(buckets) * self.sf_hp_conv + self.sf_flat)
+        if stat == "DEF":
+            return (self.def_base * (1.0 + buckets[_B_DEF_PCT])
+                    + buckets[_B_DEF_FLAT])
+        if stat == "CRIT Rate":
+            return (self.crit_rate_base + buckets[_B_CRIT_RATE]
+                    + self.crit_rate_extra)
+        if stat == "CRIT DMG":
+            return self.crit_dmg_total(self.crit_dmg_base
+                                       + buckets[_B_CRIT_DMG]
+                                       + self.crit_dmg_extra)
+        if stat == "PEN Ratio":
+            return buckets[_B_PEN_RATIO] + self.pen_ratio_base
+        if stat == "PEN":
+            return buckets[_B_PEN_FLAT]
+        if stat == "Impact":
+            return self.impact_base * (1.0 + buckets[_B_IMPACT])
+        if stat == "Energy Regen":
+            return self.er_base * (1.0 + buckets[_B_ER])
+        if stat == "Anomaly Proficiency":
+            return self.ap_base + buckets[_B_AP]
+        # "Anomaly Mastery"
+        return (self.am_base + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
+
+    def upper(self, stat: str, x0, lo, hi):
+        """Affine upper bound of :meth:`total` on the box (exact for the
+        affine stats; a McCormick plane for the ATK and AM products; the
+        scaled CRIT DMG effects by their chord)."""
+        hp = affine(self.hp_base * (1.0 + self.core_hp_pct) * self.kit_hp_mult,
+                    (_B_HP_PCT, self.hp_base * self.kit_hp_mult),
+                    (_B_HP_FLAT, self.kit_hp_mult))
+        if stat in ("ATK", "Sheer Force"):
+            u, v = _atk_factors(self.atk_base, self.kit_atk_pct)
+            atk = affine_combine((1.0, mccormick_upper(u, v, x0, lo, hi)),
+                                 const=self.kit_flat_atk)
+            if stat == "ATK":
+                return atk
+            return affine_combine((self.sf_atk_conv, atk),
+                                  (self.sf_hp_conv, hp), const=self.sf_flat)
+        if stat == "HP":
+            return hp
+        if stat == "DEF":
+            return affine(self.def_base, (_B_DEF_PCT, self.def_base),
+                          (_B_DEF_FLAT, 1.0))
+        if stat == "CRIT Rate":
+            return affine(self.crit_rate_base + self.crit_rate_extra,
+                          (_B_CRIT_RATE, 1.0))
+        if stat == "CRIT DMG":
+            base = self.crit_dmg_base + self.crit_dmg_extra
+            dmg = affine(base, (_B_CRIT_DMG, 1.0))
+            d_lo, d_hi = base + lo[_B_CRIT_DMG], base + hi[_B_CRIT_DMG]
+            d0 = base + x0[_B_CRIT_DMG]
+            slope, const = 1.0, 0.0
+            for stacks, *shape in _deferred_params(list(self.deferred_cd)):
+                k0, k1 = step_scaling_upper(*shape, d_lo, d_hi, d0)
+                const += stacks * k0
+                slope += stacks * k1
+            return affine_combine((slope, dmg), const=const)
+        if stat == "PEN Ratio":
+            return affine(self.pen_ratio_base, (_B_PEN_RATIO, 1.0))
+        if stat == "PEN":
+            return affine(0.0, (_B_PEN_FLAT, 1.0))
+        if stat == "Impact":
+            return affine(self.impact_base, (_B_IMPACT, self.impact_base))
+        if stat == "Energy Regen":
+            return affine(self.er_base, (_B_ER, self.er_base))
+        if stat == "Anomaly Proficiency":
+            return affine(self.ap_base, (_B_AP, 1.0))
+        return mccormick_upper(affine(self.am_base, (_B_AM, 1.0)),
+                               affine(1.0, (_B_AM_PCT, 1.0)), x0, lo, hi)
 
 
 def _panel_constants(agent: Agent, engine: Engine, consts: Constants) -> dict:
@@ -949,7 +1192,7 @@ def _baseline_reasons(
     *,
     discs,
     equipped: dict[int, Disc],
-    required: str | None,
+    requirements: dict[str, int],
     baseline_counts: dict[str, int],
     disc_sets: dict[str, DiscSet],
     slot_main_stats: dict[int, str],
@@ -964,12 +1207,14 @@ def _baseline_reasons(
     minimum isn't even a constraint they typed.
     """
     reasons = []
-    if required is not None and baseline_counts.get(required, 0) < 4:
-        name = disc_sets[required].name if required in disc_sets else required
-        reasons.append(
-            f"it wears {baseline_counts.get(required, 0)} piece(s) of "
-            f"{name}, not the required 4"
-        )
+    for key, pieces in requirements.items():
+        held = baseline_counts.get(key, 0)
+        if held < pieces:
+            name = disc_sets[key].name if key in disc_sets else key
+            reasons.append(
+                f"it wears {held} piece(s) of {name}, not the required "
+                f"{pieces}"
+            )
     for kind, stat, total, minimum in shortfalls:
         if kind == "panel":
             inputs = " / ".join(_STAT_SCALING_INPUTS.get(stat, ()))
@@ -1068,6 +1313,63 @@ def _fold_sets(
     return tagged, tagged_anom
 
 
+def _set_counts(combo) -> dict[str, int]:
+    """Pieces per set in a build (set-less discs count nothing)."""
+    counts: dict[str, int] = {}
+    for cand in combo:
+        key = cand.disc.disc_set
+        if key is not None:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _pairings(items: list) -> list[list[tuple]]:
+    """Every way to split ``items`` (even length) into unordered pairs —
+    the 15 pairings of six slots, for 2+2+2 set patterns."""
+    if not items:
+        return [[]]
+    first, rest = items[0], items[1:]
+    result = []
+    for j, partner in enumerate(rest):
+        remaining = rest[:j] + rest[j + 1:]
+        for tail in _pairings(remaining):
+            result.append([(first, partner)] + tail)
+    return result
+
+
+def _set_scores(
+    weights: list[float], keys, set_2pc_sparse: dict, set_4pc_sparse: dict,
+    set_tag_bonus: dict[str, tuple[float, float]], n_buckets: int,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Per-set linear scores of a linear form (§17): the 2pc bonus, and
+    the 4pc bonus with its tag channels — clamped at 0 (every set bonus
+    only adds, so a non-positive score never helps a bound)."""
+    two = {key: max(sum(weights[k] * v for k, v in set_2pc_sparse[key]), 0.0)
+           for key in keys}
+    four = {key: max(sum(weights[k] * v for k, v in set_4pc_sparse[key])
+                     + weights[n_buckets] * set_tag_bonus[key][0]
+                     + weights[n_buckets + 1] * set_tag_bonus[key][1], 0.0)
+            for key in keys}
+    return two, four
+
+
+def _pattern_score(two: dict[str, float], four: dict[str, float]) -> float:
+    """The best set score six slots can hold, count-free (§17): three
+    2pc, or one set at 4+ pieces (its 2pc included) plus another 2pc —
+    always a CONSISTENT pattern, unlike a per-stat maximum."""
+    twos = sorted(two.values(), reverse=True)
+    best = sum(twos[:3])
+    for key in two:
+        # The best OTHER set's 2pc: the top value, unless this set holds
+        # it (then the runner-up — equal values tie fine).
+        if twos[0] != two[key]:
+            other = twos[0]
+        else:
+            other = twos[1] if len(twos) > 1 else 0.0
+        best = max(best, two[key] + four[key] + other)
+    return best
+
+
 def _search(
     candidates: dict[int, list[_Candidate]],
     slots: list[int],
@@ -1079,46 +1381,86 @@ def _search(
     set_4pc: dict[str, tuple[float, ...]],
     set_tag_bonus: dict[str, tuple[float, float]],
     candidate_sets: set[str],
-    required: str | None,
+    required: dict[str, int],
     pairs_only: bool,
     top_n: int,
     budget: int,
     bound: bool,
     slot_cap: int = 0,
+    linearize=None,
+    constrained: bool = True,
+    floor: float | None = None,
+    rank_bound=None,
+    seeds: tuple = (),
+    cancel: threading.Event | None = None,
 ) -> tuple[list, int, bool]:
-    """Branch-and-bound DFS over the per-slot candidates (plan §11 E2).
+    """Branch-and-bound DFS over the per-slot candidates (plan §11 E2, §17).
+
+    ``required`` (§11b, §18): set key -> minimum pieces every accepted
+    build must wear (the required 4pc set at 4, the required 2pc set at
+    2); empty = no set requirement.
 
     ``pairs_only`` (2pc priority): only accept leaves where every set
     worn has >= 2 pieces (the callers already excluded set-less
     candidates, so singleton pieces are the only thing to reject here).
 
     ``slot_cap`` > 0 truncates each slot to its best ``slot_cap``
-    candidates by solo value (equipped disc always kept; the required
-    4pc set keeps a piece per slot) — the user-facing "fast search",
+    candidates by solo value (equipped disc always kept; each required
+    set keeps a piece per slot) — the user-facing "fast search",
     APPROXIMATE by design.
+
+    ``linearize(x0, lo, hi) -> (c0, w) | None`` (§17) returns a linear
+    upper bound ``log(value(x)) <= c0 + w · x`` valid on the box
+    ``lo <= x <= hi`` of stat vectors (the 18 buckets plus the two set
+    tag channels, :data:`_N_LINEAR` entries), linearized at ``x0``. With
+    it, every disc gets one scalar score ``w · v`` and a partial build's
+    bound is its score so far plus each remaining slot's best score plus
+    a scalar set bound — O(1) per node, and no phantom disc carrying
+    every main stat at once. ``None`` (or no ``linearize``) falls back to
+    the per-stat bound below. ``constrained`` says whether ``feasible``
+    can ever reject a build (min-stat constraints, the maximize-stat
+    floor); without constraints the per-node feasibility probe is
+    skipped.
+
+    ``floor`` (maximize-stat pass 2, §15 E5): the objective is then a
+    stat RANK, not damage, so ``linearize`` bounds the DAMAGE instead and
+    prunes every branch that cannot reach ``floor``. ``rank_bound`` =
+    ``(stat_upper, combine)`` bounds the rank itself the same separable
+    way: ``stat_upper(x0, lo, hi)`` is an affine upper bound of the
+    ranked stat on the box, and ``combine(stat_ub, log_damage_ub)`` turns
+    the two bounds into a rank bound (non-decreasing in both). Without it
+    the rank keeps the per-stat bound.
+
+    ``seeds``: extra builds (``slots`` order) offered right after the
+    baseline — the maximize-stat pass hands over the damage pass's
+    winners, which are feasible by construction.
+
+    ``cancel``: stop token (:attr:`OptimizeOptions.cancel`), polled every
+    256 interior nodes; once set the search raises
+    :class:`OptimizeCancelled` (not caught here, unlike the budget).
 
     Returns ``(heap, evals, exhausted)``; ``exhausted`` means the budget
     ran out and the heap holds the best builds found so far, with no
     completeness claim (anytime behavior — no exception).
 
-    Mode-agnostic search core shared by :func:`optimize` (direct hits) and
-    :func:`optimize_anomaly`. ``evaluate(buckets, tagged) -> (value, aux)``
-    and ``feasible(buckets, aux) -> bool`` carry all the mode-specific
-    damage math; everything here — candidate ordering, the suffix/static
-    upper bounds, the count-aware set bound, the top-N heap and the
-    evaluation budget — is identical across modes because anomaly damage is
-    monotone in every tracked bucket, exactly like direct-hit damage.
+    Mode-agnostic search core shared by the three optimizers.
+    ``evaluate(buckets, tagged) -> (value, aux)`` and
+    ``feasible(buckets, aux) -> bool`` carry all the mode-specific damage
+    math; everything here — candidate ordering, the bounds, the top-N
+    heap and the evaluation budget — is identical across modes because
+    every mode's damage is monotone in every tracked bucket.
 
-    The heap holds ``(value, -counter, combo)`` tuples, ranked and
-    de-duplicated by the caller (greedy seeds may also be found by the
-    DFS).
+    The heap holds ``(value, -counter, combo)`` tuples with ``combo`` in
+    ``slots`` order, ranked and de-duplicated by the caller (greedy seeds
+    may also be found by the DFS).
     """
+    if cancel is not None and cancel.is_set():
+        raise OptimizeCancelled
     n_buckets = len(base_buckets)
 
-    # Candidate order: the equipped disc stays FIRST (the very first build
-    # evaluated is the baseline, so exact ties resolve toward it); the
-    # rest are sorted by their solo value so a strong incumbent forms
-    # early and the bound cuts sooner.
+    # Seed order: the equipped disc stays FIRST (the baseline is the first
+    # build seeded, so exact ties resolve toward it); the rest are sorted
+    # by their solo value so a strong incumbent forms early.
     def solo_value(cand: _Candidate) -> float:
         merged = list(base_buckets)
         for k, v in enumerate(cand.buckets):
@@ -1133,38 +1475,22 @@ def _search(
 
     # Fast search (approximate): keep the best ``slot_cap`` candidates per
     # slot. The tail is already solo-sorted; the equipped head survives at
-    # index 0, and the required 4pc set keeps its best piece per slot so
-    # the requirement can't become spuriously unreachable.
+    # index 0, and each required set keeps its best piece per slot so a
+    # requirement can't become spuriously unreachable.
     if slot_cap:
         for slot in slots:
             full = candidates[slot]
             if len(full) <= slot_cap:
                 continue
             kept = full[:slot_cap]
-            if required is not None and not any(
-                    c.disc.disc_set == required for c in kept):
-                extra = next((c for c in full[slot_cap:]
-                              if c.disc.disc_set == required), None)
-                if extra is not None:
-                    kept = kept + [extra]
+            for key in required:
+                if not any(c.disc.disc_set == key for c in kept):
+                    extra = next((c for c in full[slot_cap:]
+                                  if c.disc.disc_set == key), None)
+                    if extra is not None:
+                        kept = kept + [extra]
             candidates[slot] = kept
 
-    # suffix_max[i][k]: the most bucket k can still gain from slots[i:].
-    suffix_max = [[0.0] * n_buckets for _ in range(len(slots) + 1)]
-    for i in range(len(slots) - 1, -1, -1):
-        for k in range(n_buckets):
-            suffix_max[i][k] = suffix_max[i + 1][k] + max(
-                c.buckets[k] for c in candidates[slots[i]]
-            )
-    # suffix_set_max[i][key]: how many MORE pieces of ``key`` slots[i:] can
-    # still equip (at most one per slot) — bounds reachable set bonuses.
-    suffix_set_max: list[dict[str, int]] = [{} for _ in range(len(slots) + 1)]
-    for i in range(len(slots) - 1, -1, -1):
-        counts = dict(suffix_set_max[i + 1])
-        for key in {c.disc.disc_set for c in candidates[slots[i]]
-                    if c.disc.disc_set is not None}:
-            counts[key] = counts.get(key, 0) + 1
-        suffix_set_max[i] = counts
     # Static cap: six slots fit at most three 2-piece sets and one 4-piece.
     static_set_ub = [0.0] * n_buckets
     for k in range(n_buckets):
@@ -1177,18 +1503,30 @@ def _search(
         max((set_tag_bonus[key][0] for key in candidate_sets), default=0.0),
         max((set_tag_bonus[key][1] for key in candidate_sets), default=0.0),
     )
+    set_2pc_sparse = {
+        key: tuple((k, v) for k, v in enumerate(vec) if v)
+        for key, vec in set_2pc.items()
+    }
+    set_4pc_sparse = {
+        key: tuple((k, v) for k, v in enumerate(vec) if v)
+        for key, vec in set_4pc.items()
+    }
 
     heap: list[tuple[float, int, tuple[_Candidate, ...]]] = []
     heap_keys: set[tuple[int, ...]] = set()   # combos currently in the heap
     counter = 0
     evals = 0
-    probes = 0     # interior bound evaluations — same cost as a leaf
+    probes = 0     # interior node visits — same cost as a leaf
 
     def offer(value: float, combo: tuple[_Candidate, ...]) -> None:
         """Push one acceptable build into the top-N heap, deduplicated —
         a greedy seed the DFS finds again must not crowd out a genuine
         alternative."""
         nonlocal counter
+        # A build that cannot enter a full heap is dropped before its
+        # dedupe key is built — most offers end here.
+        if len(heap) >= top_n and value <= heap[0][0]:
+            return
         key = tuple(id(c) for c in combo)
         if key in heap_keys:
             return
@@ -1201,79 +1539,21 @@ def _search(
             removed = heapq.heapreplace(heap, entry)
             heap_keys.discard(tuple(id(c) for c in removed[2]))
             heap_keys.add(key)
-    work_buckets = list(base_buckets)
-    work_counts: dict[str, int] = {}
-    combo_stack: list[_Candidate] = []
-    slot_entries = [
-        [(c, tuple((k, v) for k, v in enumerate(c.buckets) if v),
-          c.disc.disc_set) for c in candidates[slot]]
-        for slot in slots
-    ]
-    n_slots = len(slots)
 
-    static_ub_vec = [
-        [suffix_max[i][k] + static_set_ub[k] for k in range(n_buckets)]
-        for i in range(len(slots) + 1)
-    ]
-    set_2pc_sparse = {
-        key: tuple((k, v) for k, v in enumerate(vec) if v)
-        for key, vec in set_2pc.items()
-    }
-    set_4pc_sparse = {
-        key: tuple((k, v) for k, v in enumerate(vec) if v)
-        for key, vec in set_4pc.items()
-    }
-
-    def node_set_ub(i: int) -> tuple[list[float], float]:
-        """Set-bonus upper bound for completions of the current partial
-        build: fold every set at the piece count it can still reach,
-        then cap componentwise by the static top-3+4pc bound."""
-        suffix_sets = suffix_set_max[i]
-        ub = [0.0] * n_buckets
-        tag_ub = [0.0, 0.0]
-        for key, limit in suffix_sets.items():
-            count = limit + work_counts.get(key, 0)
-            if count >= 2:
-                for k, v in set_2pc_sparse[key]:
-                    ub[k] += v
-            if count >= 4:
-                for k, v in set_4pc_sparse[key]:
-                    ub[k] += v
-                tag_ub[0] += set_tag_bonus[key][0]
-                tag_ub[1] += set_tag_bonus[key][1]
-        for key, count in work_counts.items():
-            if key in suffix_sets:
-                continue        # already counted above
-            if count >= 2:
-                for k, v in set_2pc_sparse[key]:
-                    ub[k] += v
-            if count >= 4:
-                for k, v in set_4pc_sparse[key]:
-                    ub[k] += v
-                tag_ub[0] += set_tag_bonus[key][0]
-                tag_ub[1] += set_tag_bonus[key][1]
-        for k in range(n_buckets):
-            if ub[k] > static_set_ub[k]:
-                ub[k] = static_set_ub[k]
-        return ub, (min(tag_ub[0], static_tag_ub[0]),
-                    min(tag_ub[1], static_tag_ub[1]))
+    def sets_met(counts: dict[str, int]) -> bool:
+        """Whether a build's set piece counts meet every requirement."""
+        return all(counts.get(key, 0) >= pieces
+                   for key, pieces in required.items())
 
     def combo_value(combo) -> tuple[float, bool]:
         """One full build's (value, acceptable) — the leaf math, reused
         by the greedy warm start below."""
-        buckets = list(base_buckets)
-        counts: dict[str, int] = {}
-        for cand in combo:
-            for k, v in enumerate(cand.buckets):
-                buckets[k] += v
-            key = cand.disc.disc_set
-            if key is not None:
-                counts[key] = counts.get(key, 0) + 1
-        tagged = _fold_sets(buckets, counts, set_2pc, set_4pc, set_tag_bonus)
+        buckets, tagged, counts = _combo_buckets(
+            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
         value, aux = evaluate(buckets, tagged)
         acceptable = (
             feasible(buckets, aux)
-            and (required is None or counts.get(required, 0) >= 4)
+            and sets_met(counts)
             and (not pairs_only
                  or all(count >= 2 for count in counts.values()))
         )
@@ -1327,104 +1607,769 @@ def _search(
         for start in starts:
             ascend(start)
 
-    def dfs(i: int) -> None:
-        nonlocal evals, probes
-        # Every node visit counts toward the budget (bound probes and
-        # reachability walks cost real time too) — so WALL TIME is capped
-        # even when the bounds prune almost every leaf.
-        probes += 1
-        if evals + probes >= budget:
-            raise _BudgetExhausted
-        # Required-4pc reachability: exact, not just a bound — a branch
-        # that can no longer collect 4 pieces has no feasible leaves.
-        if required is not None and (
-            work_counts.get(required, 0)
-            + suffix_set_max[i].get(required, 0) < 4
-        ):
-            return
-        # 2pc-priority reachability: a singleton set no later slot can
-        # complete has no acceptable leaves (exact, like the 4pc check).
+    # --- Linear bound (§17): one scalar score per disc ---------------------
+    lin = None
+    x0 = None
+    if bound and linearize is not None and slots:
+        lo = list(base_buckets)
+        hi = list(base_buckets)
+        for slot in slots:
+            for k in range(n_buckets):
+                lo[k] += min(c.buckets[k] for c in candidates[slot])
+                hi[k] += max(c.buckets[k] for c in candidates[slot])
+        for k in range(n_buckets):
+            hi[k] += static_set_ub[k]
+        lo += [0.0, 0.0]
+        hi += list(static_tag_ub)
+
+    def linearize_at(combo):
+        """The linear form tangent at one build (the bound is tightest
+        near the builds it must separate from the threshold)."""
+        buckets, tagged, _counts = _combo_buckets(
+            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
+        point = buckets + list(tagged)
+        return linearize(point, lo, hi), point
+
+    def pattern_seeds(weights) -> None:
+        """Set-aware warm start (§17): with one scalar score per disc,
+        the best placement of every set PATTERN is cheap to assemble —
+        each set at 4 pieces (every choice of its 4 slots) with the best
+        2pc pair or best discs in the rest, and every 2+2+2 pairing of
+        the six slots. The best few by score are evaluated exactly.
+        Coordinate ascent alone cannot reach these: completing a 4pc
+        takes coordinated swaps."""
+        score = {id(c): sum(weights[k] * v
+                            for k, v in enumerate(c.buckets) if v)
+                 for slot in slots for c in candidates[slot]}
+        two, four = _set_scores(weights, candidate_sets, set_2pc_sparse,
+                                set_4pc_sparse, set_tag_bonus, n_buckets)
+
+        def linear_total(combo) -> float:
+            counts: dict[str, int] = {}
+            total = 0.0
+            for cand in combo:
+                total += score[id(cand)]
+                key = cand.disc.disc_set
+                if key is not None:
+                    counts[key] = counts.get(key, 0) + 1
+            for key, count in counts.items():
+                if count >= 2:
+                    total += two[key]
+                if count >= 4:
+                    total += four[key]
+            return total
+
+        best_any = {slot: max(candidates[slot], key=lambda c: score[id(c)])
+                    for slot in slots}
+        best_of_set: dict[int, dict[str, _Candidate]] = {}
+        for slot in slots:
+            per_set: dict[str, _Candidate] = {}
+            for cand in candidates[slot]:
+                key = cand.disc.disc_set
+                if key is not None and (key not in per_set or score[id(cand)]
+                                        > score[id(per_set[key])]):
+                    per_set[key] = cand
+            best_of_set[slot] = per_set
+
+        def best_pair(a: int, b: int) -> tuple:
+            options = [(best_any[a], best_any[b])]
+            for key, cand in best_of_set[a].items():
+                other = best_of_set[b].get(key)
+                if other is not None:
+                    options.append((cand, other))
+            return max(options, key=linear_total)
+
+        # A required 2pc set (§18) usually scores ~0 here — that is why it
+        # had to be required — so best_pair never picks it: each pattern
+        # also gets variants that place it as one of its pairs.
+        pair_keys = [key for key, pieces in required.items() if pieces == 2]
+
+        def with_pair(pick: dict, a: int, b: int, key: str):
+            """``pick`` with slots a/b holding ``key``'s best pieces, as a
+            combo — or None when either slot has no piece of it."""
+            first, second = best_of_set[a].get(key), best_of_set[b].get(key)
+            if first is None or second is None:
+                return None
+            variant = dict(pick)
+            variant[a], variant[b] = first, second
+            return tuple(variant[slot] for slot in slots)
+
+        combos = [tuple(best_any[slot] for slot in slots)]
+        for key in candidate_sets:
+            holders = [slot for slot in slots if key in best_of_set[slot]]
+            for four_slots in combinations(holders, 4):
+                pick = {slot: best_of_set[slot][key] for slot in four_slots}
+                rest = [slot for slot in slots if slot not in pick]
+                if len(rest) == 2:
+                    pick[rest[0]], pick[rest[1]] = best_pair(*rest)
+                    combos.extend(with_pair(pick, *rest, pair_key)
+                                  for pair_key in pair_keys)
+                else:
+                    pick.update((slot, best_any[slot]) for slot in rest)
+                combos.append(tuple(pick[slot] for slot in slots))
+        if len(slots) == 6:
+            for matching in _pairings(list(slots)):
+                pick = {}
+                for a, b in matching:
+                    pick[a], pick[b] = best_pair(a, b)
+                combos.append(tuple(pick[slot] for slot in slots))
+                combos.extend(with_pair(pick, a, b, pair_key)
+                              for pair_key in pair_keys
+                              for a, b in matching)
+        # Only builds meeting the set requirements can be accepted — don't
+        # spend the exact evaluations on the rest.
+        combos = [combo for combo in combos
+                  if combo is not None and sets_met(_set_counts(combo))]
+        combos.sort(key=linear_total, reverse=True)
+        tried: set = set()
+        for combo in combos:
+            if len(tried) >= _PATTERN_SEEDS:
+                break
+            key = tuple(id(c) for c in combo)
+            if key not in tried:
+                tried.add(key)
+                push_seed(combo)
+
+    if slots:
+        # The baseline is seeded FIRST so exact ties keep resolving toward
+        # the current discs.
+        push_seed(tuple(candidates[slot][0] for slot in slots))
+        for combo in seeds:
+            push_seed(combo)
+        if bound and linearize is not None:
+            first = (max(heap, key=lambda e: (e[0], e[1]))[2] if heap
+                     else tuple(candidates[slot][0] for slot in slots))
+            lin, x0 = linearize_at(first)
+        if lin is not None:
+            pattern_seeds(lin[1])
+            for entry in sorted(heap, key=lambda e: -e[0])[:2]:
+                ascend(entry[2])
+            # Re-linearize at the (better) incumbent the seeds found.
+            better, point = linearize_at(
+                max(heap, key=lambda e: (e[0], e[1]))[2] if heap else first)
+            if better is not None:
+                lin, x0 = better, point
+        else:
+            seed_incumbents()
+            # Two-stage warm start (wide searches without a linear bound
+            # only): an internal fast pass over the top candidates per
+            # slot on a slice of the budget; its winners join the heap.
+            if (not slot_cap and bound and any(
+                    len(candidates[slot]) > _SEED_STAGE_CAP
+                    for slot in slots)):
+                stage_heap, stage_evals, _ = _search(
+                    {slot: list(candidates[slot]) for slot in slots},
+                    list(slots), equipped, base_buckets, evaluate, feasible,
+                    set_2pc, set_4pc, set_tag_bonus, candidate_sets,
+                    required, pairs_only, top_n, min(budget // 2, 2_500_000),
+                    True, slot_cap=_SEED_STAGE_CAP, cancel=cancel,
+                )
+                probes += stage_evals
+                for value, _neg_counter, combo in sorted(stage_heap,
+                                                         reverse=True):
+                    offer(value, combo)
+
+    def linear_scores(weights):
+        """Per-candidate scores and per-set (2pc, 4pc) scores of one
+        linear form."""
+        per_disc = {id(c): sum(weights[k] * v
+                               for k, v in enumerate(c.buckets) if v)
+                    for slot in slots for c in candidates[slot]}
+        two, four = _set_scores(weights, candidate_sets, set_2pc_sparse,
+                                set_4pc_sparse, set_tag_bonus, n_buckets)
+        return per_disc, two, four
+
+    order = list(slots)
+    scores: dict[int, float] = {}
+    stat_scores: dict[int, float] = {}
+    combine = None                       # the rank bound (pass 2 only)
+    if lin is not None:
+        c0, w = lin
+        scores, sc2, sc4 = linear_scores(w)
+        for slot in slots:
+            # Stable: equal scores keep the seed order (equipped first).
+            candidates[slot] = sorted(candidates[slot],
+                                      key=lambda c: -scores[id(c)])
+        # Slots whose discs differ most (variable mains: 4/5/6) first —
+        # fixing them early tightens every deeper bound the most.
+        order.sort(key=lambda slot: -(scores[id(candidates[slot][0])]
+                                      - scores[id(candidates[slot][-1])]))
+        lin_base = c0 + sum(w[k] * v for k, v in enumerate(base_buckets))
+        static_set_score = _pattern_score(sc2, sc4)
+    # Role of the linear form: bound the objective itself (damage), or —
+    # with a ``floor`` — the damage that must stay above it.
+    lin_objective = lin is not None and floor is None
+    log_floor = (math.log(floor) - _LOG_MARGIN
+                 if lin is not None and floor is not None and floor > 0.0
+                 else None)
+    lagrange: list = []                  # (λ, per-disc score, two, four)
+    if lin is not None:
+        if log_floor is not None and rank_bound is not None:
+            try:
+                stat_const, stat_terms = rank_bound[0](x0, lo, hi)
+            except LinearBoundError:
+                stat_terms = None
+            if stat_terms is not None:
+                sw = [0.0] * len(x0)
+                for k, coef in stat_terms:
+                    sw[k] += coef
+                stat_scores, st2, st4 = linear_scores(sw)
+                stat_base = stat_const + sum(
+                    sw[k] * v for k, v in enumerate(base_buckets))
+                combine = rank_bound[1]
+                # Lagrangian relaxation of "damage >= floor": every
+                # feasible build has damage_bound − log(floor) >= 0, so
+                # stat + λ·(damage_bound − log floor) bounds its stat for
+                # ANY λ >= 0 — and is still a sum of per-disc scores. The
+                # root-optimal λ (convex in λ) and λ = 0 (the plain stat
+                # bound) are kept; each node takes the smaller bound.
+                # (More multipliers measured no fewer leaves on a
+                # 653-disc inventory — the remaining leaves are builds
+                # tied on the stat, which only their damage separates.)
+
+                def lagrange_form(lam: float):
+                    return (lam,
+                            {cid: stat_scores[cid] + lam * scores[cid]
+                             for cid in scores},
+                            {k: st2[k] + lam * sc2[k] for k in candidate_sets},
+                            {k: st4[k] + lam * sc4[k] for k in candidate_sets})
+
+                def root_bound(lam: float) -> float:
+                    _lam, per, two, four = lagrange_form(lam)
+                    return (stat_base + lam * (lin_base - log_floor)
+                            + sum(max(per[id(c)] for c in candidates[slot])
+                                  for slot in slots)
+                            + _pattern_score(two, four))
+
+                stat_span = root_bound(0.0) - stat_base
+                headroom = (lin_base + sum(
+                    scores[id(candidates[slot][0])] for slot in slots)
+                    + static_set_score - log_floor)
+                lam_cap = 1e4 * max(stat_span, 1e-12) / max(headroom, 1e-12)
+                lam_star = golden_min(root_bound, 0.0, lam_cap, 60)
+                lambdas = sorted({0.0, lam_star})
+                lagrange = [lagrange_form(lam) for lam in lambdas]
+
+    # canonical position -> DFS position, to report combos in ``slots``
+    # order (the seeds' order) whatever order the DFS walks.
+    perm = (None if order == list(slots)
+            else tuple(order.index(slot) for slot in slots))
+    n_slots = len(order)
+    last = n_slots - 1
+
+    # suffix_max[i][k]: the most bucket k can still gain from order[i:].
+    suffix_max = [[0.0] * n_buckets for _ in range(n_slots + 1)]
+    for i in range(n_slots - 1, -1, -1):
+        for k in range(n_buckets):
+            suffix_max[i][k] = suffix_max[i + 1][k] + max(
+                c.buckets[k] for c in candidates[order[i]]
+            )
+    # suffix_set_max[i][key]: how many MORE pieces of ``key`` order[i:] can
+    # still equip (at most one per slot) — bounds reachable set bonuses.
+    suffix_set_max: list[dict[str, int]] = [{} for _ in range(n_slots + 1)]
+    for i in range(n_slots - 1, -1, -1):
+        counts = dict(suffix_set_max[i + 1])
+        for key in {c.disc.disc_set for c in candidates[order[i]]
+                    if c.disc.disc_set is not None}:
+            counts[key] = counts.get(key, 0) + 1
+        suffix_set_max[i] = counts
+    static_ub_vec = [
+        [suffix_max[i][k] + static_set_ub[k] for k in range(n_buckets)]
+        for i in range(n_slots + 1)
+    ]
+    # suffix_best[i]: the most linear score order[i:] can still add.
+    suffix_best = [0.0] * (n_slots + 1)
+    if lin is not None:
+        for i in range(n_slots - 1, -1, -1):
+            suffix_best[i] = (suffix_best[i + 1]
+                              + scores[id(candidates[order[i]][0])])
+    # Per Lagrangian form (pass 2): the most order[i:] can still add —
+    # its lists are sorted by DAMAGE score, so take each slot's max.
+    lagrange_suffix = []
+    for _lam, per, _two, _four in lagrange:
+        suffix = [0.0] * (n_slots + 1)
+        for i in range(n_slots - 1, -1, -1):
+            suffix[i] = suffix[i + 1] + max(per[id(c)]
+                                            for c in candidates[order[i]])
+        lagrange_suffix.append(suffix)
+
+    work_buckets = list(base_buckets)
+    work_counts: dict[str, int] = {}
+    combo_stack: list[_Candidate] = []
+    work_score = 0.0
+    work_stat = 0.0
+    slot_entries = [
+        [(c, tuple((k, v) for k, v in enumerate(c.buckets) if v),
+          c.disc.disc_set, scores.get(id(c), 0.0),
+          stat_scores.get(id(c), 0.0))
+         for c in candidates[slot]]
+        for slot in order
+    ]
+    # Per slot, its candidates grouped by set (order kept) — when only one
+    # set can keep a branch acceptable, only that group is walked.
+    slot_groups: list[dict[str | None, list]] = []
+    for entries in slot_entries:
+        groups: dict[str | None, list] = {}
+        for entry in entries:
+            groups.setdefault(entry[2], []).append(entry)
+        slot_groups.append(groups)
+    check_reach = bool(required) or pairs_only
+    # (slot depth, allowed set keys) -> that slot's candidates of those
+    # sets, score order kept — for nodes where every remaining slot must
+    # feed a set requirement.
+    allowed_entries: dict[tuple, list] = {}
+
+    def canonical(combo: tuple) -> tuple:
+        return combo if perm is None else tuple(combo[p] for p in perm)
+
+    def node_set_ub(i: int) -> tuple[list[float], float]:
+        """Set-bonus upper bound (per bucket) for completions of the
+        current partial build: fold every set at the piece count it can
+        still reach, then cap componentwise by the static top-3+4pc
+        bound. The fallback bound's tight half."""
+        suffix_sets = suffix_set_max[i]
+        ub = [0.0] * n_buckets
+        tag_ub = [0.0, 0.0]
+        for key, limit in suffix_sets.items():
+            count = limit + work_counts.get(key, 0)
+            if count >= 2:
+                for k, v in set_2pc_sparse[key]:
+                    ub[k] += v
+            if count >= 4:
+                for k, v in set_4pc_sparse[key]:
+                    ub[k] += v
+                tag_ub[0] += set_tag_bonus[key][0]
+                tag_ub[1] += set_tag_bonus[key][1]
+        for key, count in work_counts.items():
+            if key in suffix_sets:
+                continue        # already counted above
+            if count >= 2:
+                for k, v in set_2pc_sparse[key]:
+                    ub[k] += v
+            if count >= 4:
+                for k, v in set_4pc_sparse[key]:
+                    ub[k] += v
+                tag_ub[0] += set_tag_bonus[key][0]
+                tag_ub[1] += set_tag_bonus[key][1]
+        for k in range(n_buckets):
+            if ub[k] > static_set_ub[k]:
+                ub[k] = static_set_ub[k]
+        return ub, (min(tag_ub[0], static_tag_ub[0]),
+                    min(tag_ub[1], static_tag_ub[1]))
+
+    def set_bound(two: dict, four: dict, static: float):
+        """``fn(i)``: a linear form's upper bound on every completion's
+        set bonuses (count-aware, exact per set) — a small knapsack over
+        the sets the held pieces plus ``order[i:]`` can still complete,
+        with at most ``n_slots - i`` new pieces, capped by the static
+        pattern score. Cached per (depth, held counts)."""
+        cache: dict = {}
+
+        def bound_at(i: int) -> float:
+            state = (i, frozenset(work_counts.items()))
+            hit = cache.get(state)
+            if hit is not None:
+                return hit
+            avail = suffix_set_max[i]
+            room = n_slots - i
+            earned = 0.0
+            best = [0.0] * (room + 1)   # best extra score with <= cap pieces
+            for key in set(avail) | set(work_counts):
+                held = work_counts.get(key, 0)
+                reach = held + avail.get(key, 0)
+                s2, s4 = two.get(key, 0.0), four.get(key, 0.0)
+                if held >= 2:
+                    earned += s2
+                if held >= 4:
+                    earned += s4
+                options = []
+                if held < 2 <= reach:
+                    options.append((2 - held, s2))
+                if held < 4 <= reach:
+                    options.append((4 - held,
+                                    (s2 if held < 2 else 0.0) + s4))
+                if not options:
+                    continue
+                nxt = best[:]
+                for cost, gain in options:
+                    if cost > room or gain <= 0.0:
+                        continue
+                    for cap in range(cost, room + 1):
+                        trial = best[cap - cost] + gain
+                        if trial > nxt[cap]:
+                            nxt[cap] = trial
+                best = nxt
+            value = min(earned + best[room], static)
+            cache[state] = value
+            return value
+
+        return bound_at
+
+    if lin is not None:
+        set_score_ub = set_bound(sc2, sc4, static_set_score)
+    lagrange_sets = [set_bound(two, four, _pattern_score(two, four))
+                     for _lam, _per, two, four in lagrange]
+
+    def lagrange_stat_ub(stat_sum: float, damage_sum: float, i: int,
+                         set_parts: list) -> float:
+        """The smallest Lagrangian bound (§17) on the ranked stat of any
+        completion over ``order[i:]`` reaching the damage floor, given
+        the stat / damage linear sums of the pieces placed so far."""
+        best = math.inf
+        for (lam, *_parts), suffix, set_part in zip(lagrange,
+                                                    lagrange_suffix,
+                                                    set_parts):
+            value = (stat_sum + lam * (damage_sum - log_floor) + suffix[i]
+                     + set_part)
+            if value < best:
+                best = value
+        return best
+
+    def rank_cannot_win(stat_ub: float, damage_log_ub: float) -> bool:
+        """Pass 2: whether a rank bound cannot beat the top-N threshold."""
+        if len(heap) < top_n:
+            return False
+        threshold = heap[0][0]
+        return (combine(stat_ub, damage_log_ub)
+                <= threshold - 1e-12 * abs(threshold))
+
+    def reachable(i: int) -> bool:
+        """Whether the partial build over ``order[:i]`` can still complete
+        into an acceptable build (a necessary condition; exact at the
+        leaves). Required sets: each one's pieces held plus what
+        ``order[i:]`` can still equip must reach its minimum, and the
+        pieces still missing must fit in the slots left (one per slot).
+        2pc priority: no singleton set may be left that no later slot can
+        complete."""
+        suffix_sets = suffix_set_max[i]
+        missing = 0
+        for key, pieces in required.items():
+            held = work_counts.get(key, 0)
+            if held + suffix_sets.get(key, 0) < pieces:
+                return False
+            missing += max(pieces - held, 0)
+        if missing > n_slots - i:
+            return False
         if pairs_only and any(
-            count == 1 and not suffix_set_max[i].get(key)
-            for key, count in work_counts.items()
-        ):
-            return
-        if i == n_slots:
-            if pairs_only and any(c < 2 for c in work_counts.values()):
-                return
-            if evals >= budget:
+                count == 1 and not suffix_sets.get(key)
+                for key, count in work_counts.items()):
+            return False
+        return True
+
+    def child_entries(i: int):
+        """The ``order[i]`` candidates that keep the partial build
+        completable into an acceptable one (exact, like
+        :func:`reachable`, but settled once per node instead of per
+        child): a required set or a 2pc-priority singleton that only this
+        slot can still complete forces ONE set; when the pieces the
+        required sets still miss fill every slot left, this slot must
+        hold one of those sets; under 2pc priority a new set no later
+        slot carries would be left a singleton.
+
+        Returns ``(entries, pair_suffix)``: ``entries`` is ``None`` when
+        no candidate qualifies; ``pair_suffix`` (2pc priority only, else
+        ``None``) is what the later slots can still equip — a candidate
+        opening a NEW set needs a later piece of it."""
+        if not check_reach:
+            return slot_entries[i], None
+        suffix_sets = suffix_set_max[i + 1]
+        pair_suffix = suffix_sets if pairs_only else None
+        need_key = None
+        missing = 0
+        short: list[str] = []         # required sets still below minimum
+        for key, pieces in required.items():
+            held = work_counts.get(key, 0)
+            if held >= pieces:
+                continue
+            have = held + suffix_sets.get(key, 0)
+            if have < pieces - 1:
+                return None, None
+            if have == pieces - 1:     # only this slot can still close it
+                if need_key is not None and need_key != key:
+                    return None, None
+                need_key = key
+            missing += pieces - held
+            short.append(key)
+        room = n_slots - i             # this slot included
+        if missing > room:
+            return None, None
+        if pairs_only:
+            dying = [key for key, count in work_counts.items()
+                     if count == 1 and not suffix_sets.get(key)]
+            if len(dying) > 1:
+                return None, None    # one piece completes only one pair
+            if dying:
+                if need_key is not None and need_key != dying[0]:
+                    return None, None
+                need_key = dying[0]
+        if need_key is not None:
+            if missing == room and need_key not in short:
+                return None, None    # every slot left is spoken for
+            return slot_groups[i].get(need_key), pair_suffix
+        if short and missing == room:
+            if len(short) == 1:
+                return slot_groups[i].get(short[0]), pair_suffix
+            state = (i, tuple(sorted(short)))
+            entries = allowed_entries.get(state)
+            if entries is None:
+                allowed = set(short)
+                entries = [entry for entry in slot_entries[i]
+                           if entry[2] in allowed]
+                allowed_entries[state] = entries
+            return entries, pair_suffix
+        return slot_entries[i], pair_suffix
+
+    def score_cut(i: int, node_score: float, set_ub: float) -> float | None:
+        """The disc score at or below which a child of node ``i`` cannot
+        beat the current threshold (``None`` while the heap is not
+        full). Children are score-sorted, so the loop stops there."""
+        if len(heap) < top_n:
+            return None
+        threshold = heap[0][0]
+        if threshold <= 0.0:
+            return None
+        return (math.log(threshold) - _LOG_MARGIN - node_score - set_ub
+                - suffix_best[i + 1])
+
+    def leaves(i: int, entries, pair_suffix, set_ub: float) -> None:
+        """Evaluate every completion of the current partial build through
+        the LAST slot inline (no call per leaf) — ``entries`` /
+        ``pair_suffix`` from :func:`child_entries`: the set bonuses of the
+        pieces already held are folded once, and each leaf adds only its
+        own disc plus the set tier it completes."""
+        nonlocal evals
+        base_leaf = list(work_buckets)
+        tag0, tag1 = _fold_sets(base_leaf, work_counts,
+                                set_2pc, set_4pc, set_tag_bonus)
+        base_tag = (tag0, tag1)
+        node_score = lin_base + work_score if lin is not None else 0.0
+        stat_node = stat_base + work_stat if combine is not None else 0.0
+        cut = (score_cut(i, node_score, set_ub) if lin_objective
+               else None)
+        leaf_limit = (math.log(heap[0][0]) - _LOG_MARGIN
+                      if lin_objective and len(heap) == top_n
+                      and heap[0][0] > 0.0 else None)
+        floor_cut = (log_floor - node_score - set_ub
+                     if log_floor is not None else None)
+        # A leaf's set state is exact (held pieces + its own), so its set
+        # scores are too: the held sets' scores, plus the tier this piece
+        # completes.
+        if lin is not None:
+            held_dmg = sum((sc2[key] if count >= 2 else 0.0)
+                           + (sc4[key] if count >= 4 else 0.0)
+                           for key, count in work_counts.items())
+            held_stat = (sum((st2[key] if count >= 2 else 0.0)
+                             + (st4[key] if count >= 4 else 0.0)
+                             for key, count in work_counts.items())
+                         if combine is not None else 0.0)
+        for cand, sparse, key, score, stat_score in entries:
+            if cut is not None and score <= cut:
+                break            # score-sorted: no later leaf can win
+            if floor_cut is not None and score < floor_cut:
+                break            # no later leaf reaches the damage floor
+            if (pair_suffix is not None and key is not None
+                    and key not in work_counts):
+                continue         # a new singleton set (2pc priority)
+            if lin is not None:
+                leaf_dmg, leaf_stat = held_dmg, held_stat
+                if key is not None:
+                    count = work_counts.get(key, 0) + 1
+                    if count == 2:
+                        leaf_dmg += sc2[key]
+                        if combine is not None:
+                            leaf_stat += st2[key]
+                    elif count == 4:
+                        leaf_dmg += sc4[key]
+                        if combine is not None:
+                            leaf_stat += st4[key]
+                leaf_log = node_score + score + leaf_dmg
+                if leaf_limit is not None and leaf_log <= leaf_limit:
+                    continue     # its exact linear bound cannot win
+                if log_floor is not None and leaf_log < log_floor:
+                    continue     # cannot reach the damage floor
+                if combine is not None and rank_cannot_win(
+                        stat_node + stat_score + leaf_stat, leaf_log):
+                    continue
+            if evals + probes >= budget:
                 # Anytime behavior: stop and report the best found so far.
                 raise _BudgetExhausted
             evals += 1
-            leaf = list(work_buckets)
-            tagged = _fold_sets(leaf, work_counts,
-                                set_2pc, set_4pc, set_tag_bonus)
+            leaf = base_leaf[:]
+            for k, v in sparse:
+                leaf[k] += v
+            tagged = base_tag
+            if key is not None:
+                count = work_counts.get(key, 0) + 1
+                if count == 2:
+                    for k, v in set_2pc_sparse[key]:
+                        leaf[k] += v
+                elif count == 4:
+                    for k, v in set_4pc_sparse[key]:
+                        leaf[k] += v
+                    extra = set_tag_bonus[key]
+                    tagged = (tag0 + extra[0], tag1 + extra[1])
             value, aux = evaluate(leaf, tagged)
-            if not feasible(leaf, aux):
-                return
-            offer(value, tuple(combo_stack))
+            if len(heap) >= top_n and value <= heap[0][0]:
+                continue         # cannot enter the top-N
+            if feasible(leaf, aux):
+                offer(value, canonical((*combo_stack, cand)))
+                if lin_objective:
+                    cut = score_cut(i, node_score, set_ub)
+                    if len(heap) == top_n and heap[0][0] > 0.0:
+                        leaf_limit = math.log(heap[0][0]) - _LOG_MARGIN
+
+    def quick_infeasible(i: int) -> bool:
+        """Whether even the optimistic per-bucket completion fails a
+        constraint (constraints stay per-stat)."""
+        static_vec = static_ub_vec[i]
+        quick = [work_buckets[k] + static_vec[k] for k in range(n_buckets)]
+        _quick_value, quick_aux = evaluate(quick, static_tag_ub)
+        return not feasible(quick, quick_aux)
+
+    def old_bound_prunes(i: int) -> bool:
+        """The per-stat bound (the fallback without a linear form)."""
+        threshold = heap[0][0] if len(heap) == top_n else None
+        static_vec = static_ub_vec[i]
+        quick = [work_buckets[k] + static_vec[k] for k in range(n_buckets)]
+        quick_value, quick_aux = evaluate(quick, static_tag_ub)
+        if not feasible(quick, quick_aux):
+            return True          # not even the optimistic completion fits
+        if threshold is not None and quick_value <= threshold:
+            return True          # cannot beat the current top-N
+        # The quick bound passed — pay for the tighter count-aware set
+        # bound only when the quick bound is CLOSE to the threshold (a
+        # node far above it descends anyway, so the second bound would be
+        # wasted arithmetic).
+        if (threshold is None
+                or quick_value <= threshold * _TIGHT_BOUND_MARGIN):
+            set_vec, tag_ub = node_set_ub(i)
+            suffix = suffix_max[i]
+            ub = [work_buckets[k] + suffix[k] + set_vec[k]
+                  for k in range(n_buckets)]
+            ub_value, ub_aux = evaluate(ub, tag_ub)
+            if not feasible(ub, ub_aux):
+                return True
+            if threshold is not None and ub_value <= threshold:
+                return True
+        return False
+
+    def dfs(i: int) -> None:
+        nonlocal probes, work_score, work_stat
+        # Every node visit counts toward the budget (bound probes cost
+        # real time too) — so WALL TIME is capped even when the bounds
+        # prune almost every leaf. Reachability is settled by the parent
+        # BEFORE descending, so unreachable children cost no visit.
+        probes += 1
+        if evals + probes >= budget:
+            raise _BudgetExhausted
+        if cancel is not None and not (probes & 255) and cancel.is_set():
+            raise OptimizeCancelled
+        # Which candidates of this slot keep the build acceptable — before
+        # the bound, so a node with none never pays for it.
+        entries, pair_suffix = child_entries(i)
+        if not entries:
             return
-        if bound:
-            threshold = heap[0][0] if len(heap) == top_n else None
-            static_vec = static_ub_vec[i]
-            quick = [work_buckets[k] + static_vec[k]
-                     for k in range(n_buckets)]
-            quick_value, quick_aux = evaluate(quick, static_tag_ub)
-            if not feasible(quick, quick_aux):
-                return           # not even the optimistic completion fits
-            if threshold is not None and quick_value <= threshold:
-                return           # cannot beat the current top-N
-            # The quick bound passed — pay for the tighter count-aware
-            # set bound only when the quick bound is CLOSE to the
-            # threshold (a node far above it descends anyway, so the
-            # second bound would be wasted arithmetic).
-            if (threshold is None
-                    or quick_value <= threshold * _TIGHT_BOUND_MARGIN):
-                set_ub, tag_ub = node_set_ub(i)
-                suffix = suffix_max[i]
-                ub = [work_buckets[k] + suffix[k] + set_ub[k]
-                      for k in range(n_buckets)]
-                ub_value, ub_aux = evaluate(ub, tag_ub)
-                if not feasible(ub, ub_aux):
+        set_ub = 0.0
+        set_parts: list = []
+        node_score = 0.0
+        stat_node = 0.0
+        if bound and lin_objective:
+            if constrained and quick_infeasible(i):
+                return
+            node_score = lin_base + work_score
+            if len(heap) == top_n and heap[0][0] > 0.0:
+                limit = math.log(heap[0][0]) - _LOG_MARGIN
+                if node_score + suffix_best[i] + static_set_score <= limit:
                     return
-                if threshold is not None and ub_value <= threshold:
+                set_ub = set_score_ub(i)
+                if node_score + suffix_best[i] + set_ub <= limit:
                     return
-        for cand, sparse, key in slot_entries[i]:
+            else:
+                set_ub = set_score_ub(i)
+        elif bound:
+            if log_floor is not None:
+                # Maximize-stat pass: no completion reaching the damage
+                # floor -> nothing acceptable below this node.
+                node_score = lin_base + work_score
+                if node_score + suffix_best[i] + static_set_score < log_floor:
+                    return
+                set_ub = set_score_ub(i)
+                if node_score + suffix_best[i] + set_ub < log_floor:
+                    return
+            if combine is not None:
+                # ... and the rank (stat + tie-break damage) bound.
+                if constrained and quick_infeasible(i):
+                    return
+                stat_node = stat_base + work_stat
+                set_parts = [bound_at(i) for bound_at in lagrange_sets]
+                if rank_cannot_win(
+                        lagrange_stat_ub(stat_node, node_score, i, set_parts),
+                        node_score + suffix_best[i] + set_ub):
+                    return
+            elif old_bound_prunes(i):
+                return
+        if i == last:
+            leaves(i, entries, pair_suffix, set_ub)
+            return
+        use_cut = bound and lin_objective
+        cut = score_cut(i, node_score, set_ub) if use_cut else None
+        floor_cut = (log_floor - node_score - set_ub - suffix_best[i + 1]
+                     if bound and log_floor is not None else None)
+        rank_check = bound and combine is not None
+        for cand, sparse, key, score, stat_score in entries:
+            if cut is not None and score <= cut:
+                break            # score-sorted: no later child can win
+            if floor_cut is not None and score < floor_cut:
+                break            # no later child reaches the damage floor
+            if (pair_suffix is not None and key is not None
+                    and key not in work_counts
+                    and not pair_suffix.get(key)):
+                continue         # a singleton no later slot can complete
+            if rank_check and rank_cannot_win(
+                    lagrange_stat_ub(stat_node + stat_score,
+                                     node_score + score, i + 1, set_parts),
+                    node_score + score + suffix_best[i + 1] + set_ub):
+                continue
             for k, v in sparse:
                 work_buckets[k] += v
             if key is not None:
                 work_counts[key] = work_counts.get(key, 0) + 1
+            work_score += score
+            work_stat += stat_score
             combo_stack.append(cand)
             dfs(i + 1)
             combo_stack.pop()
+            work_stat -= stat_score
+            work_score -= score
             if key is not None:
                 work_counts[key] -= 1
                 if not work_counts[key]:
                     del work_counts[key]
             for k, v in sparse:
                 work_buckets[k] -= v
+            if use_cut:
+                cut = score_cut(i, node_score, set_ub)
+
+    def root() -> None:
+        nonlocal evals, probes
+        if check_reach and not reachable(0):
+            return
+        if n_slots:
+            dfs(0)
+            return
+        # No slot to fill: the empty build is the only one.
+        probes += 1
+        if evals + probes >= budget:
+            raise _BudgetExhausted
+        evals += 1
+        leaf = list(work_buckets)
+        value, aux = evaluate(leaf, (0.0, 0.0))
+        if feasible(leaf, aux):
+            offer(value, ())
 
     exhausted = False
-    if slots:
-        seed_incumbents()
-        # Two-stage warm start (wide searches only): the internal fast
-        # pass runs this same function over the top candidates per slot
-        # on a slice of the budget; its winners join the heap as seeds.
-        if (not slot_cap and bound and any(
-                len(candidates[slot]) > _SEED_STAGE_CAP for slot in slots)):
-            stage_heap, stage_evals, _ = _search(
-                {slot: list(candidates[slot]) for slot in slots},
-                list(slots), equipped, base_buckets, evaluate, feasible,
-                set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
-                pairs_only, top_n, min(budget // 2, 2_500_000), True,
-                slot_cap=_SEED_STAGE_CAP,
-            )
-            probes += stage_evals
-            for value, _neg_counter, combo in sorted(stage_heap,
-                                                     reverse=True):
-                offer(value, combo)
     try:
-        dfs(0)
+        root()
     except _BudgetExhausted:
         exhausted = True
     return heap, evals, exhausted
@@ -1485,9 +2430,11 @@ def _search_maximizing(
     set_4pc: dict[str, tuple[float, ...]],
     set_tag_bonus: dict[str, tuple[float, float]],
     candidate_sets: set[str],
-    required: str | None,
+    required: dict[str, int],
     options: OptimizeOptions,
     bound: bool,
+    linearize=None,
+    stat_model: _StatModel | None = None,
 ) -> _SearchOutcome:
     """Run the search, optionally under a maximize-stat objective (§15 E5).
 
@@ -1514,16 +2461,23 @@ def _search_maximizing(
     exact ties in the stat; a stat difference below ``w`` relative counts
     as a tie, which is the documented approximation.
     """
-    def run(cands, ev, fe, budget):
+    def run(cands, ev, fe, budget, lin, constrained, floor=None,
+            rank_bound=None, seeds=()):
         return _search(
             cands, slots, equipped, base_buckets, ev, fe,
             set_2pc, set_4pc, set_tag_bonus, candidate_sets, required,
             options.sets_only, options.top_n, budget, bound,
-            slot_cap=options.candidate_cap,
+            slot_cap=options.candidate_cap, linearize=lin,
+            constrained=constrained, floor=floor, rank_bound=rank_bound,
+            seeds=seeds, cancel=options.cancel,
         )
 
-    heap, evals, exhausted = run(candidates, evaluate, feasible,
-                                 options.combo_budget)
+    # Pass 1 ranks by damage itself, so the mode's log-linear damage
+    # bound (§17) applies; it is only ``constrained`` when a minimum can
+    # reject a build.
+    heap, evals, exhausted = run(
+        candidates, evaluate, feasible, options.combo_budget, linearize,
+        bool(options.min_stats or options.min_panel_stats))
 
     def damage_outcome() -> _SearchOutcome:
         """Pass 1 as the final answer (no maximize stat, or nothing
@@ -1580,11 +2534,35 @@ def _search_maximizing(
             ok = False
         return ok
 
+    # The rank's own bound (§17): the stat's affine upper bound, plus the
+    # tie-break damage term at its log-linear bound.
+    rank_bound = None
+    if stat_model is not None:
+        def stat_upper(x0, lo, hi):
+            return stat_model.upper(stat, x0, lo, hi)
+
+        def combine(stat_ub: float, damage_log_ub: float) -> float:
+            return (stat_ub / stat_ref + _MAXIMIZE_TIE_WEIGHT
+                    * math.exp(damage_log_ub) / damage_ref)
+
+        rank_bound = (stat_upper, combine)
+
     # A fresh candidate dict: _search reorders (and, under a candidate
     # cap, truncates) the lists it is given.
     pass2 = {slot: list(candidates[slot]) for slot in slots}
-    heap2, evals2, exhausted2 = run(pass2, evaluate_stat, feasible_stat,
-                                    options.combo_budget)
+    # Pass 2 ranks by a stat + damage sum, not a log-linear product: the
+    # damage bound (§17) cuts every branch that cannot reach the floor,
+    # and the rank bound every branch that cannot beat the top-N. Only
+    # the user's minimums still need the per-stat feasibility probe.
+    heap2, evals2, exhausted2 = run(
+        pass2, evaluate_stat, feasible_stat, options.combo_budget,
+        linearize,
+        bool(options.min_stats or options.min_panel_stats)
+        if rank_bound is not None else True,
+        floor=floor - abs(floor) * _RECHECK_RTOL, rank_bound=rank_bound,
+        # The damage pass's winners are feasible (their damage is the
+        # ceiling region): strong first incumbents for the stat ranking.
+        seeds=tuple(entry[2] for entry in sorted(heap, reverse=True)))
     return _SearchOutcome(
         heap=heap2, evals=evals + evals2,
         exhausted=exhausted or exhausted2,
@@ -1596,139 +2574,120 @@ def _search_maximizing(
     )
 
 
-def optimize(
-    config: CalcConfig,
-    options: OptimizeOptions | None = None,
-    *,
-    consts: Constants | None = None,
-    disc_data: DiscData | None = None,
-    bosses: dict[str, Boss] | None = None,
-    agents: dict[str, Agent] | None = None,
-    engines: dict[str, Engine] | None = None,
-    disc_sets: dict[str, DiscSet] | None = None,
-    user_discs: dict[str, Disc] | None = None,
-    _prune: bool = True,
-    _bound: bool = True,
-) -> OptimizeResult:
-    """Search every legal combination of the user's discs for the best build.
+def _atk_factors(sheet_base: float, kit_atk_pct: float):
+    """The ATK zone as ``u · v + kit flat ATK`` (§17): ``u`` the sheet
+    ATK (base × (1 + ATK%) + flat), ``v`` the combat ATK% bracket — both
+    affine in the bucket vector, mirroring every fast path's ATK."""
+    u = affine(sheet_base, (_B_ATK_PCT, sheet_base), (_B_ATK_FLAT, 1.0))
+    v = affine(1.0 + kit_atk_pct, (_B_COMBAT_ATK_PCT, 1.0))
+    return u, v
 
-    ``config`` is the exact configuration the user just calculated; only
-    its ``discs`` (and, per the §5 policy, ``set_stacks``) vary during the
-    search. The keyword data arguments allow the UI server/tests to inject
-    already-loaded data, same as :func:`~.api.calculate`. ``_prune`` /
-    ``_bound`` exist for tests proving dominance pruning and the
-    branch-and-bound cut never change the answer.
 
-    Raises:
-        OptimizeError: unknown objective/assumption/constraint, bad
-            options, a search exceeding ``options.combo_budget``
-            evaluations, or ``min_stats`` no combination can meet.
-        CalcError / DiscError / AgentError: the baseline config itself is
-            invalid (same errors ``calculate`` would raise).
-    """
-    options = options if options is not None else OptimizeOptions()
-    required = _validate_options(options, OBJECTIVES)
+def _deferred_params(deferred_cd: list) -> list[tuple]:
+    """Total-CRIT-DMG-scaled kit effects (Anby S's Silver Star) as the
+    ``(stacks, base, threshold, per_step, per_value, cap)`` tuples
+    :func:`~.linear_bound.crit_zone_log_upper` takes."""
+    return [(p["stacks"], p["scaling"].base, p["scaling"].threshold,
+             p["scaling"].per_step, p["scaling"].per_value, p["scaling"].cap)
+            for p in deferred_cd]
 
-    consts = consts if consts is not None else load_constants()
-    disc_data = disc_data if disc_data is not None else load_disc_data()
-    bosses = bosses if bosses is not None else load_bosses()
-    agents = agents if agents is not None else load_agents()
-    engines = engines if engines is not None else load_engines()
-    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
-    if user_discs is None:
-        user_discs = load_user_discs(disc_data)
 
-    data = dict(consts=consts, disc_data=disc_data, bosses=bosses,
-                agents=agents, engines=engines, disc_sets=disc_sets)
-
-    if required is not None and required not in disc_sets:
-        raise OptimizeError(
-            f"Unknown required set '{required}'; options: {sorted(disc_sets)}"
-        )
-    _validate_slot_mains(options, disc_data)
-
-    # --- Baseline: validates the whole config (discs included) ------------
-    baseline_results = calculate(config, **data)
-    baseline_value = getattr(baseline_results, options.objective)
-    equipped = {d.slot: d for d in config.discs}
-    agent = agents[config.agent_key]
-    # Lumiflux (Attribute Mutation): the element this agent's damage
-    # is dealt as — her own attribute for everyone else.
-    attr = attack_element(agent, config)
-    # Self-scaling kit inputs (the MAIN's own panel values) become
-    # minimum-stat constraints — the buff amount is a constant, so no
-    # build may fall short of the panel the user claimed.
-    options = _apply_scaling_input_minimums(agent, config, options,
-                                            CONSTRAINT_STATS)
-
-    # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
-    dominance_indices = _dominance_indices(
-        _DAMAGE_INDICES, _watched_stats(options))
-    candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, attr, options,
-        dominance_indices, _prune,
+def _add_crit_zone(lb: LogLinear, variant: str, rate_base: float,
+                   cap: float, dmg_base: float, deferred_cd: list,
+                   x0, lo, hi) -> None:
+    """Add the crit zone's log bound (§17) for ``variant`` (non_crit /
+    crit / average): CRIT Rate = ``rate_base`` + bucket, CRIT DMG =
+    ``dmg_base`` + bucket before the total-scaled kit effects."""
+    zone = crit_zone_log_upper(
+        variant, affine(rate_base, (_B_CRIT_RATE, 1.0)), cap,
+        affine(dmg_base, (_B_CRIT_DMG, 1.0)), _deferred_params(deferred_cd),
+        x0, lo, hi,
     )
+    if zone is not None:
+        lb.add_linear(zone)
 
-    slots = sorted(candidates)
 
-    if required is not None:
-        equippable = sum(
-            1 for slot in slots
-            if any(c.disc.disc_set == required for c in candidates[slot])
-        )
-        if equippable < 4:
-            raise OptimizeError(
-                f"Cannot build 4 pieces of '{disc_sets[required].name}': "
-                f"only {equippable} slot(s) have a saved piece of it "
-                f"(locked slots included)"
-            )
+def _add_def_zone(lb: LogLinear, enemy_def: float, def_red: float,
+                  pen_ratio_const: float, level_coef: float, lo, hi) -> None:
+    """Add the DEF zone's log bound (§17), mirroring
+    :func:`~.formulas.effective_def`: ``max(A·(1 − PEN Ratio) − PEN, 0)``
+    with ``A`` the reduced enemy DEF is ``max(A − s, 0)`` for
+    ``s = A·PEN Ratio + PEN``."""
+    armor = enemy_def * (1.0 - def_red)
+    s = affine(armor * pen_ratio_const, (_B_PEN_RATIO, armor),
+               (_B_PEN_FLAT, 1.0))
+    lb.add_log_def(s, armor, level_coef, lo, hi)
 
-    # --- Constant factors (disc-independent, mirrors api.calculate) -------
-    engine_key = (config.engine_key if config.engine_key is not None
-                  else agent.default_engine)
-    engine = engines[engine_key]
-    boss = bosses[config.boss_name]
-    rank = _resolve_engine_rank(engine, config.engine_rank)
+
+@dataclass(frozen=True)
+class _ModeModel:
+    """What one calc mode contributes to the shared optimizer (§17).
+
+    Everything else — validation, candidates, the §5 set policy, the
+    search, the §4 re-check and the result — is mode-independent
+    (:func:`_optimize`).
+
+    Attributes:
+        damage_indices: Buckets the mode's damage reads (dominance).
+        evaluate: Fast path ``(buckets, tagged) -> (value, None)``,
+            mirroring the mode's ``calculate*`` exactly.
+        linearize: ``(x0, lo, hi) -> (c0, w) | None`` — the log-linear
+            damage bound (:func:`_search`).
+        stats: The constraint / maximize-stat totals.
+        anomaly_sets: Set bonuses follow the anomaly rules — no
+            skill-tag-gated 2pc DMG% (no hit tag), and a 4pc's
+            Anomaly-Buff part fills the second tag channel.
+    """
+
+    damage_indices: tuple[int, ...]
+    evaluate: object
+    linearize: object
+    stats: _StatModel
+    anomaly_sets: bool = False
+
+
+def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
+                    attr: str, engine: Engine, boss: Boss, rank: int,
+                    data: dict, sheer: bool) -> _ModeModel:
+    """Direct hits (mirrors :func:`~.api.calculate`) or — ``sheer`` —
+    Rupture's Sheer damage (mirrors :func:`~.api.calculate_sheer`): the
+    same crit-able hit, with Sheer Force for ATK, the dedicated Sheer DMG
+    bracket, and no DEF zone."""
+    consts = data["consts"]
+    mode = "sheer" if sheer else "direct"
     # Kit is computed with discs=[] so a set's DISC-dependent auto 4pc DMG%
     # (Wuthering Salon, Phaethon's Melody) is excluded here and folded per
     # combo via set_tag_bonus instead — otherwise a combination that newly
     # forms such a set would be mis-valued (its auto DMG% would be missing).
-    # ``mode``/``dealt_element`` MUST mirror calculate() (api.py) — element-
-    # gated kit effects (e.g. Rina's +10% electric core passive, "squad
-    # Electric DMG") are dropped without the dealt element, silently omitting
-    # them from every fast-path build.
+    # ``mode``/``dealt_element`` MUST mirror the calculation — element-gated
+    # kit effects (e.g. Rina's +10% electric core passive, "squad Electric
+    # DMG") are dropped without the dealt element, silently omitting them
+    # from every fast-path build; they stay element-checked in sheer mode.
     kit = _kit_contributions(agent, replace(config, discs=[]),
-                             agents, disc_sets, engines,
-                             mode="direct", dealt_element=attr)
-
-    base_buckets = _bucket_vector(engine.advanced_stat)
-    panel_consts = _panel_constants(agent, engine, consts)
+                             data["agents"], data["disc_sets"],
+                             data["engines"], mode=mode, dealt_element=attr)
 
     base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
     base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
     kit_flat_atk = kit["flat_atk"]
+
+    def engine_part(bracket: str = "dmg_bonus") -> float:
+        return _engine_buff_bonus(
+            engine, config.engine_buff_stacks, attr, rank, mode=mode,
+            bracket=bracket, skill_tag=config.skill_tag,
+            counts_as_aftershock=config.counts_as_aftershock)
+
     # Engine always-on CRIT Rate (Qingming Birdcage) and CRIT DMG (Severed
-    # Innocence) join the crit totals exactly as in calculate(); same for
-    # the crit_dmg / crit_rate bracket conditional parts (Heartstring
+    # Innocence) join the crit totals exactly as in the calculation; same
+    # for the crit_dmg / crit_rate bracket conditional parts (Heartstring
     # Nocturne, Deep Sea Visitor).
-    crit_rate_const = (
-        config.external_crit_rate + kit["crit_rate"]
-        + engine.passive_crit(rank)
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, bracket="crit_rate",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-    )
-    crit_dmg_const = (
-        config.external_crit_dmg + kit["crit_dmg"]
-        + engine.passive_crit_dmg(rank)
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, bracket="crit_dmg",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-    )
+    crit_rate_const = (config.external_crit_rate + kit["crit_rate"]
+                       + engine.passive_crit(rank) + engine_part("crit_rate"))
+    crit_dmg_const = (config.external_crit_dmg + kit["crit_dmg"]
+                      + engine.passive_crit_dmg(rank)
+                      + engine_part("crit_dmg"))
     # Anby S's Silver Star takes a share of the CRIT DMG TOTAL, so it
     # cannot be folded into the constant — it scales with the candidate
     # build's own CRIT DMG rolls (see api._resolve_deferred_crit_dmg).
@@ -1740,42 +2699,39 @@ def optimize(
             return total
         return total + sum(p["scaling"].resolve(total) * p["stacks"]
                            for p in deferred_cd)
+
     # Kit/support PEN Ratio (e.g. Rina's squad PEN Ratio) — a constant that
     # calculate() folds into the DEF zone (build.pen_ratio + kit pen_ratio);
     # the fast path must too, or a support granting PEN Ratio under-values
     # every build's DefMult (PEN interacts non-linearly, so it is not a flat
     # scalar — hence the §4 re-check catches the omission). Same for enemy
-    # DEF reduction (Qingyi M1), a separate factor in the DEF zone.
+    # DEF reduction (Qingyi M1), a separate factor in the DEF zone. Sheer
+    # has no DEF zone; there PEN Ratio is a constraint stat only.
     pen_ratio_const = kit["pen_ratio"] + agent.core_bonus_pen_ratio
     def_red_const = kit["def_red"]
-    # AP is inert for direct-hit damage, but the constraint / maximize-stat
-    # total must be the SAME number the other modes report (engine passive
-    # and kit/external AP included) — an agent whose other hit scales with
-    # AP is exactly why a direct-hit search would ask for it.
-    ap_const = (agent.base_anomaly_proficiency
-                + agent.core_bonus_anomaly_proficiency
-                + engine.passive_ap(rank)
-                + kit["anomaly_proficiency"]
-                + config.external_anomaly_proficiency)
-    am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
-    # HP/DEF/Impact/Energy-Regen panel pieces, read only by the min-stat
-    # constraints (inert for direct-hit damage): HP composes like the
-    # sheer panel; the others are agent base × (1 + % total).
+    # HP side: sheet HP% scales the base bucket only, flat HP is added
+    # after it, and kit/team HP% (Lucia, Dreamlit Hearth) multiplies the
+    # FINISHED panel — the combat HP bracket, mirroring aggregate_build +
+    # calculate_sheer. Inert for direct-hit damage (constraints only).
     hp_base = agent.total_base_hp()
     core_hp_pct = agent.core_bonus_hp_pct
     kit_hp_mult = 1.0 + kit["hp_pct"]
-    def_base = agent.base_def
-    impact_base = agent.base_impact + agent.core_bonus_impact
-    er_base = agent.base_energy_regen + agent.core_bonus_energy_regen
+    sf_atk_conv = consts.sheer_force_atk_conversion if sheer else 0.0
+    sf_hp_conv = agent.sheer_force_hp_conversion if sheer else 0.0
+    flat_sf_const = (config.sheer_force_flat + kit["sheer_force"]
+                     if sheer else 0.0)
     bonus_const = (
         sum(config.external_dmg_bonuses)
         + sum(_engine_passive_bonuses(engine, attr, rank))
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank,
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
+        + engine_part()
         + sum(kit["dmg_bonus"])
     )
+    # Dedicated Sheer DMG bracket constants (manual entries + kit + engine
+    # buff parts — e.g. Qingming Birdcage's tag-gated Sheer DMG stacks);
+    # the disc side (Yunkui Tales 4pc at max stacks) arrives per combo via
+    # the _B_SHEER_DMG bucket.
+    sheer_const = (sum(config.external_sheer_dmg) + sum(kit["sheer_dmg"])
+                   + engine_part("sheer_dmg")) if sheer else 0.0
     level_coef = consts.level_coefficient(agent.level)
     crit_cap = consts.crit_rate_cap
     res = formulas.res_mult(
@@ -1790,16 +2746,342 @@ def optimize(
         if config.stun_multiplier_override is not None
         else boss.stun_dmg_multiplier
     )
-    stunned = options.objective.endswith("_stunned")
     stun = formulas.stun_mult(
-        stunned, stun_base,
+        objective.endswith("_stunned"), stun_base,
         list(config.external_daze_bonuses) + kit["daze_bonus"],
     )
-    crit_variant = options.objective.replace("_stunned", "")
+    crit_variant = objective.replace("_stunned", "")
     const_mult = res * taken * stun * config.skill_multiplier
 
-    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, float]:
-        """Fast path: (objective value, final ATK) of one bucket total."""
+    def crit_mult_of(buckets: list[float]) -> float:
+        if crit_variant == "non_crit":
+            return 1.0
+        crit_dmg = with_deferred_cd(
+            base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
+        if crit_variant == "crit":
+            return 1.0 + crit_dmg
+        crit_rate = base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
+        return 1.0 + min(max(crit_rate, 0.0), crit_cap) * crit_dmg
+
+    def atk_of(buckets: list[float]) -> float:
+        atk_pre_combat = (
+            agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
+            + buckets[_B_ATK_FLAT]
+        )
+        return (atk_pre_combat
+                * (1.0 + buckets[_B_COMBAT_ATK_PCT] + kit_atk_pct)
+                + kit_flat_atk)
+
+    if sheer:
+        def evaluate(buckets: list[float], tagged: tuple[float, float]):
+            """Fast path: Sheer damage of one bucket total (NO DEF zone:
+            calculate_sheer uses defense = 1.0)."""
+            hp_total = (
+                hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
+                + buckets[_B_HP_FLAT]
+            ) * kit_hp_mult
+            sf = (atk_of(buckets) * sf_atk_conv + hp_total * sf_hp_conv
+                  + flat_sf_const)
+            # Only the DMG% channel matters here: the anomaly-bracket
+            # channel exists in anomaly modes only.
+            bonus = (1.0 + buckets[_B_ATTR_DMG] + buckets[_B_GEN_DMG]
+                     + bonus_const + tagged[0])
+            sheer_mult = 1.0 + sheer_const + buckets[_B_SHEER_DMG]
+            return (sf * crit_mult_of(buckets) * bonus * sheer_mult
+                    * const_mult), None
+    else:
+        def evaluate(buckets: list[float], tagged: tuple[float, float]):
+            """Fast path: the objective value of one bucket total."""
+            # Only the DMG% channel matters here: the anomaly-bracket
+            # channel exists in anomaly modes only.
+            bonus = (1.0 + buckets[_B_ATTR_DMG] + buckets[_B_GEN_DMG]
+                     + bonus_const + tagged[0])
+            eff_def = formulas.effective_def(
+                boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
+                buckets[_B_PEN_FLAT], def_red=def_red_const
+            )
+            defense = level_coef / (level_coef + eff_def)
+            return (atk_of(buckets) * crit_mult_of(buckets) * bonus
+                    * defense * const_mult), None
+
+    def linearize(x0, lo, hi):
+        """``(c0, w)`` with ``log(evaluate) <= c0 + w · x`` on the box
+        (§17), zone by zone; ``None`` when a precondition fails. Sheer
+        Force is ``conv · (u·v + kit flat ATK) + HP part + flat SF``: with
+        no HP conversion it is the ATK product shifted by a constant
+        (concave in log); with one, a McCormick plane bounds ``u·v`` and
+        the whole Sheer Force becomes affine."""
+        if const_mult <= 0:
+            return None
+        lb = LogLinear(_N_LINEAR)
+        try:
+            lb.add_const(math.log(const_mult))
+            u, v = _atk_factors(agent_plus_engine_atk, kit_atk_pct)
+            if not sheer:
+                lb.add_log_product(u, v, kit_flat_atk, x0, lo, hi)
+            elif sf_hp_conv == 0 and sf_atk_conv > 0:
+                lb.add_const(math.log(sf_atk_conv))
+                lb.add_log_product(u, v,
+                                   kit_flat_atk + flat_sf_const / sf_atk_conv,
+                                   x0, lo, hi)
+            else:
+                hp_scale = hp_base * kit_hp_mult
+                hp = affine(hp_scale * (1.0 + core_hp_pct),
+                            (_B_HP_PCT, hp_scale), (_B_HP_FLAT, kit_hp_mult))
+                sheer_force = affine_combine(
+                    (sf_atk_conv, mccormick_upper(u, v, x0, lo, hi)),
+                    (sf_hp_conv, hp),
+                    const=sf_atk_conv * kit_flat_atk + flat_sf_const,
+                )
+                lb.add_log_affine(sheer_force, x0)
+            _add_crit_zone(lb, crit_variant, base_crit_rate + crit_rate_const,
+                           crit_cap, base_crit_dmg + crit_dmg_const,
+                           deferred_cd, x0, lo, hi)
+            lb.add_log_affine(affine(1.0 + bonus_const, (_B_ATTR_DMG, 1.0),
+                                     (_B_GEN_DMG, 1.0), (_T_DMG, 1.0)), x0)
+            if sheer:
+                lb.add_log_affine(affine(1.0 + sheer_const,
+                                         (_B_SHEER_DMG, 1.0)), x0)
+            else:
+                _add_def_zone(lb, boss.base_def, def_red_const,
+                              pen_ratio_const, level_coef, lo, hi)
+        except LinearBoundError:
+            return None
+        return lb.c0, lb.w
+
+    if sheer:
+        # HP only matters when the agent converts it to Sheer Force; for a
+        # pure-ATK rupture agent the HP buckets must NOT weaken the
+        # dominance pruning (an HP-heavy disc adds nothing there). PEN is
+        # absent: Sheer has no DEF zone, so a PEN-heavy disc is correctly
+        # dominated.
+        damage_indices = _SHEER_DAMAGE_INDICES + (
+            _SHEER_HP_INDICES if agent.sheer_force_hp_conversion > 0 else ())
+    else:
+        damage_indices = _DAMAGE_INDICES
+    # AP is inert for direct-hit / Sheer damage, but the constraint /
+    # maximize-stat total must be the SAME number the other modes report
+    # (engine passive and kit/external AP included) — an agent whose other
+    # hit scales with AP is exactly why such a search would ask for it.
+    stats = _StatModel(
+        atk_base=agent_plus_engine_atk, kit_atk_pct=kit_atk_pct,
+        kit_flat_atk=kit_flat_atk, hp_base=hp_base, core_hp_pct=core_hp_pct,
+        kit_hp_mult=kit_hp_mult, def_base=agent.base_def,
+        crit_rate_base=base_crit_rate, crit_rate_extra=crit_rate_const,
+        crit_dmg_base=base_crit_dmg, crit_dmg_extra=crit_dmg_const,
+        deferred_cd=tuple(deferred_cd), pen_ratio_base=pen_ratio_const,
+        impact_base=agent.base_impact + agent.core_bonus_impact,
+        er_base=agent.base_energy_regen + agent.core_bonus_energy_regen,
+        ap_base=(agent.base_anomaly_proficiency
+                 + agent.core_bonus_anomaly_proficiency
+                 + engine.passive_ap(rank)
+                 + kit["anomaly_proficiency"]
+                 + config.external_anomaly_proficiency),
+        am_base=agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery,
+        sf_atk_conv=sf_atk_conv, sf_hp_conv=sf_hp_conv, sf_flat=flat_sf_const,
+    )
+    return _ModeModel(damage_indices, evaluate, linearize, stats)
+
+
+def _direct_model(config, objective, agent, attr, engine, boss, rank, data,
+                  anomaly_data) -> _ModeModel:
+    """Direct hits (mirrors :func:`~.api.calculate`)."""
+    return _crit_hit_model(config, objective, agent, attr, engine, boss,
+                           rank, data, sheer=False)
+
+
+def _sheer_model(config, objective, agent, attr, engine, boss, rank, data,
+                 anomaly_data) -> _ModeModel:
+    """Sheer / Rupture damage (mirrors :func:`~.api.calculate_sheer`)."""
+    return _crit_hit_model(config, objective, agent, attr, engine, boss,
+                           rank, data, sheer=True)
+
+
+def _anomaly_model(config, objective, agent, attr, engine, boss, rank, data,
+                   anomaly_data) -> _ModeModel:
+    """The anomaly family (mirrors :func:`~.api.calculate_anomaly` for the
+    config's mode: plain anomaly / Abloom / Disorder / Polarity Disorder /
+    Vortex / Luminize)."""
+    consts = data["consts"]
+    # --- Which anomaly / element is dealt (disc-independent; the baseline
+    # already validated every mode input, so these lookups can't fail) -----
+    if config.vortex_infused is not None:
+        rule = anomaly_data.vortex[config.vortex_infused.lower()]
+        kind, dealt_element, hits = "vortex", config.vortex_infused.lower(), 1
+    elif config.disorder_replaced is not None:
+        replaced_key = config.disorder_replaced.lower()
+        rule = anomaly_data.disorder[replaced_key]
+        kind, dealt_element, hits = "disorder", replaced_key, 1
+    elif config.abloom:
+        abloom_key = (config.abloom_element or attr).lower()
+        anomaly = anomaly_data.anomalies[abloom_key]
+        kind, dealt_element, hits = "anomaly", abloom_key, 1
+    else:
+        # An override Abloom may resolve another attribute's anomaly
+        # (abloom_element) — mirrors calculate_anomaly.
+        element_key = attr
+        if (config.anomaly_mult_override is not None
+                and config.abloom_element is not None):
+            element_key = config.abloom_element.lower()
+        anomaly = anomaly_data.anomalies[element_key]
+        kind, dealt_element, hits = "anomaly", element_key, anomaly.hits
+    if config.luminize is not None:
+        # LUMINIZE: the instance keeps the stored anomaly's element (this
+        # attacker's own attribute) but replaces its proc count — one per
+        # stored Voidflare. The multiplier is substituted further down.
+        hits = config.luminize.voidflares
+    # Build Attribute DMG% (disc + set + engine advanced) only counts when
+    # the burst deals the agent's OWN attribute — mirrors calculate_anomaly.
+    # In Luminize mode it does apply: the DMG% comes from THIS agent, the
+    # one whose Refringed anomaly the Voidflare stored.
+    attr_dmg_applies = (dealt_element == attr)
+
+    # Kit is computed with discs=[] so its DISC-dependent part (a set's auto
+    # 4pc DMG%, e.g. Wuthering Salon) is excluded here and folded per combo
+    # via set_tag_bonus instead — the rest of the kit is disc-independent.
+    kit = _kit_contributions(
+        agent, replace(config, discs=[]), data["agents"], data["disc_sets"],
+        data["engines"], mode=kind, dealt_element=dealt_element,
+    )
+
+    agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
+    kit_atk_pct = kit["atk_pct"]
+    kit_flat_atk = kit["flat_atk"]
+    pen_ratio_const = kit["pen_ratio"] + agent.core_bonus_pen_ratio
+    def_red_const = kit["def_red"]
+    ap_const = (agent.base_anomaly_proficiency
+                + agent.core_bonus_anomaly_proficiency
+                + engine.passive_ap(rank)
+                + kit["anomaly_proficiency"]
+                + config.external_anomaly_proficiency
+                # Engine conditional flat AP (Weeping Gemini's stacks) —
+                # constant here, exactly as in calculate_anomaly's segments.
+                + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                                     dealt_element, rank, mode=kind,
+                                     bracket="anomaly_proficiency"))
+    bonus_const = (
+        sum(config.external_dmg_bonuses)
+        + sum(_engine_passive_bonuses(engine, dealt_element, rank))
+        + _engine_buff_bonus(engine, config.engine_buff_stacks,
+                             dealt_element, rank, mode=kind)
+        + sum(kit["dmg_bonus"])
+    )
+
+    # Separate Anomaly/Disorder "Buff Multiplier" bracket (constant).
+    # Luminize takes it from the PROVIDER instead — the attacker's own
+    # anomaly-DMG sources never reach it (mirrors calculate_anomaly).
+    if config.luminize is not None:
+        abuff_entries = list(config.luminize.anomaly_dmg_bonuses)
+    else:
+        abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
+        engine_abuff = _engine_buff_bonus(
+            engine, config.engine_buff_stacks, dealt_element, rank,
+            mode=kind, bracket="anomaly_buff",
+        )
+        if engine_abuff:
+            abuff_entries.append(engine_abuff)
+    abuff = formulas.anomaly_buff_mult(abuff_entries)
+
+    level_mult = consts.anomaly_level_multiplier(agent.level)
+    level_coef = consts.level_coefficient(agent.level)
+    crit_cap = consts.crit_rate_cap
+    luminize_res = (
+        data["agents"][config.luminize.provider_key].luminize.m1_res_ignore
+        if (config.luminize is not None and config.luminize.res_ignore)
+        else 0.0)
+    res = formulas.res_mult(
+        boss.res_for(dealt_element),
+        res_ignore=(config.external_res_shred + kit["res_shred"]
+                    + luminize_res),
+    )
+    taken = formulas.dmg_taken_mult(
+        list(config.external_dmg_taken) + kit["dmg_taken"]
+    )
+    stun_base = (
+        config.stun_multiplier_override
+        if config.stun_multiplier_override is not None
+        else boss.stun_dmg_multiplier
+    )
+    stun = formulas.stun_mult(
+        objective.endswith("_stunned"), stun_base,
+        list(config.external_daze_bonuses) + kit["daze_bonus"],
+    )
+    # "full" multiplies the per-proc value by the anomaly's proc count.
+    hits_factor = hits if objective.startswith("full") else 1
+    # Refringe (Lumiflux teammate) is a kit constant in its own zone —
+    # disc-independent, so it folds straight into the outer product.
+    refringe = formulas.refringe_mult([kit["refringe"]])
+    # Anomaly crit (Phoenix's Sear): the objectives are the EXPECTED value,
+    # and the rate/dmg are kit constants (her CRIT Rate reads the CLAIMED
+    # initial AM, which _apply_scaling_input_minimums turned into a panel
+    # minimum) — so the zone is one more disc-independent factor.
+    anomaly_crit = formulas.crit_mult_average(
+        kit["anomaly_crit_rate"], kit["anomaly_crit_dmg"], crit_cap)
+    outer = (level_mult * res * taken * stun * hits_factor * refringe
+             * anomaly_crit)
+
+    # --- Per-proc / burst multiplier (constant, or AP-scaled per build) ----
+    # ``mult_affine`` is the same multiplier as an affine function of the
+    # buckets, for the linear bound (§17).
+    disorder_additive = config.external_disorder_mult_add + kit["disorder_mult_add"]
+    if config.luminize is not None:
+        # Constant: it depends on the PROVIDER's AP, not on this build.
+        provider = data["agents"][config.luminize.provider_key]
+        luminize_mult = provider.luminize.multiplier(
+            config.luminize.skill, config.luminize.anomaly_proficiency,
+            m4=config.luminize.m4)
+        def mult_of_ap(ap: float) -> float:
+            return luminize_mult
+        mult_affine = affine(luminize_mult)
+    elif kind == "vortex":
+        const_mult = formulas.burst_conversion_mult(
+            rule.mult, rule.time_mult, rule.window,
+            config.disorder_elapsed_seconds, extra_mult=disorder_additive,
+        )
+        def mult_of_ap(ap: float) -> float:
+            return const_mult
+        mult_affine = affine(const_mult)
+    elif kind == "disorder" and config.polarity_disorder:
+        base_disorder = formulas.burst_conversion_mult(
+            rule.base, rule.time_mult, rule.window,
+            config.disorder_elapsed_seconds, extra_mult=0.0,
+        )
+        polarity = anomaly_data.polarity
+        polarity_coeff = polarity.coefficient(config.polarity_special_level)
+        def mult_of_ap(ap: float) -> float:
+            return (polarity.fraction * base_disorder
+                    + disorder_additive + polarity_coeff * (ap / 100.0))
+        mult_affine = affine(
+            polarity.fraction * base_disorder + disorder_additive
+            + polarity_coeff * ap_const / 100.0,
+            (_B_AP, polarity_coeff / 100.0))
+    elif kind == "disorder":
+        const_mult = formulas.burst_conversion_mult(
+            rule.base, rule.time_mult, rule.window,
+            config.disorder_elapsed_seconds, extra_mult=disorder_additive,
+        )
+        def mult_of_ap(ap: float) -> float:
+            return const_mult
+        mult_affine = affine(const_mult)
+    elif config.abloom:
+        mv = anomaly_data.abloom.mv_per_10_ap[dealt_element]
+        m2 = (anomaly_data.abloom.m2_factor if config.mindscapes.get(2)
+              else 1.0)
+        abloom_base = anomaly.mult * (mv / 100.0) * m2
+        def mult_of_ap(ap: float) -> float:
+            return abloom_base * (ap / 10.0)
+        mult_affine = affine(abloom_base * ap_const / 10.0,
+                             (_B_AP, abloom_base / 10.0))
+    else:
+        const_mult = (config.anomaly_mult_override
+                      if config.anomaly_mult_override is not None
+                      else anomaly.mult)
+        def mult_of_ap(ap: float) -> float:
+            return const_mult
+        mult_affine = affine(const_mult)
+
+    def evaluate(buckets: list[float], tagged: tuple[float, float]):
+        """Fast path: the objective value of one bucket total."""
         atk_pre_combat = (
             agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
             + buckets[_B_ATK_FLAT]
@@ -1809,56 +3091,198 @@ def optimize(
             * (1.0 + buckets[_B_COMBAT_ATK_PCT] + kit_atk_pct)
             + kit_flat_atk
         )
-        if crit_variant == "non_crit":
-            crit_mult = 1.0
-        else:
-            crit_dmg = with_deferred_cd(
-                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
-            if crit_variant == "crit":
-                crit_mult = 1.0 + crit_dmg
-            else:
-                crit_rate = (base_crit_rate + buckets[_B_CRIT_RATE]
-                             + crit_rate_const)
-                crit_mult = 1.0 + min(max(crit_rate, 0.0), crit_cap) * crit_dmg
-        # Only the DMG% channel matters here: the anomaly-bracket
-        # channel exists in anomaly modes only.
-        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged[0]
+        ap_total = ap_const + buckets[_B_AP]
+        bonus = 1.0 + bonus_const + tagged[0] + buckets[_B_GEN_DMG]
+        if attr_dmg_applies:
+            bonus += buckets[_B_ATTR_DMG]
+        # A 4pc part in the separate Anomaly Buff bracket (Feathered Fate
+        # on a Lumiflux wearer) joins abuff, not the DMG% bracket.
+        set_abuff = abuff + tagged[1]
         eff_def = formulas.effective_def(
             boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
-            buckets[_B_PEN_FLAT], def_red=def_red_const
+            buckets[_B_PEN_FLAT], def_red=def_red_const,
         )
         defense = level_coef / (level_coef + eff_def)
-        return atk_total * crit_mult * bonus * defense * const_mult, atk_total
+        value = (mult_of_ap(ap_total) * atk_total * formulas.ap_mult(ap_total)
+                 * bonus * set_abuff * defense * outer)
+        return value, None
 
-    def stat_total(stat: str, buckets: list[float], atk_total: float) -> float:
+    def linearize(x0, lo, hi):
+        """``(c0, w)`` with ``log(evaluate) <= c0 + w · x`` on the box
+        (§17): the anomaly product is mult(AP) × ATK × AP/100 × DMG% ×
+        Anomaly Buff × DEF × the constant outer zones, and every factor
+        but ATK and DEF is affine in the buckets."""
+        if outer <= 0:
+            return None
+        lb = LogLinear(_N_LINEAR)
+        try:
+            lb.add_const(math.log(outer) - math.log(100.0))
+            lb.add_log_affine(mult_affine, x0)
+            lb.add_log_affine(affine(ap_const, (_B_AP, 1.0)), x0)
+            u, v = _atk_factors(agent_plus_engine_atk, kit_atk_pct)
+            lb.add_log_product(u, v, kit_flat_atk, x0, lo, hi)
+            attr_term = ((_B_ATTR_DMG, 1.0),) if attr_dmg_applies else ()
+            lb.add_log_affine(affine(1.0 + bonus_const, (_T_DMG, 1.0),
+                                     (_B_GEN_DMG, 1.0), *attr_term), x0)
+            lb.add_log_affine(affine(abuff, (_T_ANOM, 1.0)), x0)
+            _add_def_zone(lb, boss.base_def, def_red_const, pen_ratio_const,
+                          level_coef, lo, hi)
+        except LinearBoundError:
+            return None
+        return lb.c0, lb.w
+
+    # HP/DEF/Impact/Energy-Regen/CRIT totals are read only by the min-stat
+    # constraints (inert for anomaly damage; anomaly crit comes from the
+    # kit, never from disc CRIT).
+    stats = _StatModel(
+        atk_base=agent_plus_engine_atk, kit_atk_pct=kit_atk_pct,
+        kit_flat_atk=kit_flat_atk, hp_base=agent.total_base_hp(),
+        core_hp_pct=agent.core_bonus_hp_pct,
+        kit_hp_mult=1.0 + kit["hp_pct"], def_base=agent.base_def,
+        crit_rate_base=consts.base_crit_rate + agent.core_bonus_crit_rate,
+        crit_rate_extra=config.external_crit_rate + kit["crit_rate"],
+        crit_dmg_base=consts.base_crit_dmg + agent.core_bonus_crit_dmg,
+        crit_dmg_extra=config.external_crit_dmg + kit["crit_dmg"],
+        deferred_cd=(), pen_ratio_base=pen_ratio_const,
+        impact_base=agent.base_impact + agent.core_bonus_impact,
+        er_base=agent.base_energy_regen + agent.core_bonus_energy_regen,
+        ap_base=ap_const,
+        am_base=agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery,
+    )
+    damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
+                      else _ANOMALY_DAMAGE_INDICES_NO_ATTR)
+    return _ModeModel(damage_indices, evaluate, linearize, stats,
+                      anomaly_sets=True)
+
+
+def _optimize(
+    config: CalcConfig,
+    options: OptimizeOptions,
+    *,
+    objectives: tuple,
+    constraint_stats: tuple,
+    calc_name: str,
+    calc,
+    build_model,
+    consts: Constants | None,
+    disc_data: DiscData | None,
+    bosses: dict[str, Boss] | None,
+    agents: dict[str, Agent] | None,
+    engines: dict[str, Engine] | None,
+    disc_sets: dict[str, DiscSet] | None,
+    anomaly_data: AnomalyData | None,
+    user_discs: dict[str, Disc] | None,
+    _prune: bool,
+    _bound: bool,
+) -> OptimizeResult:
+    """The optimizer every mode shares (plan §2-§6, §11, §15, §17).
+
+    ``calc(config, data)`` is the mode's exact calculation (named
+    ``calc_name`` in the §4 re-check error) and ``build_model`` its
+    :class:`_ModeModel` factory; everything else is identical across
+    modes. See :func:`optimize` for the contract.
+    """
+    required = _validate_options(options, objectives, constraint_stats)
+
+    consts = consts if consts is not None else load_constants()
+    disc_data = disc_data if disc_data is not None else load_disc_data()
+    bosses = bosses if bosses is not None else load_bosses()
+    agents = agents if agents is not None else load_agents()
+    engines = engines if engines is not None else load_engines()
+    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
+    if user_discs is None:
+        user_discs = load_user_discs(disc_data)
+
+    data = dict(consts=consts, disc_data=disc_data, bosses=bosses,
+                agents=agents, engines=engines, disc_sets=disc_sets)
+
+    for key in required:
+        if key not in disc_sets:
+            raise OptimizeError(
+                f"Unknown required set '{key}'; options: {sorted(disc_sets)}"
+            )
+    _validate_slot_mains(options, disc_data)
+
+    # --- Baseline: validates the whole config (discs, mode inputs, agent
+    # specialty) — the same errors the calculation would raise ------------
+    baseline_results = calc(config, data)
+    equipped = {d.slot: d for d in config.discs}
+    agent = agents[config.agent_key]
+    # Lumiflux (Attribute Mutation): the element this agent's damage
+    # is dealt as — her own attribute for everyone else.
+    attr = attack_element(agent, config)
+    # Team-element gate (§18): 4pc effects no squad member can trigger
+    # count 0 stacks in EVERY build. The baseline's own entered stacks of
+    # such a set are dropped too (and the baseline re-run), so it is
+    # valued on the same footing as the candidates it is compared with.
+    gated = _gated_sets(disc_sets, _squad_elements(attr, config, agents))
+    if any(key in gated for key in config.set_stacks):
+        config = replace(config, set_stacks={
+            key: stacks for key, stacks in config.set_stacks.items()
+            if key not in gated
+        })
+        baseline_results = calc(config, data)
+    baseline_value = getattr(baseline_results, options.objective)
+    # Self-scaling kit inputs (the MAIN's own panel values) become
+    # minimum-stat constraints — the buff amount is a constant, so no
+    # build may fall short of the panel the user claimed.
+    options = _apply_scaling_input_minimums(agent, config, options,
+                                            constraint_stats)
+
+    # --- Constant factors (disc-independent; the baseline validated them) -
+    engine_key = (config.engine_key if config.engine_key is not None
+                  else agent.default_engine)
+    engine = engines[engine_key]
+    boss = bosses[config.boss_name]
+    rank = _resolve_engine_rank(engine, config.engine_rank)
+    model = build_model(config, options.objective, agent, attr, engine, boss,
+                        rank, data, anomaly_data)
+    evaluate = model.evaluate
+    stats = model.stats
+
+    def stat_total(stat: str, buckets: list[float], _aux=None) -> float:
         """One constraint / maximize stat's final total for a bucket
         vector (the totals the results panel reports)."""
-        if stat == "ATK":
-            return atk_total
-        if stat == "HP":
-            return (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
-                    + buckets[_B_HP_FLAT]) * kit_hp_mult
-        if stat == "DEF":
-            return (def_base * (1.0 + buckets[_B_DEF_PCT])
-                    + buckets[_B_DEF_FLAT])
-        if stat == "CRIT Rate":
-            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-        if stat == "CRIT DMG":
-            return with_deferred_cd(
-                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
-        if stat == "PEN Ratio":
-            return buckets[_B_PEN_RATIO] + pen_ratio_const
-        if stat == "PEN":
-            return buckets[_B_PEN_FLAT]
-        if stat == "Impact":
-            return impact_base * (1.0 + buckets[_B_IMPACT])
-        if stat == "Energy Regen":
-            return er_base * (1.0 + buckets[_B_ER])
-        if stat == "Anomaly Proficiency":
-            return ap_const + buckets[_B_AP]
-        # "Anomaly Mastery" (keys validated above)
-        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
+        return stats.total(stat, buckets)
 
+    # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
+    dominance_indices = _dominance_indices(
+        model.damage_indices, _watched_stats(options))
+    candidates, pruned_count = _gather_candidates(
+        equipped, user_discs, disc_data, attr, options,
+        dominance_indices, _prune,
+    )
+
+    slots = sorted(candidates)
+
+    # Required sets: enough slots must hold a piece — each set on its own,
+    # and both together (one piece per slot; Hall's condition, exact for
+    # two sets).
+    holders = {
+        key: {slot for slot in slots
+              if any(c.disc.disc_set == key for c in candidates[slot])}
+        for key in required
+    }
+    for key, pieces in required.items():
+        if len(holders[key]) < pieces:
+            raise OptimizeError(
+                f"Cannot build {pieces} pieces of '{disc_sets[key].name}': "
+                f"only {len(holders[key])} slot(s) have a saved piece of it "
+                f"(locked slots included)"
+            )
+    if len(required) > 1:
+        either = set().union(*holders.values())
+        if len(either) < sum(required.values()):
+            names = " + ".join(f"{pieces}pc {disc_sets[key].name}"
+                               for key, pieces in required.items())
+            raise OptimizeError(
+                f"Cannot build {names} at once: only {len(either)} "
+                f"slot(s) have a saved piece of either (locked slots "
+                f"included)"
+            )
+
+    base_buckets = _bucket_vector(engine.advanced_stat)
+    panel_consts = _panel_constants(agent, engine, consts)
     feasible = _make_feasible(options, panel_consts, stat_total)
 
     # --- Per-set precomputation (§5 policy) --------------------------------
@@ -1874,7 +3298,7 @@ def optimize(
         # Wearer-side modeled 4pc: the classic bonus, or a squad-facing
         # part (the wearer is a squad member too — King of the Summit).
         max_stacks = set_4pc_max_stacks(entry)
-        if not max_stacks:
+        if not max_stacks or key in gated:
             return 0
         if baseline_counts.get(key, 0) >= 4:
             return config.set_stacks.get(key, 0)
@@ -1892,21 +3316,24 @@ def optimize(
     teammate_present = bool(config.supports)
     for key in candidate_sets:
         entry = disc_sets[key]
-        set_2pc[key] = _set_2pc_buckets(
-            entry, attr, config.skill_tag, config.counts_as_aftershock)
+        # Anomaly hits carry no skill tag, so no tag-gated 2pc DMG% (Shadow
+        # Harmony) applies there.
+        set_2pc[key] = (
+            _set_2pc_buckets(entry, attr) if model.anomaly_sets
+            else _set_2pc_buckets(entry, attr, config.skill_tag,
+                                  config.counts_as_aftershock))
         stacks = assumed_stacks(key)
         set_stacks_used[key] = stacks
         # Wearer-side 4pc stats at the assumed stacks (mirrors
-        # set_bonus_stats: classic bonus incl. at-max extra, or a
-        # squad-facing part mapped to a build stat — Yunkui Tales' Sheer
-        # DMG% lands in a bucket only the sheer fast path reads, so it
-        # stays inert in this mode).
+        # set_bonus_stats: classic bonus incl. the at-max extra — Yunkui
+        # Tales' Sheer DMG% lands in _B_SHEER_DMG, which only the sheer
+        # fast path reads — or a squad-facing part mapped to a build stat).
         set_4pc[key] = _bucket_vector(set_4pc_stats(entry, stacks))
         # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
         # skill-tag-gated ones (Puffer Electro's Ultimate +20%) and a set's
         # auto 4pc DMG% (Wuthering Salon +18%; Phaethon's Melody needs a
         # teammate) — the auto part mirrors _kit_contributions, which is why
-        # ``kit`` above excludes it (discs=[]).
+        # the mode's kit excludes it (discs=[]).
         tag_skill = sum(
             b.value for b in entry.bonus_4pc_dmg
             if (config.skill_tag is not None
@@ -1918,7 +3345,16 @@ def optimize(
         if entry.auto_4pc_dmg and (
                 not entry.auto_4pc_dmg_needs_teammate or teammate_present):
             auto = entry.auto_4pc_dmg
-        set_tag_bonus[key] = (tag_skill + auto, 0.0)
+        # Second channel (anomaly modes): a 4pc part in the separate
+        # Anomaly Buff bracket, optionally gated to the wearer's attribute
+        # (Feathered Fate is Lumiflux-only). Mirrors _kit_contributions
+        # exactly, or the section-4 re-check fails.
+        anom = 0.0
+        if model.anomaly_sets and entry.auto_4pc_anomaly_dmg and (
+                entry.auto_4pc_attribute is None
+                or entry.auto_4pc_attribute == agent.attribute):
+            anom = entry.auto_4pc_anomaly_dmg
+        set_tag_bonus[key] = (tag_skill + auto, anom)
 
     def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
         """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
@@ -1928,11 +3364,11 @@ def optimize(
             if count >= 4 and set_stacks_used[key]
         }
 
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
+    # --- Branch-and-bound DFS (§11 E2, §17), shared search core -----------
     outcome = _search_maximizing(
         candidates, slots, equipped, base_buckets, evaluate, feasible,
         stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
-        required, options, _bound,
+        required, options, _bound, model.linearize, stats,
     )
     heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
 
@@ -1944,34 +3380,33 @@ def optimize(
         for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
             base_bb[k] += v
     _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_atk = evaluate(base_bb, (0.0, 0.0))
-    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_atk)
+    _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
+    baseline_stat = (stat_total(options.maximize_stat, base_bb)
                      if options.maximize_stat else None)
     baseline_shortfalls: list = []
     baseline_feasible = (
-        outcome.check_baseline(base_bb, baseline_atk, baseline_value,
+        outcome.check_baseline(base_bb, baseline_aux, baseline_value,
                                baseline_shortfalls)
-        and (required is None or baseline_counts.get(required, 0) >= 4)
+        and all(baseline_counts.get(key, 0) >= pieces
+                for key, pieces in required.items())
         and _baseline_mains_ok(equipped, options.slot_main_stats,
                                attr)
         and (not options.sets_only or _sets_coverage_ok(config.discs))
     )
 
     def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
-        """Re-run one build through calculate() (exactness guarantee, §4)."""
+        """Re-run one build through the calculation (exactness, §4)."""
         discs = [c.disc for c in combo]
         buckets, tagged, counts = _combo_buckets(
             combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
-        fast_value, aux = evaluate(buckets, tagged)
+        fast_value, _aux = evaluate(buckets, tagged)
         stacks = combo_set_stacks(counts)
-        results = calculate(
-            replace(config, discs=discs, set_stacks=stacks), **data
-        )
+        results = calc(replace(config, discs=discs, set_stacks=stacks), data)
         exact = getattr(results, options.objective)
         if abs(fast_value - exact) > _RECHECK_RTOL * max(1.0, abs(exact)):
             raise OptimizeError(
                 f"Internal error: fast evaluation ({fast_value!r}) disagrees "
-                f"with calculate() ({exact!r}) — please report this build"
+                f"with {calc_name}() ({exact!r}) — please report this build"
             )
         return BuildOption(
             value=exact,
@@ -1985,7 +3420,7 @@ def optimize(
                 if equipped.get(c.disc.slot) != c.disc
             ),
             results=results,
-            stat_value=(stat_total(options.maximize_stat, buckets, aux)
+            stat_value=(stat_total(options.maximize_stat, buckets)
                         if options.maximize_stat else None),
         )
 
@@ -2009,7 +3444,7 @@ def optimize(
                 baseline_shortfalls,
                 discs=config.discs,
                 equipped=equipped,
-                required=required,
+                requirements=required,
                 baseline_counts=baseline_counts,
                 disc_sets=disc_sets,
                 slot_main_stats=options.slot_main_stats,
@@ -2064,7 +3499,8 @@ def optimize(
         best=best,
         alternatives=alternatives,
         min_stats=dict(options.min_stats),
-        required_4pc=required,
+        required_4pc=options.required_4pc,
+        required_2pc=options.required_2pc,
         slot_main_stats=dict(options.slot_main_stats),
         sets_only=options.sets_only,
         budget_exhausted=exhausted,
@@ -2077,6 +3513,54 @@ def optimize(
         combos_evaluated=evals,
         candidates_per_slot={s: len(candidates[s]) for s in slots},
         discs_pruned=pruned_count,
+        # Only the gated sets this search could actually have worn.
+        gated_sets={
+            key: element for key, element in gated.items()
+            if key in candidate_sets or key in baseline_counts
+            or key in required
+        },
+    )
+
+
+def optimize(
+    config: CalcConfig,
+    options: OptimizeOptions | None = None,
+    *,
+    consts: Constants | None = None,
+    disc_data: DiscData | None = None,
+    bosses: dict[str, Boss] | None = None,
+    agents: dict[str, Agent] | None = None,
+    engines: dict[str, Engine] | None = None,
+    disc_sets: dict[str, DiscSet] | None = None,
+    user_discs: dict[str, Disc] | None = None,
+    _prune: bool = True,
+    _bound: bool = True,
+) -> OptimizeResult:
+    """Search every legal combination of the user's discs for the best build.
+
+    ``config`` is the exact configuration the user just calculated; only
+    its ``discs`` (and, per the §5 policy, ``set_stacks``) vary during the
+    search. The keyword data arguments allow the UI server/tests to inject
+    already-loaded data, same as :func:`~.api.calculate`. ``_prune`` /
+    ``_bound`` exist for tests proving dominance pruning and the
+    branch-and-bound cut never change the answer.
+
+    Raises:
+        OptimizeError: unknown objective/assumption/constraint, bad
+            options, a search exceeding ``options.combo_budget``
+            evaluations, or ``min_stats`` no combination can meet.
+        CalcError / DiscError / AgentError: the baseline config itself is
+            invalid (same errors ``calculate`` would raise).
+    """
+    return _optimize(
+        config, options if options is not None else OptimizeOptions(),
+        objectives=OBJECTIVES, constraint_stats=CONSTRAINT_STATS,
+        calc_name="calculate",
+        calc=lambda cfg, data: calculate(cfg, **data),
+        build_model=_direct_model,
+        consts=consts, disc_data=disc_data, bosses=bosses, agents=agents,
+        engines=engines, disc_sets=disc_sets, anomaly_data=None,
+        user_discs=user_discs, _prune=_prune, _bound=_bound,
     )
 
 
@@ -2124,514 +3608,24 @@ def optimize_anomaly(
             invalid (same errors ``calculate_anomaly`` would raise).
     """
     options = options if options is not None else OptimizeOptions(objective="full")
-    required = _validate_options(options, ANOMALY_OBJECTIVES)
+    _validate_options(options, ANOMALY_OBJECTIVES)
     if config.buildup_segments or config.unbuffed_share:
         raise OptimizeError(
             "optimize_anomaly targets the fully-buffed anomaly number; "
             "buildup segments / unbuffed_share (buildup dilution) are not "
             "supported — clear them and optimize again"
         )
-
-    consts = consts if consts is not None else load_constants()
-    disc_data = disc_data if disc_data is not None else load_disc_data()
-    bosses = bosses if bosses is not None else load_bosses()
-    agents = agents if agents is not None else load_agents()
-    engines = engines if engines is not None else load_engines()
-    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
     anomaly_data = anomaly_data if anomaly_data is not None else load_anomalies()
-    if user_discs is None:
-        user_discs = load_user_discs(disc_data)
-
-    data = dict(consts=consts, disc_data=disc_data, bosses=bosses,
-                agents=agents, engines=engines, disc_sets=disc_sets)
-
-    if required is not None and required not in disc_sets:
-        raise OptimizeError(
-            f"Unknown required set '{required}'; options: {sorted(disc_sets)}"
-        )
-
-    _validate_slot_mains(options, disc_data)
-
-    # --- Baseline: validates the whole config (mode, discs, anomaly) -------
-    baseline_results = calculate_anomaly(config, **data, anomaly_data=anomaly_data)
-    baseline_value = getattr(baseline_results, options.objective)
-    equipped = {d.slot: d for d in config.discs}
-    agent = agents[config.agent_key]
-    # Lumiflux (Attribute Mutation): the element this agent's damage
-    # is dealt as — her own attribute for everyone else.
-    attr = attack_element(agent, config)
-    # Self-scaling kit inputs (the MAIN's own panel values) become
-    # minimum-stat constraints — the buff amount is a constant, so no
-    # build may fall short of the panel the user claimed.
-    options = _apply_scaling_input_minimums(agent, config, options,
-                                            CONSTRAINT_STATS)
-    engine_key = (config.engine_key if config.engine_key is not None
-                  else agent.default_engine)
-    engine = engines[engine_key]
-    boss = bosses[config.boss_name]
-    rank = _resolve_engine_rank(engine, config.engine_rank)
-
-    # --- Which anomaly / element is dealt (disc-independent; the baseline
-    # already validated every mode input, so these lookups can't fail) -----
-    if config.vortex_infused is not None:
-        rule = anomaly_data.vortex[config.vortex_infused.lower()]
-        kind, dealt_element, hits = "vortex", config.vortex_infused.lower(), 1
-    elif config.disorder_replaced is not None:
-        replaced_key = config.disorder_replaced.lower()
-        rule = anomaly_data.disorder[replaced_key]
-        kind, dealt_element, hits = "disorder", replaced_key, 1
-    elif config.abloom:
-        abloom_key = (config.abloom_element or attr).lower()
-        anomaly = anomaly_data.anomalies[abloom_key]
-        kind, dealt_element, hits = "anomaly", abloom_key, 1
-    else:
-        anomaly = anomaly_data.anomalies[attr]
-        kind, dealt_element, hits = "anomaly", attr, anomaly.hits
-    if config.luminize is not None:
-        # LUMINIZE: the instance keeps the stored anomaly's element (this
-        # attacker's own attribute) but replaces its proc count — one per
-        # stored Voidflare. The multiplier is substituted further down.
-        hits = config.luminize.voidflares
-    # Build Attribute DMG% (disc + set + engine advanced) only counts when
-    # the burst deals the agent's OWN attribute — mirrors calculate_anomaly.
-    # In Luminize mode it does apply: the DMG% comes from THIS agent, the
-    # one whose Refringed anomaly the Voidflare stored.
-    attr_dmg_applies = (dealt_element == attr)
-
-    # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
-    damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
-                      else _ANOMALY_DAMAGE_INDICES_NO_ATTR)
-    dominance_indices = _dominance_indices(
-        damage_indices, _watched_stats(options))
-    candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, attr, options,
-        dominance_indices, _prune,
-    )
-
-    slots = sorted(candidates)
-
-    if required is not None:
-        equippable = sum(
-            1 for slot in slots
-            if any(c.disc.disc_set == required for c in candidates[slot])
-        )
-        if equippable < 4:
-            raise OptimizeError(
-                f"Cannot build 4 pieces of '{disc_sets[required].name}': "
-                f"only {equippable} slot(s) have a saved piece of it "
-                f"(locked slots included)"
-            )
-
-    # --- Constant factors (disc-independent, mirrors calculate_anomaly) ----
-    # Kit is computed with discs=[] so its DISC-dependent part (a set's auto
-    # 4pc DMG%, e.g. Wuthering Salon) is excluded here and folded per combo
-    # via set_tag_bonus instead — the rest of the kit is disc-independent.
-    kit = _kit_contributions(
-        agent, replace(config, discs=[]), agents, disc_sets, engines,
-        mode=kind, dealt_element=dealt_element,
-    )
-
-    base_buckets = _bucket_vector(engine.advanced_stat)
-    panel_consts = _panel_constants(agent, engine, consts)
-
-    base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
-    base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
-    agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
-    kit_atk_pct = kit["atk_pct"]
-    kit_flat_atk = kit["flat_atk"]
-    pen_ratio_const = kit["pen_ratio"] + agent.core_bonus_pen_ratio
-    def_red_const = kit["def_red"]
-    crit_rate_const = config.external_crit_rate + kit["crit_rate"]
-    crit_dmg_const = config.external_crit_dmg + kit["crit_dmg"]
-    ap_const = (agent.base_anomaly_proficiency
-                + agent.core_bonus_anomaly_proficiency
-                + engine.passive_ap(rank)
-                + kit["anomaly_proficiency"]
-                + config.external_anomaly_proficiency
-                # Engine conditional flat AP (Weeping Gemini's stacks) —
-                # constant here, exactly as in calculate_anomaly's segments.
-                + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                                     dealt_element, rank, mode=kind,
-                                     bracket="anomaly_proficiency"))
-    am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
-    # HP/DEF/Impact/Energy-Regen panel pieces, read only by the min-stat
-    # constraints (inert for anomaly damage).
-    hp_base = agent.total_base_hp()
-    core_hp_pct = agent.core_bonus_hp_pct
-    kit_hp_mult = 1.0 + kit["hp_pct"]
-    def_base = agent.base_def
-    impact_base = agent.base_impact + agent.core_bonus_impact
-    er_base = agent.base_energy_regen + agent.core_bonus_energy_regen
-
-    engine_buff_dmg = _engine_buff_bonus(
-        engine, config.engine_buff_stacks, dealt_element, rank, mode=kind,
-    )
-    bonus_const = (
-        sum(config.external_dmg_bonuses)
-        + sum(_engine_passive_bonuses(engine, dealt_element, rank))
-        + engine_buff_dmg
-        + sum(kit["dmg_bonus"])
-    )
-
-    # Separate Anomaly/Disorder "Buff Multiplier" bracket (constant).
-    # Luminize takes it from the PROVIDER instead — the attacker's own
-    # anomaly-DMG sources never reach it (mirrors calculate_anomaly).
-    if config.luminize is not None:
-        abuff_entries = list(config.luminize.anomaly_dmg_bonuses)
-    else:
-        abuff_entries = list(config.external_anomaly_buff) + kit["anomaly_buff"]
-        engine_abuff = _engine_buff_bonus(
-            engine, config.engine_buff_stacks, dealt_element, rank,
-            mode=kind, bracket="anomaly_buff",
-        )
-        if engine_abuff:
-            abuff_entries.append(engine_abuff)
-    abuff = formulas.anomaly_buff_mult(abuff_entries)
-
-    level_mult = consts.anomaly_level_multiplier(agent.level)
-    level_coef = consts.level_coefficient(agent.level)
-    crit_cap = consts.crit_rate_cap
-    luminize_res = 0.50 if (config.luminize is not None
-                            and config.luminize.res_ignore) else 0.0
-    res = formulas.res_mult(
-        boss.res_for(dealt_element),
-        res_ignore=(config.external_res_shred + kit["res_shred"]
-                    + luminize_res),
-    )
-    taken = formulas.dmg_taken_mult(
-        list(config.external_dmg_taken) + kit["dmg_taken"]
-    )
-    stun_base = (
-        config.stun_multiplier_override
-        if config.stun_multiplier_override is not None
-        else boss.stun_dmg_multiplier
-    )
-    stunned = options.objective.endswith("_stunned")
-    stun = formulas.stun_mult(
-        stunned, stun_base,
-        list(config.external_daze_bonuses) + kit["daze_bonus"],
-    )
-    # "full" multiplies the per-proc value by the anomaly's proc count.
-    hits_factor = hits if options.objective.startswith("full") else 1
-    # Refringe (Lumiflux teammate) is a kit constant in its own zone —
-    # disc-independent, so it folds straight into the outer product.
-    refringe = formulas.refringe_mult([kit["refringe"]])
-    outer = level_mult * res * taken * stun * hits_factor * refringe
-
-    # --- Per-proc / burst multiplier (constant, or AP-scaled per build) ----
-    disorder_additive = config.external_disorder_mult_add + kit["disorder_mult_add"]
-    if config.luminize is not None:
-        # Constant: it depends on the PROVIDER's AP, not on this build.
-        provider = agents[config.luminize.provider_key]
-        luminize_mult = provider.luminize.multiplier(
-            config.luminize.skill, config.luminize.anomaly_proficiency,
-            m4=config.luminize.m4)
-        def mult_of_ap(ap: float) -> float:
-            return luminize_mult
-    elif kind == "vortex":
-        const_mult = formulas.burst_conversion_mult(
-            rule.mult, rule.time_mult, rule.window,
-            config.disorder_elapsed_seconds, extra_mult=disorder_additive,
-        )
-        def mult_of_ap(ap: float) -> float:
-            return const_mult
-    elif kind == "disorder" and config.polarity_disorder:
-        base_disorder = formulas.burst_conversion_mult(
-            rule.base, rule.time_mult, rule.window,
-            config.disorder_elapsed_seconds, extra_mult=0.0,
-        )
-        polarity_coeff = 0.05 + config.polarity_special_level * 0.0225
-        def mult_of_ap(ap: float) -> float:
-            return (POLARITY_DISORDER_FRACTION * base_disorder
-                    + disorder_additive + polarity_coeff * (ap / 100.0))
-    elif kind == "disorder":
-        const_mult = formulas.burst_conversion_mult(
-            rule.base, rule.time_mult, rule.window,
-            config.disorder_elapsed_seconds, extra_mult=disorder_additive,
-        )
-        def mult_of_ap(ap: float) -> float:
-            return const_mult
-    elif config.abloom:
-        mv = VIVIAN_ABLOOM_MV[dealt_element]
-        m2 = VIVIAN_ABLOOM_M2_FACTOR if config.mindscapes.get(2) else 1.0
-        abloom_base = anomaly.mult * (mv / 100.0) * m2
-        def mult_of_ap(ap: float) -> float:
-            return abloom_base * (ap / 10.0)
-    else:
-        const_mult = (config.anomaly_mult_override
-                      if config.anomaly_mult_override is not None
-                      else anomaly.mult)
-        def mult_of_ap(ap: float) -> float:
-            return const_mult
-
-    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, tuple]:
-        """Fast path: (objective value, (final ATK, total AP)) of a build."""
-        atk_pre_combat = (
-            agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
-            + buckets[_B_ATK_FLAT]
-        )
-        atk_total = (
-            atk_pre_combat
-            * (1.0 + buckets[_B_COMBAT_ATK_PCT] + kit_atk_pct)
-            + kit_flat_atk
-        )
-        ap_total = ap_const + buckets[_B_AP]
-        bonus = 1.0 + bonus_const + tagged[0]
-        if attr_dmg_applies:
-            bonus += buckets[_B_ATTR_DMG]
-        # A 4pc part in the separate Anomaly Buff bracket (Feathered Fate
-        # on a Lumiflux wearer) joins abuff, not the DMG% bracket.
-        set_abuff = abuff + tagged[1]
-        eff_def = formulas.effective_def(
-            boss.base_def, buckets[_B_PEN_RATIO] + pen_ratio_const,
-            buckets[_B_PEN_FLAT], def_red=def_red_const,
-        )
-        defense = level_coef / (level_coef + eff_def)
-        value = (mult_of_ap(ap_total) * atk_total * formulas.ap_mult(ap_total)
-                 * bonus * set_abuff * defense * outer)
-        return value, (atk_total, ap_total)
-
-    def stat_total(stat: str, buckets: list[float], aux: tuple) -> float:
-        """One constraint / maximize stat's final total for a bucket
-        vector (the totals the results panel reports)."""
-        atk_total, ap_total = aux
-        if stat == "ATK":
-            return atk_total
-        if stat == "HP":
-            return (hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
-                    + buckets[_B_HP_FLAT]) * kit_hp_mult
-        if stat == "DEF":
-            return (def_base * (1.0 + buckets[_B_DEF_PCT])
-                    + buckets[_B_DEF_FLAT])
-        if stat == "CRIT Rate":
-            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-        if stat == "CRIT DMG":
-            return base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const
-        if stat == "PEN Ratio":
-            return buckets[_B_PEN_RATIO] + pen_ratio_const
-        if stat == "PEN":
-            return buckets[_B_PEN_FLAT]
-        if stat == "Impact":
-            return impact_base * (1.0 + buckets[_B_IMPACT])
-        if stat == "Energy Regen":
-            return er_base * (1.0 + buckets[_B_ER])
-        if stat == "Anomaly Proficiency":
-            return ap_total
-        # "Anomaly Mastery" (keys validated above)
-        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
-
-    feasible = _make_feasible(options, panel_consts, stat_total)
-
-    # --- Per-set precomputation (§5 policy) --------------------------------
-    baseline_counts: dict[str, int] = {}
-    for disc in config.discs:
-        if disc.disc_set is not None:
-            baseline_counts[disc.disc_set] = (
-                baseline_counts.get(disc.disc_set, 0) + 1
-            )
-
-    def assumed_stacks(key: str) -> int:
-        entry = disc_sets[key]
-        # Wearer-side modeled 4pc: the classic bonus, or a squad-facing
-        # part (the wearer is a squad member too — King of the Summit).
-        max_stacks = set_4pc_max_stacks(entry)
-        if not max_stacks:
-            return 0
-        if baseline_counts.get(key, 0) >= 4:
-            return config.set_stacks.get(key, 0)
-        return max_stacks if options.set_assumption == "max" else 0
-
-    set_2pc: dict[str, tuple[float, ...]] = {}
-    set_4pc: dict[str, tuple[float, ...]] = {}
-    set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, tuple[float, float]] = {}
-    candidate_sets = {
-        c.disc.disc_set
-        for slot_list in candidates.values() for c in slot_list
-        if c.disc.disc_set is not None
-    }
-    teammate_present = bool(config.supports)
-    for key in candidate_sets:
-        entry = disc_sets[key]
-        set_2pc[key] = _set_2pc_buckets(entry, attr)
-        stacks = assumed_stacks(key)
-        set_stacks_used[key] = stacks
-        # Wearer-side 4pc stats at the assumed stacks (mirrors
-        # set_bonus_stats: classic bonus incl. at-max extra, or a
-        # squad-facing part mapped to a build stat).
-        set_4pc[key] = _bucket_vector(set_4pc_stats(entry, stacks))
-        # 4pc DMG% additives that land in the ordinary bonus bracket: the
-        # skill-tag-gated ones (none for anomaly — skill_tag is unset) plus
-        # an auto 4pc DMG% (e.g. Wuthering Salon), which needs a teammate
-        # for some sets. Folded per combo, mirroring _kit_contributions.
-        tag_skill = sum(
-            b.value for b in entry.bonus_4pc_dmg
-            if (config.skill_tag is not None
-                and b.skill_tag == config.skill_tag)
-            or (config.counts_as_aftershock
-                and b.skill_tag == "aftershock")
-        )
-        auto = 0.0
-        if entry.auto_4pc_dmg and (
-                not entry.auto_4pc_dmg_needs_teammate or teammate_present):
-            auto = entry.auto_4pc_dmg
-        # Second channel: a 4pc part in the separate Anomaly Buff
-        # bracket, optionally gated to the wearer's attribute
-        # (Feathered Fate is Lumiflux-only). Mirrors
-        # _kit_contributions exactly, or the section-4 re-check fails.
-        anom = 0.0
-        if entry.auto_4pc_anomaly_dmg and (
-                entry.auto_4pc_attribute is None
-                or entry.auto_4pc_attribute == agent.attribute):
-            anom = entry.auto_4pc_anomaly_dmg
-        set_tag_bonus[key] = (tag_skill + auto, anom)
-
-    def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
-        """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
-        return {
-            key: set_stacks_used[key]
-            for key, count in counts.items()
-            if count >= 4 and set_stacks_used[key]
-        }
-
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    outcome = _search_maximizing(
-        candidates, slots, equipped, base_buckets, evaluate, feasible,
-        stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
-        required, options, _bound,
-    )
-    heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
-
-    # --- Baseline feasibility (constraints may exclude the baseline) ------
-    # After the search: a maximize-stat run's damage floor (§15 E5) is
-    # only known once the first pass has found the ceiling.
-    base_bb = list(base_buckets)
-    for disc in config.discs:
-        for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
-            base_bb[k] += v
-    _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
-    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_aux)
-                     if options.maximize_stat else None)
-    baseline_shortfalls: list = []
-    baseline_feasible = (
-        outcome.check_baseline(base_bb, baseline_aux, baseline_value,
-                               baseline_shortfalls)
-        and (required is None or baseline_counts.get(required, 0) >= 4)
-        and _baseline_mains_ok(equipped, options.slot_main_stats,
-                               attr)
-        and (not options.sets_only or _sets_coverage_ok(config.discs))
-    )
-
-    def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
-        """Re-run one build through calculate_anomaly (exactness, §4)."""
-        discs = [c.disc for c in combo]
-        buckets, tagged, counts = _combo_buckets(
-            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
-        fast_value, aux = evaluate(buckets, tagged)
-        stacks = combo_set_stacks(counts)
-        results = calculate_anomaly(
-            replace(config, discs=discs, set_stacks=stacks),
-            **data, anomaly_data=anomaly_data,
-        )
-        exact = getattr(results, options.objective)
-        if abs(fast_value - exact) > _RECHECK_RTOL * max(1.0, abs(exact)):
-            raise OptimizeError(
-                f"Internal error: fast evaluation ({fast_value!r}) disagrees "
-                f"with calculate_anomaly() ({exact!r}) — please report this "
-                f"build"
-            )
-        return BuildOption(
-            value=exact,
-            delta=(exact - baseline_value) / baseline_value
-            if baseline_value else 0.0,
-            discs=tuple(discs),
-            disc_ids=tuple(c.disc_id for c in combo),
-            set_stacks=stacks,
-            changed_slots=tuple(
-                c.disc.slot for c in combo
-                if equipped.get(c.disc.slot) != c.disc
-            ),
-            results=results,
-            stat_value=(stat_total(options.maximize_stat, buckets, aux)
-                        if options.maximize_stat else None),
-        )
-
-    ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
-    options_verified = [verify(combo) for _value, _counter, combo in ranked]
-
-    if not options_verified and not baseline_feasible:
-        raise _infeasible_error(
-            _baseline_reasons(
-                baseline_shortfalls,
-                discs=config.discs,
-                equipped=equipped,
-                required=required,
-                baseline_counts=baseline_counts,
-                disc_sets=disc_sets,
-                slot_main_stats=options.slot_main_stats,
-                attribute=attr,
-                sets_only=options.sets_only,
-            ),
-            exhausted, options.combo_budget,
-        )
-
-    best = options_verified[0] if options_verified else None
-    # Compared by the SEARCH's ranking key — damage, or (maximize mode)
-    # the stat with damage as the tie-break. Comparing damage there would
-    # call the baseline a winner against a build that deliberately traded
-    # a little damage for more of the maximized stat.
-    baseline_rank = outcome.rank(baseline_value, baseline_stat)
-    baseline_wins = baseline_feasible and (
-        best is None
-        or outcome.rank(best.value, best.stat_value)
-        <= baseline_rank * (1.0 + _RECHECK_RTOL)
-    )
-    # A budget-exhausted search proves nothing about optimality: the
-    # baseline may still be reported as the best FOUND, but never as
-    # "already optimal".
-    already_optimal = baseline_wins and not exhausted
-    if baseline_wins:
-        best = BuildOption(
-            value=baseline_value,
-            delta=0.0,
-            discs=tuple(config.discs),
-            disc_ids=tuple(
-                next((i for i, d in user_discs.items() if d == disc), None)
-                for disc in config.discs
-            ),
-            set_stacks=dict(config.set_stacks),
-            changed_slots=(),
-            results=baseline_results,
-            stat_value=baseline_stat,
-        )
-    alternatives = tuple(
-        option for option in options_verified
-        if option is not best and option.changed_slots
-    )[: options.top_n - 1]
-
-    return OptimizeResult(
-        objective=options.objective,
-        set_assumption=options.set_assumption,
-        baseline_value=baseline_value,
-        baseline_feasible=baseline_feasible,
-        already_optimal=already_optimal,
-        best=best,
-        alternatives=alternatives,
-        min_stats=dict(options.min_stats),
-        required_4pc=required,
-        slot_main_stats=dict(options.slot_main_stats),
-        sets_only=options.sets_only,
-        budget_exhausted=exhausted,
-        min_panel_stats=dict(options.min_panel_stats),
-        maximize_stat=options.maximize_stat,
-        maximize_tolerance=(options.maximize_tolerance
-                            if options.maximize_stat else 0.0),
-        damage_ceiling=outcome.ceiling,
-        damage_floor=outcome.floor,
-        combos_evaluated=evals,
-        candidates_per_slot={s: len(candidates[s]) for s in slots},
-        discs_pruned=pruned_count,
+    return _optimize(
+        config, options,
+        objectives=ANOMALY_OBJECTIVES, constraint_stats=CONSTRAINT_STATS,
+        calc_name="calculate_anomaly",
+        calc=lambda cfg, data: calculate_anomaly(cfg, **data,
+                                                 anomaly_data=anomaly_data),
+        build_model=_anomaly_model,
+        consts=consts, disc_data=disc_data, bosses=bosses, agents=agents,
+        engines=engines, disc_sets=disc_sets, anomaly_data=anomaly_data,
+        user_discs=user_discs, _prune=_prune, _bound=_bound,
     )
 
 
@@ -2677,467 +3671,13 @@ def optimize_sheer(
             invalid (same errors ``calculate_sheer`` would raise, including
             a non-rupture agent).
     """
-    options = options if options is not None else OptimizeOptions()
-    required = _validate_options(options, OBJECTIVES, SHEER_CONSTRAINT_STATS)
-
-    consts = consts if consts is not None else load_constants()
-    disc_data = disc_data if disc_data is not None else load_disc_data()
-    bosses = bosses if bosses is not None else load_bosses()
-    agents = agents if agents is not None else load_agents()
-    engines = engines if engines is not None else load_engines()
-    disc_sets = disc_sets if disc_sets is not None else load_disc_sets()
-    if user_discs is None:
-        user_discs = load_user_discs(disc_data)
-
-    data = dict(consts=consts, disc_data=disc_data, bosses=bosses,
-                agents=agents, engines=engines, disc_sets=disc_sets)
-
-    if required is not None and required not in disc_sets:
-        raise OptimizeError(
-            f"Unknown required set '{required}'; options: {sorted(disc_sets)}"
-        )
-
-    _validate_slot_mains(options, disc_data)
-
-    # --- Baseline: validates the whole config (agent specialty included) ---
-    baseline_results = calculate_sheer(config, **data)
-    baseline_value = getattr(baseline_results, options.objective)
-    equipped = {d.slot: d for d in config.discs}
-    agent = agents[config.agent_key]
-    # Lumiflux (Attribute Mutation): the element this agent's damage
-    # is dealt as — her own attribute for everyone else.
-    attr = attack_element(agent, config)
-    # Self-scaling kit inputs (the MAIN's own panel values) become
-    # minimum-stat constraints — the buff amount is a constant, so no
-    # build may fall short of the panel the user claimed.
-    options = _apply_scaling_input_minimums(agent, config, options,
-                                            SHEER_CONSTRAINT_STATS)
-
-    # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
-    # HP only matters when the agent converts it to Sheer Force; for a
-    # pure-ATK rupture agent the HP buckets must NOT weaken the dominance
-    # pruning (an HP-heavy disc adds nothing there). An HP constraint
-    # still forces them into the comparison, so a disc kept alive only by
-    # the constraint is never discarded.
-    damage_indices = _SHEER_DAMAGE_INDICES + (
-        _SHEER_HP_INDICES if agent.sheer_force_hp_conversion > 0 else ()
-    )
-    dominance_indices = _dominance_indices(
-        damage_indices, _watched_stats(options))
-    candidates, pruned_count = _gather_candidates(
-        equipped, user_discs, disc_data, attr, options,
-        dominance_indices, _prune,
-    )
-
-    slots = sorted(candidates)
-
-    if required is not None:
-        equippable = sum(
-            1 for slot in slots
-            if any(c.disc.disc_set == required for c in candidates[slot])
-        )
-        if equippable < 4:
-            raise OptimizeError(
-                f"Cannot build 4 pieces of '{disc_sets[required].name}': "
-                f"only {equippable} slot(s) have a saved piece of it "
-                f"(locked slots included)"
-            )
-
-    # --- Constant factors (disc-independent, mirrors calculate_sheer) ------
-    engine_key = (config.engine_key if config.engine_key is not None
-                  else agent.default_engine)
-    engine = engines[engine_key]
-    boss = bosses[config.boss_name]
-    rank = _resolve_engine_rank(engine, config.engine_rank)
-    # Kit is computed with discs=[] so a set's DISC-dependent auto 4pc DMG%
-    # is excluded here and folded per combo via set_tag_bonus instead.
-    # ``mode``/``dealt_element`` MUST mirror calculate_sheer — element-gated
-    # kit/engine effects stay element-checked in sheer mode.
-    kit = _kit_contributions(agent, replace(config, discs=[]),
-                             agents, disc_sets, engines,
-                             mode="sheer", dealt_element=attr)
-
-    base_buckets = _bucket_vector(engine.advanced_stat)
-    panel_consts = _panel_constants(agent, engine, consts)
-
-    base_crit_rate = consts.base_crit_rate + agent.core_bonus_crit_rate
-    base_crit_dmg = consts.base_crit_dmg + agent.core_bonus_crit_dmg
-    agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
-    kit_atk_pct = kit["atk_pct"]
-    kit_flat_atk = kit["flat_atk"]
-    # HP side of Sheer Force: sheet HP% scales the base bucket only, flat
-    # HP is added after it, and kit/team HP% (Lucia, Dreamlit Hearth)
-    # multiplies the FINISHED panel — the combat HP bracket, mirroring
-    # aggregate_build + calculate_sheer.
-    hp_base = agent.total_base_hp()
-    core_hp_pct = agent.core_bonus_hp_pct
-    kit_hp_mult = 1.0 + kit["hp_pct"]
-    sf_atk_conv = consts.sheer_force_atk_conversion
-    sf_hp_conv = agent.sheer_force_hp_conversion
-    flat_sf_const = config.sheer_force_flat + kit["sheer_force"]
-    # Constraint-only panel pieces (inert for Sheer damage): DEF / Impact /
-    # Energy Regen / PEN / AP / AM totals, composed like the other modes.
-    def_base = agent.base_def
-    impact_base = agent.base_impact + agent.core_bonus_impact
-    er_base = agent.base_energy_regen + agent.core_bonus_energy_regen
-    pen_ratio_const = kit["pen_ratio"] + agent.core_bonus_pen_ratio
-    ap_const = (agent.base_anomaly_proficiency
-                + agent.core_bonus_anomaly_proficiency
-                + engine.passive_ap(rank)
-                + kit["anomaly_proficiency"]
-                + config.external_anomaly_proficiency)
-    am_const = agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery
-    crit_rate_const = (
-        config.external_crit_rate + kit["crit_rate"]
-        + engine.passive_crit(rank)
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, mode="sheer",
-                             bracket="crit_rate",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-    )
-    crit_dmg_const = (
-        config.external_crit_dmg + kit["crit_dmg"]
-        + engine.passive_crit_dmg(rank)
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, mode="sheer",
-                             bracket="crit_dmg",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-    )
-    # Total-CRIT-DMG-scaled kit effects — see the direct-mode twin.
-    deferred_cd = kit["deferred_crit_dmg"]
-
-    def with_deferred_cd(total: float) -> float:
-        """CRIT DMG total after total-CRIT-DMG-scaled kit effects."""
-        if not deferred_cd:
-            return total
-        return total + sum(p["scaling"].resolve(total) * p["stacks"]
-                           for p in deferred_cd)
-    bonus_const = (
-        sum(config.external_dmg_bonuses)
-        + sum(_engine_passive_bonuses(engine, attr, rank))
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, mode="sheer",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-        + sum(kit["dmg_bonus"])
-    )
-    # Dedicated Sheer DMG bracket constants (manual entries + kit + engine
-    # buff parts — e.g. Qingming Birdcage's tag-gated Sheer DMG stacks);
-    # the disc side (Yunkui Tales 4pc at max stacks) arrives per combo via
-    # the _B_SHEER_DMG bucket.
-    sheer_const = (
-        sum(config.external_sheer_dmg)
-        + sum(kit["sheer_dmg"])
-        + _engine_buff_bonus(engine, config.engine_buff_stacks,
-                             attr, rank, mode="sheer",
-                             bracket="sheer_dmg",
-                             skill_tag=config.skill_tag,
-                             counts_as_aftershock=config.counts_as_aftershock)
-    )
-    crit_cap = consts.crit_rate_cap
-    res = formulas.res_mult(
-        boss.res_for(attr),
-        res_ignore=config.external_res_shred + kit["res_shred"],
-    )
-    taken = formulas.dmg_taken_mult(
-        list(config.external_dmg_taken) + kit["dmg_taken"]
-    )
-    stun_base = (
-        config.stun_multiplier_override
-        if config.stun_multiplier_override is not None
-        else boss.stun_dmg_multiplier
-    )
-    stunned = options.objective.endswith("_stunned")
-    stun = formulas.stun_mult(
-        stunned, stun_base,
-        list(config.external_daze_bonuses) + kit["daze_bonus"],
-    )
-    crit_variant = options.objective.replace("_stunned", "")
-    # NO DEF zone: Sheer damage ignores enemy DEF (calculate_sheer uses
-    # defense = 1.0), so no level coefficient / PEN factors appear here.
-    const_mult = res * taken * stun * config.skill_multiplier
-
-    def evaluate(buckets: list[float], tagged: tuple[float, float]) -> tuple[float, tuple]:
-        """Fast path: (objective value, (final ATK, HP, Sheer Force))."""
-        atk_pre_combat = (
-            agent_plus_engine_atk * (1.0 + buckets[_B_ATK_PCT])
-            + buckets[_B_ATK_FLAT]
-        )
-        atk_total = (
-            atk_pre_combat
-            * (1.0 + buckets[_B_COMBAT_ATK_PCT] + kit_atk_pct)
-            + kit_flat_atk
-        )
-        hp_total = (
-            hp_base * (1.0 + core_hp_pct + buckets[_B_HP_PCT])
-            + buckets[_B_HP_FLAT]
-        ) * kit_hp_mult
-        sf = atk_total * sf_atk_conv + hp_total * sf_hp_conv + flat_sf_const
-        if crit_variant == "non_crit":
-            crit_mult = 1.0
-        else:
-            crit_dmg = with_deferred_cd(
-                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
-            if crit_variant == "crit":
-                crit_mult = 1.0 + crit_dmg
-            else:
-                crit_rate = (base_crit_rate + buckets[_B_CRIT_RATE]
-                             + crit_rate_const)
-                crit_mult = 1.0 + min(max(crit_rate, 0.0), crit_cap) * crit_dmg
-        # Only the DMG% channel matters here: the anomaly-bracket
-        # channel exists in anomaly modes only.
-        bonus = 1.0 + buckets[_B_ATTR_DMG] + bonus_const + tagged[0]
-        sheer_mult = 1.0 + sheer_const + buckets[_B_SHEER_DMG]
-        value = sf * crit_mult * bonus * sheer_mult * const_mult
-        return value, (atk_total, hp_total, sf)
-
-    def stat_total(stat: str, buckets: list[float], aux: tuple) -> float:
-        """One constraint / maximize stat's final total for a bucket
-        vector (the totals SheerResults reports)."""
-        atk_total, hp_total, sf = aux
-        if stat == "ATK":
-            return atk_total
-        if stat == "HP":
-            return hp_total
-        if stat == "Sheer Force":
-            return sf
-        if stat == "DEF":
-            return (def_base * (1.0 + buckets[_B_DEF_PCT])
-                    + buckets[_B_DEF_FLAT])
-        if stat == "CRIT Rate":
-            return base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
-        if stat == "CRIT DMG":
-            return with_deferred_cd(
-                base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
-        if stat == "PEN Ratio":
-            return buckets[_B_PEN_RATIO] + pen_ratio_const
-        if stat == "PEN":
-            return buckets[_B_PEN_FLAT]
-        if stat == "Impact":
-            return impact_base * (1.0 + buckets[_B_IMPACT])
-        if stat == "Energy Regen":
-            return er_base * (1.0 + buckets[_B_ER])
-        if stat == "Anomaly Proficiency":
-            return ap_const + buckets[_B_AP]
-        # "Anomaly Mastery" (keys validated above)
-        return (am_const + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
-
-    feasible = _make_feasible(options, panel_consts, stat_total)
-
-    # --- Per-set precomputation (§5 policy) --------------------------------
-    baseline_counts: dict[str, int] = {}
-    for disc in config.discs:
-        if disc.disc_set is not None:
-            baseline_counts[disc.disc_set] = (
-                baseline_counts.get(disc.disc_set, 0) + 1
-            )
-
-    def assumed_stacks(key: str) -> int:
-        entry = disc_sets[key]
-        # Wearer-side modeled 4pc: the classic bonus, or a squad-facing
-        # part (the wearer is a squad member too — King of the Summit).
-        max_stacks = set_4pc_max_stacks(entry)
-        if not max_stacks:
-            return 0
-        if baseline_counts.get(key, 0) >= 4:
-            return config.set_stacks.get(key, 0)
-        return max_stacks if options.set_assumption == "max" else 0
-
-    set_2pc: dict[str, tuple[float, ...]] = {}
-    set_4pc: dict[str, tuple[float, ...]] = {}
-    set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, tuple[float, float]] = {}
-    candidate_sets = {
-        c.disc.disc_set
-        for slot_list in candidates.values() for c in slot_list
-        if c.disc.disc_set is not None
-    }
-    teammate_present = bool(config.supports)
-    for key in candidate_sets:
-        entry = disc_sets[key]
-        set_2pc[key] = _set_2pc_buckets(
-            entry, attr, config.skill_tag, config.counts_as_aftershock)
-        stacks = assumed_stacks(key)
-        set_stacks_used[key] = stacks
-        # Wearer-side 4pc stats at the assumed stacks (mirrors
-        # set_bonus_stats: classic bonus incl. the at-max extra — Yunkui
-        # Tales' Sheer DMG% lands in _B_SHEER_DMG, which THIS mode's fast
-        # path reads — or a squad-facing part mapped to a build stat).
-        set_4pc[key] = _bucket_vector(set_4pc_stats(entry, stacks))
-        # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
-        # skill-tag-gated ones and a set's auto 4pc DMG% — both land in the
-        # same additive DMG% bracket in sheer mode too (a tag-gated Sheer
-        # DMG% set doesn't exist today; the §4 re-check would hard-fail
-        # rather than mis-rank if one were ever added to the data).
-        tag_skill = sum(
-            b.value for b in entry.bonus_4pc_dmg
-            if (config.skill_tag is not None
-                and b.skill_tag == config.skill_tag)
-            or (config.counts_as_aftershock
-                and b.skill_tag == "aftershock")
-        )
-        auto = 0.0
-        if entry.auto_4pc_dmg and (
-                not entry.auto_4pc_dmg_needs_teammate or teammate_present):
-            auto = entry.auto_4pc_dmg
-        set_tag_bonus[key] = (tag_skill + auto, 0.0)
-
-    def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
-        """The ``CalcConfig.set_stacks`` this combination is evaluated at."""
-        return {
-            key: set_stacks_used[key]
-            for key, count in counts.items()
-            if count >= 4 and set_stacks_used[key]
-        }
-
-    # --- Branch-and-bound DFS (§11 E2), shared search core -----------------
-    outcome = _search_maximizing(
-        candidates, slots, equipped, base_buckets, evaluate, feasible,
-        stat_total, set_2pc, set_4pc, set_tag_bonus, candidate_sets,
-        required, options, _bound,
-    )
-    heap, evals, exhausted = outcome.heap, outcome.evals, outcome.exhausted
-
-    # --- Baseline feasibility (constraints may exclude the baseline) ------
-    # After the search: a maximize-stat run's damage floor (§15 E5) is
-    # only known once the first pass has found the ceiling.
-    base_bb = list(base_buckets)
-    for disc in config.discs:
-        for k, v in enumerate(_disc_buckets(disc, disc_data, attr)):
-            base_bb[k] += v
-    _fold_sets(base_bb, baseline_counts, set_2pc, set_4pc, set_tag_bonus)
-    _, baseline_aux = evaluate(base_bb, (0.0, 0.0))
-    baseline_stat = (stat_total(options.maximize_stat, base_bb, baseline_aux)
-                     if options.maximize_stat else None)
-    baseline_shortfalls: list = []
-    baseline_feasible = (
-        outcome.check_baseline(base_bb, baseline_aux, baseline_value,
-                               baseline_shortfalls)
-        and (required is None or baseline_counts.get(required, 0) >= 4)
-        and _baseline_mains_ok(equipped, options.slot_main_stats,
-                               attr)
-        and (not options.sets_only or _sets_coverage_ok(config.discs))
-    )
-
-    def verify(combo: tuple[_Candidate, ...]) -> BuildOption:
-        """Re-run one build through calculate_sheer (exactness, §4)."""
-        discs = [c.disc for c in combo]
-        buckets, tagged, counts = _combo_buckets(
-            combo, base_buckets, set_2pc, set_4pc, set_tag_bonus)
-        fast_value, aux = evaluate(buckets, tagged)
-        stacks = combo_set_stacks(counts)
-        results = calculate_sheer(
-            replace(config, discs=discs, set_stacks=stacks), **data
-        )
-        exact = getattr(results, options.objective)
-        if abs(fast_value - exact) > _RECHECK_RTOL * max(1.0, abs(exact)):
-            raise OptimizeError(
-                f"Internal error: fast evaluation ({fast_value!r}) disagrees "
-                f"with calculate_sheer() ({exact!r}) — please report this "
-                f"build"
-            )
-        return BuildOption(
-            value=exact,
-            delta=(exact - baseline_value) / baseline_value
-            if baseline_value else 0.0,
-            discs=tuple(discs),
-            disc_ids=tuple(c.disc_id for c in combo),
-            set_stacks=stacks,
-            changed_slots=tuple(
-                c.disc.slot for c in combo
-                if equipped.get(c.disc.slot) != c.disc
-            ),
-            results=results,
-            stat_value=(stat_total(options.maximize_stat, buckets, aux)
-                        if options.maximize_stat else None),
-        )
-
-    # Highest value first; on exact ties the earlier build wins, and the
-    # baseline is the first build seeded, so a tie resolves toward the
-    # current discs. Greedy seeds the DFS found again are de-duplicated.
-    ranked = sorted(heap, key=lambda item: (-item[0], -item[1]))
-    seen_combos: set = set()
-    unique = []
-    for value, _neg_counter, combo in ranked:
-        combo_key = tuple(id(c) for c in combo)
-        if combo_key in seen_combos:
-            continue
-        seen_combos.add(combo_key)
-        unique.append((value, combo))
-    options_verified = [verify(combo) for _value, combo in unique]
-
-    if not options_verified and not baseline_feasible:
-        raise _infeasible_error(
-            _baseline_reasons(
-                baseline_shortfalls,
-                discs=config.discs,
-                equipped=equipped,
-                required=required,
-                baseline_counts=baseline_counts,
-                disc_sets=disc_sets,
-                slot_main_stats=options.slot_main_stats,
-                attribute=attr,
-                sets_only=options.sets_only,
-            ),
-            exhausted, options.combo_budget,
-        )
-
-    best = options_verified[0] if options_verified else None
-    # Compared by the SEARCH's ranking key — damage, or (maximize mode)
-    # the stat with damage as the tie-break. Comparing damage there would
-    # call the baseline a winner against a build that deliberately traded
-    # a little damage for more of the maximized stat.
-    baseline_rank = outcome.rank(baseline_value, baseline_stat)
-    baseline_wins = baseline_feasible and (
-        best is None
-        or outcome.rank(best.value, best.stat_value)
-        <= baseline_rank * (1.0 + _RECHECK_RTOL)
-    )
-    # A budget-exhausted search proves nothing about optimality: the
-    # baseline may still be reported as the best FOUND, but never as
-    # "already optimal".
-    already_optimal = baseline_wins and not exhausted
-    if baseline_wins:
-        best = BuildOption(
-            value=baseline_value,
-            delta=0.0,
-            discs=tuple(config.discs),
-            disc_ids=tuple(
-                next((i for i, d in user_discs.items() if d == disc), None)
-                for disc in config.discs
-            ),
-            set_stacks=dict(config.set_stacks),
-            changed_slots=(),
-            results=baseline_results,
-            stat_value=baseline_stat,
-        )
-    alternatives = tuple(
-        option for option in options_verified
-        if option is not best and option.changed_slots
-    )[: options.top_n - 1]
-
-    return OptimizeResult(
-        objective=options.objective,
-        set_assumption=options.set_assumption,
-        baseline_value=baseline_value,
-        baseline_feasible=baseline_feasible,
-        already_optimal=already_optimal,
-        best=best,
-        alternatives=alternatives,
-        min_stats=dict(options.min_stats),
-        required_4pc=required,
-        slot_main_stats=dict(options.slot_main_stats),
-        sets_only=options.sets_only,
-        budget_exhausted=exhausted,
-        min_panel_stats=dict(options.min_panel_stats),
-        maximize_stat=options.maximize_stat,
-        maximize_tolerance=(options.maximize_tolerance
-                            if options.maximize_stat else 0.0),
-        damage_ceiling=outcome.ceiling,
-        damage_floor=outcome.floor,
-        combos_evaluated=evals,
-        candidates_per_slot={s: len(candidates[s]) for s in slots},
-        discs_pruned=pruned_count,
+    return _optimize(
+        config, options if options is not None else OptimizeOptions(),
+        objectives=OBJECTIVES, constraint_stats=SHEER_CONSTRAINT_STATS,
+        calc_name="calculate_sheer",
+        calc=lambda cfg, data: calculate_sheer(cfg, **data),
+        build_model=_sheer_model,
+        consts=consts, disc_data=disc_data, bosses=bosses, agents=agents,
+        engines=engines, disc_sets=disc_sets, anomaly_data=None,
+        user_discs=user_discs, _prune=_prune, _bound=_bound,
     )

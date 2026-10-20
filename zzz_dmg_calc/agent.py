@@ -28,7 +28,7 @@ Bucket rules enforced here (plan §2):
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .constants import Constants
@@ -64,12 +64,18 @@ class AgentError(ValueError):
 #: :func:`~.formulas.refringe_mult`), kept apart from the additive
 #: ``anomaly_buff`` bracket so a Refringe provider and ordinary
 #: "Anomaly DMG +X%" buffs never dilute each other.
+#: Anomaly-crit kinds (3.3, Phoenix's Sear): ``anomaly_crit_rate`` /
+#: ``anomaly_crit_dmg`` let ANOMALY damage crit. They form their own
+#: multiplicative zone ``1 + min(rate, cap) × dmg`` in the anomaly modes
+#: (the datamine's ``anomaly_crit_mult_``, also used by Jane Doe), and are
+#: deliberately separate from ``crit_rate``/``crit_dmg``: a build's CRIT
+#: stats never reach anomaly damage.
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
                     "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
                     "anomaly_buff", "disorder_mult_add",
                     "anomaly_proficiency", "pen_ratio",
                     "sheer_force", "hp_pct", "sheer_dmg", "def_red",
-                    "refringe")
+                    "refringe", "anomaly_crit_rate", "anomaly_crit_dmg")
 
 #: Calculation modes an effect may be gated to via its ``modes`` list.
 #: An effect without ``modes`` applies in every mode (original behavior).
@@ -97,9 +103,13 @@ TOTAL_CRIT_DMG_INPUT = "total_crit_dmg"
 #: See :class:`KitBuff` for why the duplication exists.
 SELF_DUPLICATE_SLOTS = ("core_passive", "additional_ability", "potential")
 
-#: The game's six agent Specialties, as used by ``Agent.specialty`` and by
-#: the specialty lists inside a buff ``condition``.
-SPECIALTIES = ("attack", "stun", "anomaly", "support", "defense", "rupture")
+#: The game's agent Specialties, as used by ``Agent.specialty`` and by the
+#: specialty lists inside a buff ``condition``. ``armorer`` is the 7th
+#: (Claret, 2.x): no Armorer is in the roster and their Sharp DMG /
+#: Laceration formula is not modeled, but Koleda's Potential-widened
+#: ability requirement names it.
+SPECIALTIES = ("attack", "stun", "anomaly", "support", "defense", "rupture",
+               "armorer")
 
 #: Keys a kit buff's ``condition`` object may carry. Every real ZZZ
 #: Additional Ability requirement is a DISJUNCTION — "an Attack character
@@ -211,6 +221,16 @@ class KitEffect:
     — the kit analog of the disc sets' ``at_max_extra`` (e.g. Ellen's
     Potential: the Ice RES ignore applies only at 10 Rising Storm stacks,
     while the sibling CRIT DMG effect is per-stack).
+
+    ``squad`` (Potential levels only) marks an effect that reaches the
+    whole squad, so it also applies when the owner is an off-field
+    SUPPORT (Koleda's "all Agents deal 35% more damage"). Unmarked
+    potential effects are self-only (Rina's own PEN Ratio). The on-field
+    owner always gets every effect — the squad includes them.
+
+    ``abloom_only`` gates the effect to Abloom instances: anomaly mode
+    with Vivian's ``abloom`` or an ``anomaly_mult_override`` (Phoenix's
+    Abloom CRIT DMG +40% and her M6 DEF ignore).
     """
 
     kind: str
@@ -220,6 +240,8 @@ class KitEffect:
     modes: tuple[str, ...] | None = None
     element: str | None = None
     at_max_stacks: bool = False
+    squad: bool = False
+    abloom_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,6 +274,12 @@ class KitBuff:
     note: str = ""
     condition: dict | None = None
     self_duplicate_of: str | None = None
+
+    def squad_part(self) -> KitBuff | None:
+        """This buff cut down to its ``squad`` effects, or ``None`` if it
+        has none — what an off-field support's Potential level delivers."""
+        effects = tuple(e for e in self.effects if e.squad)
+        return replace(self, effects=effects) if effects else None
 
 
 @dataclass(frozen=True)
@@ -296,7 +324,8 @@ class LuminizeData:
 
     Present only on agents whose stored-anomaly payload is modeled as its
     own calculation mode (Remielle). ``ap_scaling`` is MULTIPLICATIVE on
-    the skill multiplier, not additive.
+    the skill multiplier, not additive. ``m1_res_ignore`` is the
+    All-Attribute RES her M1 (Naive Oath) ignores on Luminize only.
     """
 
     ap_scaling: float
@@ -304,6 +333,7 @@ class LuminizeData:
     max_voidflares: int
     skills: dict[str, LuminizeSkill] = field(default_factory=dict)
     note: str = ""
+    m1_res_ignore: float = 0.0
 
     def multiplier(self, skill_key: str, anomaly_proficiency: float,
                    m4: bool = False) -> float:
@@ -415,8 +445,14 @@ class BuildStats:
         anomaly_proficiency: Total AP (agent base + core + engine + discs).
         anomaly_mastery: Total AM (buildup speed — informational; not part
             of the per-proc damage formula).
-        dmg_bonuses: DMG% bracket contributions (attribute DMG% from discs;
-            external buffs are appended by the API layer).
+        dmg_bonuses: DMG% bracket contributions (attribute DMG% from discs
+            and sets, plus generic DMG%; external buffs are appended by the
+            API layer).
+        generic_dmg_bonuses: The element-agnostic subset of
+            ``dmg_bonuses`` (generic "DMG%", e.g. Fanged Metal 4pc). It
+            reaches EVERY damage the agent deals — including a Disorder /
+            Vortex dealt as another element, where the attribute part does
+            not apply.
         hp: Panel Max HP: ``hp_base × (1 + hp_pct) + hp_flat``. Team HP%
             buffs multiply this finished panel at the API layer (combat
             bracket, like Combat ATK%). Feeds Sheer Force (Phase 5 Rupture).
@@ -438,6 +474,7 @@ class BuildStats:
     anomaly_proficiency: float = 0.0
     anomaly_mastery: float = 0.0
     dmg_bonuses: list[float] = field(default_factory=list)
+    generic_dmg_bonuses: list[float] = field(default_factory=list)
     hp: float = 0.0
     hp_base: float = 0.0
     hp_pct: float = 0.0
@@ -451,12 +488,16 @@ class BuildStats:
     combat_atk_pct: float = 0.0
 
 
-def _parse_kit_buff(raw, where: str) -> KitBuff:
+def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
     """Validate and build one kit buff (core passive / modeled mindscape).
 
+    ``allow_squad`` is True only for Potential levels — the one slot whose
+    effects may be marked ``squad`` (everywhere else the slot itself says
+    who it reaches: team buffs are squad-wide, the rest are self-only).
+
     Raises:
-        AgentError: missing name, bad stacks, unknown effect kind, or a
-            non-positive value.
+        AgentError: missing name, bad stacks, unknown effect kind, a
+            non-positive value, or ``squad`` outside a Potential level.
     """
     if not isinstance(raw, dict):
         raise AgentError(f"{where} must be an object")
@@ -530,15 +571,24 @@ def _parse_kit_buff(raw, where: str) -> KitBuff:
                 f"{where}: effect 'element' must be one of {list(ELEMENTS)}, "
                 f"got {element!r}"
             )
-        at_max = item.get("at_max_stacks", False)
-        if not isinstance(at_max, bool):
+        flags = {}
+        for flag in ("at_max_stacks", "squad", "abloom_only"):
+            flags[flag] = item.get(flag, False)
+            if not isinstance(flags[flag], bool):
+                raise AgentError(
+                    f"{where}: effect '{flag}' must be a boolean"
+                )
+        if flags["squad"] and not allow_squad:
             raise AgentError(
-                f"{where}: effect 'at_max_stacks' must be a boolean"
+                f"{where}: effect 'squad' is only valid on Potential "
+                f"levels (team buffs are squad-wide already)"
             )
         effects.append(KitEffect(kind=kind, value=float(value),
                                  skill_tag=skill_tag, scaling=scaling,
                                  modes=modes, element=element,
-                                 at_max_stacks=at_max))
+                                 at_max_stacks=flags["at_max_stacks"],
+                                 squad=flags["squad"],
+                                 abloom_only=flags["abloom_only"]))
     condition = raw.get("condition")
     if condition is not None:
         if not isinstance(condition, dict) or not condition:
@@ -666,7 +716,8 @@ def _parse_potential(raw, agent_key: str) -> tuple[str, str, dict[int, Mindscape
             buff = None
             if entry.get("effects") is not None:
                 buff = _parse_kit_buff(
-                    entry, f"Agent '{agent_key}' potential level {level}"
+                    entry, f"Agent '{agent_key}' potential level {level}",
+                    allow_squad=True,
                 )
             levels[level] = Mindscape(
                 level=level,
@@ -730,12 +781,19 @@ def _parse_luminize(raw, agent_key: str) -> LuminizeData | None:
             f"Agent '{agent_key}': luminize 'max_voidflares' must be an "
             f"integer >= 1"
         )
+    m1_res_ignore = number("m1_res_ignore")
+    if m1_res_ignore > 1:
+        raise AgentError(
+            f"Agent '{agent_key}': luminize 'm1_res_ignore' must be a "
+            f"fraction <= 1"
+        )
     return LuminizeData(
         ap_scaling=number("ap_scaling"),
         m4_multiplier=number("m4_multiplier", minimum=1.0),
         max_voidflares=max_vf,
         skills=skills,
         note=str(raw.get("note", "")),
+        m1_res_ignore=m1_res_ignore,
     )
 
 
@@ -917,8 +975,10 @@ def _fold_stat(build: BuildStats, stat: str, value: float) -> None:
         build.dmg_bonuses.append(value)
     elif stat == "DMG%":
         # Generic (element-agnostic) DMG bonus, e.g. Fanged Metal 4pc —
-        # same additive bracket as Attribute DMG%.
+        # same additive bracket as Attribute DMG%, but it applies to all of
+        # the agent's damage whatever element it is dealt as.
         build.dmg_bonuses.append(value)
+        build.generic_dmg_bonuses.append(value)
     elif stat == "Sheer DMG%":
         # Dedicated Sheer DMG bracket (Yunkui Tales 4pc at max stacks) —
         # separate multiplicative zone, calibrated in-game 2026-07-10.

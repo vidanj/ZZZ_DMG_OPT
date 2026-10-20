@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 2 section, 'Disc set bonuses')",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). 'bonus_4pc_auto_anomaly_dmg' is the same idea for the separate Anomaly/Disorder Buff Multiplier bracket instead of the DMG% one (Feathered Fate's Attribute Anomaly DMG +15%), applied in anomaly modes only; 'bonus_4pc_auto_attribute' restricts THAT part to a wearer of the named attribute (Feathered Fate: 'lumiflux'), so the same set gives a non-Lumiflux wearer only its AP halves. Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter)."
+    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). 'bonus_4pc_auto_anomaly_dmg' is the same idea for the separate Anomaly/Disorder Buff Multiplier bracket instead of the DMG% one (Feathered Fate's Attribute Anomaly DMG +15%), applied in anomaly modes only; 'bonus_4pc_auto_attribute' restricts THAT part to a wearer of the named attribute (Feathered Fate: 'lumiflux'), so the same set gives a non-Lumiflux wearer only its AP halves. Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter). TEAM-ELEMENT GATE (2026-10-20): 'needs_squad_element' inside a bonus_4pc names the element whose anomaly triggers it (Thunder Metal = electric / Shock, Fanged Metal = physical / Assault, Inferno Metal = fire / Burn, Chaotic Metal = ether / Corruption). The OPTIMIZER credits that 4pc at 0 stacks when no squad member (main agent - its dealt element - or an entered support) has the element; the calculator itself is unchanged (stacks stay the user's call). It gates only the stacking bonus_4pc part."
   },
   "sets": {
     "WOODPECKER_ELECTRO": {
@@ -100,9 +100,10 @@
         "per_stack": 0.35,
         "max_stacks": 1,
         "auto": true,
-        "note": "Whenever a squad member inflicts Assault: the equipper deals +35% DMG to the target for 12s. Generic DMG% (zenless-optimizer brackets it with the ordinary DMG% bonuses) - RAMP-UP, effectively always up after the first Assault, so auto-applied (range's floor covers the ramp)."
+        "needs_squad_element": "physical",
+        "note": "Whenever a squad member inflicts Assault: the equipper deals +35% DMG to the target for 12s. Generic DMG% (zenless-optimizer brackets it with the ordinary DMG% bonuses) - RAMP-UP, effectively always up after the first Assault, so auto-applied (range's floor covers the ramp). Assault is the Physical anomaly: needs a Physical squad member (main or support) - the optimizer won't credit it otherwise."
       },
-      "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. Disorder-mode caveat: the calculator only applies build DMG% when the dealt element matches the attacker's attribute, so the 4pc is dropped from Disorder bursts dealt as another element - enter it manually there if active."
+      "notes": "Physical anomaly set (added 2026-07-04, zenless-optimizer datamine). 2pc is PHYSICAL DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's +35% is GENERIC DMG: once an Assault triggers it, it applies to everything the equipper deals until it expires - Disorder / Vortex dealt as another element included (user confirmed 2026-10-20); only the element-gated 2pc is dropped there."
     },
     "FEATHERED_FATE": {
       "name": "Feathered Fate",
@@ -156,7 +157,8 @@
         "per_stack": 0.28,
         "max_stacks": 1,
         "auto": true,
-        "note": "While an enemy in combat is Shocked: the equipper's ATK +28% (Combat ATK%, panel-multiplying). RAMP-UP - a Shocked enemy comes up quickly in an Electric team, so auto-applied (the range covers uptime)."
+        "needs_squad_element": "electric",
+        "note": "While an enemy in combat is Shocked: the equipper's ATK +28% (Combat ATK%, panel-multiplying). RAMP-UP - a Shocked enemy comes up quickly in an Electric team, so auto-applied (the range covers uptime). Shock is the Electric anomaly: needs an Electric squad member (main or support) - the optimizer won't credit it otherwise."
       },
       "notes": "Electric anomaly/attack set (added 2026-07-04, zenless-optimizer datamine). 2pc is ELECTRIC DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%."
     },
@@ -255,7 +257,8 @@
         "max_stacks": 6,
         "auto": true,
         "at_max_extra": { "stat": "CRIT DMG", "value": 0.20 },
-        "note": "Squad Corruption DMG triggers grant +5.5% CRIT DMG per stack (max 6) for 8s (refreshing). The 4pc's UNCONDITIONAL base CRIT DMG +20% is carried as at_max_extra: with auto defaulting to max stacks the full 53% applies; when overriding to partial stacks the schema drops the base (it's tied to max) - add the 20 manually there. RAMP-UP - Corruption ticks hold max in an Ether anomaly team."
+        "needs_squad_element": "ether",
+        "note": "Squad Corruption DMG triggers grant +5.5% CRIT DMG per stack (max 6) for 8s (refreshing). The 4pc's UNCONDITIONAL base CRIT DMG +20% is carried as at_max_extra: with auto defaulting to max stacks the full 53% applies; when overriding to partial stacks the schema drops the base (it's tied to max) - add the 20 manually there. RAMP-UP - Corruption ticks hold max in an Ether anomaly team. Corruption is the Ether anomaly: needs an Ether squad member (main or support) - the optimizer won't credit it otherwise, and since the base +20% rides at_max_extra it is not credited either (accepted 2026-10-20: the set is never worth wearing off an Ether team)."
       },
       "notes": "Ether anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. RAMP-UP: Corruption ticks keep stacks near max in an Ether anomaly team."
     },
@@ -268,7 +271,8 @@
         "per_stack": 0.28,
         "max_stacks": 1,
         "auto": true,
-        "note": "Upon hitting a Burning enemy: the equipper's CRIT Rate +28% for 8s. RAMP-UP - a Burning enemy is effectively permanent in a Fire team, so auto-applied (Thunder Metal convention)."
+        "needs_squad_element": "fire",
+        "note": "Upon hitting a Burning enemy: the equipper's CRIT Rate +28% for 8s. RAMP-UP - a Burning enemy is effectively permanent in a Fire team, so auto-applied (Thunder Metal convention). Burn is the Fire anomaly: needs a Fire squad member (main or support) - the optimizer won't credit it otherwise."
       },
       "notes": "Fire attack/anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is FIRE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%."
     },

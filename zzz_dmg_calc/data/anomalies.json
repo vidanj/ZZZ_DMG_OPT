@@ -78,5 +78,19 @@
     "ether": { "mult": 6.5, "time_mult": 1.25, "window": 30 },
     "ice": { "mult": 13.0, "time_mult": 0.075, "window": 30 },
     "physical": { "mult": 8.0, "time_mult": 0.075, "window": 30 }
+  },
+  "abloom": {
+    "_note": "Vivian's ABLOOM (Dirge of Destiny, max core): her Featherbloom on an anomalous target adds a separate instance = (mv_per_10_ap[element] / 100 x AP / 10) x that anomaly's base mult, dealt as that element; her M2 raises the AP benefit by m2_factor. The UI's 'Vivian Abloom (auto)' toggle (config.abloom) uses this table. PROVISIONAL (datamine, uncalibrated). Moved here from api.py constants 2026-10-17.",
+    "mv_per_10_ap": {
+      "ether": 6.15, "electric": 3.2, "fire": 8.0,
+      "physical": 0.75, "ice": 1.08, "wind": 0.32
+    },
+    "m2_factor": 1.30
+  },
+  "polarity_disorder": {
+    "_note": "Yanagi's POLARITY DISORDER: fires a Disorder on the enemy's EXISTING anomaly without consuming it. Per trigger = fraction x the base Disorder (base + time decay) + the Disorder-mult additives at FULL + (ap_coeff_base + Special Lv x ap_coeff_per_level) x AP / 100 (GO anom_flat_dmg). 'fraction' CALIBRATED in-game 2026-07-05 (within 0.3% over elapsed 0-3s); the AP-term coefficient matches the in-game LOWER bound at Lv. 12 - PROVISIONAL. Moved here from api.py constants 2026-10-17.",
+    "fraction": 0.15,
+    "ap_coeff_base": 0.05,
+    "ap_coeff_per_level": 0.0225
   }
 }

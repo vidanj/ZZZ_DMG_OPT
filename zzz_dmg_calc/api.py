@@ -25,6 +25,7 @@ Vortex triggered when that element's anomaly meets an active Windswept
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -98,6 +99,11 @@ class SupportConfig:
             support's default engine.
         engine_rank: Refinement rank of that engine (``None`` = default).
         engine_buffs: squad buff name -> active stacks (1/0 for on-off).
+        potentials: The support's Potential Awakening level -> active
+            stacks, same shape and one-level rule as
+            :attr:`CalcConfig.potentials`. Only that level's ``squad``
+            effects reach the on-field agent (Koleda's squad DMG / CRIT
+            DMG, Rina's squad ATK); self-only ones stay with the support.
     """
 
     agent_key: str
@@ -108,6 +114,7 @@ class SupportConfig:
     engine_key: str | None = None
     engine_rank: int | None = None
     engine_buffs: dict[str, int] = field(default_factory=dict)
+    potentials: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -215,7 +222,10 @@ class CalcConfig:
             active — more than one is rejected. Per-stack effects use the
             same stack count as the kit buff they augment (e.g. Ellen's
             potential rides her Rising Storm stacks); ``at_max_stacks``
-            effects fire only at full stacks.
+            effects fire only at full stacks. The on-field agent gets ALL
+            of the level's effects, ``squad`` ones included (the squad
+            includes the owner); a support's level goes through
+            :attr:`SupportConfig.potentials` instead.
         additional_ability_stacks: Active stacks of the on-field agent's
             Additional Ability (e.g. Nekomata's Catwalk, 0-2). The team
             condition is the user's responsibility (the UI pre-checks it);
@@ -289,15 +299,21 @@ class CalcConfig:
         abloom: Vivian's ABLOOM — plain anomaly mode. Computes her
             Featherbloom Abloom automatically: a separate instance dealt as
             ``abloom_element`` (default the agent's attribute) equal to
-            ``VIVIAN_ABLOOM_MV[element]/100 × (AP/10) × base_mult`` of the
-            anomaly's DMG — i.e. AP-scaled (unlike Velina's fixed-MV Ablooms
-            via ``anomaly_mult_override``). ×1.30 when her M2 is toggled
+            ``MV[element]/100 × (AP/10) × base_mult`` of the anomaly's DMG
+            (the ``abloom`` table of anomalies.json) — i.e. AP-scaled
+            (unlike Velina's fixed-MV Ablooms via ``anomaly_mult_override``).
+            × the table's ``m2_factor`` when her M2 is toggled
             (``mindscapes[2]``). Mutually exclusive with
             ``anomaly_mult_override``.
         abloom_element: The element of the anomaly the Abloom triggers on
             (``None`` = the agent's attribute, e.g. ether for her own
             Corruption). Its base mult and MV set the Abloom size; it is
-            dealt as this element.
+            dealt as this element. Also honoured with
+            ``anomaly_mult_override`` (an override Abloom resolves the
+            anomaly already on the target - Phoenix's and Nangong's
+            Ablooms hit any attribute): it then sets the dealt element,
+            its RES and the element gates; the override stays the full
+            multiplier. Ignored for a normal proc.
         anomaly_mult_override: ABSOLUTE anomaly multiplier for plain
             anomaly mode, REPLACING the element's base (``None`` = normal,
             e.g. wind Windswept 12.5). Velina's ABLOOMS are separate
@@ -308,7 +324,9 @@ class CalcConfig:
             6.80/12.5 of the Windswept popup, to the digit). Her M6
             Windswept overlap instead scales the base (12.5 × up to 1.40
             = up to 17.5). Ablooms are separate popups from Windswept/
-            Vortex — run one calc per instance, don't sum here.
+            Vortex — run one calc per instance, don't sum here. Setting
+            it marks the hit as an Abloom, which enables ``abloom_only``
+            kit effects.
         external_anomaly_buff: Entries of the separate Anomaly/Disorder
             "Buff Multiplier" bracket (fractions) — "Attribute Anomaly /
             Disorder / Windswept / Vortex DMG +X%" effects not already
@@ -322,8 +340,9 @@ class CalcConfig:
             Her downward thrust fires a Disorder on the enemy's EXISTING
             anomaly (including her own electric Shock, so
             ``disorder_replaced`` may equal her attribute) WITHOUT
-            consuming it, dealing ``POLARITY_DISORDER_FRACTION`` (0.15) of
-            a full Disorder per trigger — repeatable, her main DMG. Set
+            consuming it, dealing the ``polarity_disorder.fraction`` (0.15,
+            anomalies.json) of a full Disorder per trigger — repeatable,
+            her main DMG. Set
             ``disorder_replaced`` to the anomaly present on the enemy
             (e.g. ``"electric"`` for her own Shock, which also keeps
             Thunder Metal's Shocked ATK active). One tick = the burst
@@ -331,8 +350,9 @@ class CalcConfig:
             AP-scaled term (see ``polarity_special_level``).
         polarity_special_level: Yanagi's Special Attack skill level (1-16,
             default 12 = base max). Sets the Polarity Disorder AP-term
-            coefficient ``(5% + level × 2.25%)`` — the second, AP-scaling
-            part of her damage (GO's ``anom_flat_dmg``). ⚠️ PROVISIONAL.
+            coefficient ``(5% + level × 2.25%)`` (anomalies.json) — the
+            second, AP-scaling part of her damage (GO's ``anom_flat_dmg``).
+            ⚠️ PROVISIONAL.
         sheer_force_flat: Extra FLAT Sheer Force from external buffs
             (kit sources — Lucia's squad buff — add on top automatically).
             Sheer mode only.
@@ -442,9 +462,16 @@ class CalcResults:
 class AnomalyResults:
     """Output of :func:`calculate_anomaly` (anomaly proc or Disorder).
 
-    Anomalies cannot crit, so instead of the crit table the results carry
-    per-proc and full-duration totals, each in normal and stunned states.
-    For Disorder, the burst is a single number: ``per_proc == full``.
+    The results carry per-proc and full-duration totals, each in normal
+    and stunned states. For Disorder, the burst is a single number:
+    ``per_proc == full``.
+
+    Anomaly damage crits only through an anomaly-crit source (Phoenix's
+    Sear: ``anomaly_crit_rate`` / ``anomaly_crit_dmg`` kit effects). The
+    headline ``per_proc`` / ``full`` numbers are the EXPECTED value
+    ``non-crit × (1 + min(rate, cap) × dmg)``; ``per_proc_non_crit`` /
+    ``per_proc_crit`` split a proc. With no source the rate is 0, so all
+    three are equal and every pre-crit number is unchanged.
     """
 
     kind: str                 # "anomaly", "disorder" or "vortex"
@@ -474,6 +501,14 @@ class AnomalyResults:
     # Luminize mode: the display name of the skill that fired the
     # instance ("" in every other mode).
     luminize_skill: str = ""
+    # Anomaly crit (Phoenix's Sear). Rate is the UNCAPPED total (capping
+    # happens in the formula); 0.0 / 0.0 when nothing makes anomalies crit.
+    anomaly_crit_rate: float = 0.0
+    anomaly_crit_dmg: float = 0.0
+    per_proc_non_crit: float = 0.0
+    per_proc_crit: float = 0.0
+    per_proc_non_crit_stunned: float = 0.0
+    per_proc_crit_stunned: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -514,24 +549,6 @@ class SheerResults:
     element: str
     # Every active conditional buff as {source, kind, value}.
     buff_breakdown: tuple = ()
-
-
-#: Polarity Disorder (Yanagi) reduces the BASE Disorder (base + time decay)
-#: to this fraction per trigger; the Disorder-mult additives (her +250%) and
-#: the AP term apply at FULL on top. It does NOT consume the anomaly, so it
-#: repeats — her main DMG. CALIBRATED in-game 2026-07-05 (within 0.3%).
-POLARITY_DISORDER_FRACTION = 0.15
-
-#: Vivian's Abloom (Dirge of Destiny) MV per element — % per 10 AP of the
-#: original anomaly's DMG, at max core. Her Featherbloom on an anomalous
-#: target adds a separate instance = (MV/100 × AP/10) × the anomaly's DMG,
-#: dealt as that element. ⚠️ PROVISIONAL (datamine, uncalibrated).
-VIVIAN_ABLOOM_MV = {
-    "ether": 6.15, "electric": 3.2, "fire": 8.0,
-    "physical": 0.75, "ice": 1.08, "wind": 0.32,
-}
-#: Vivian's M2 raises the Abloom's AP benefit to this fraction.
-VIVIAN_ABLOOM_M2_FACTOR = 1.30
 
 
 class CalcError(ValueError):
@@ -757,9 +774,13 @@ def _kit_contributions(
     element matches — checked in the direct/anomaly modes only, since
     Disorder/Vortex deal another element's damage by design.
 
+    An ``abloom_only`` effect applies only to an Abloom instance: anomaly
+    mode with ``config.abloom`` or ``config.anomaly_mult_override`` set.
+
     Returns a dict with keys ``crit_rate``, ``crit_dmg``, ``res_shred``,
     ``flat_atk``, ``atk_pct``, ``anomaly_proficiency``,
-    ``disorder_mult_add``, ``refringe`` (floats) and ``dmg_bonus``,
+    ``disorder_mult_add``, ``refringe``, ``anomaly_crit_rate``,
+    ``anomaly_crit_dmg`` (floats) and ``dmg_bonus``,
     ``dmg_taken``, ``daze_bonus``, ``anomaly_buff`` (lists of bracket
     entries).
 
@@ -773,6 +794,7 @@ def _kit_contributions(
               "anomaly_proficiency": 0.0, "disorder_mult_add": 0.0,
               "sheer_force": 0.0, "hp_pct": 0.0, "def_red": 0.0,
               "refringe": 0.0,
+              "anomaly_crit_rate": 0.0, "anomaly_crit_dmg": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
               "anomaly_buff": [], "sheer_dmg": [],
               "deferred_crit_dmg": [],
@@ -783,9 +805,18 @@ def _kit_contributions(
             {"source": source, "kind": kind, "value": value}
         )
 
+    # Abloom instances are plain-anomaly calculations whose multiplier is
+    # Vivian's AP-scaled one or an explicit override (every other Abloom).
+    is_abloom = mode == "anomaly" and (
+        config.abloom or config.anomaly_mult_override is not None)
+
     def apply(buff, stacks: float, scaling_inputs: dict | None = None,
               owner: str = "") -> None:
         for effect in buff.effects:
+            # Abloom-only riders (Phoenix's Abloom CRIT DMG, her M6 DEF
+            # ignore) skip every other hit.
+            if effect.abloom_only and not is_abloom:
+                continue
             # Skill-tag-gated effects apply only to matching hits (e.g.
             # Catwalk buffs EX Specials only); a hit that also counts as
             # Aftershock matches aftershock gates on top of its own tag.
@@ -941,36 +972,45 @@ def _kit_contributions(
         if stacks:
             apply(mindscape.buff, stacks, config.scaling_inputs)
 
-    # Potential Awakening: the levels of one track replace each other, so
-    # at most ONE may be active (the user's unlocked level).
-    active_potentials = [
-        (int(level_raw), stacks)
-        for level_raw, stacks in config.potentials.items() if stacks
-    ]
-    if len(active_potentials) > 1:
-        raise CalcError(
-            f"Agent '{agent.name}': at most one Potential level may be "
-            f"active (its levels replace each other), got levels "
-            f"{sorted(level for level, _ in active_potentials)}"
-        )
-    for level_raw, stacks in config.potentials.items():
-        level = int(level_raw)
-        potential = agent.potentials.get(level)
-        if potential is None:
+    def active_potential(owner: Agent, potentials: dict) -> list:
+        """Validate one agent's Potential selection; return its active
+        ``(level, Mindscape, stacks)`` entries (at most one).
+
+        The levels of one track replace each other, so at most ONE may be
+        active (the user's unlocked level). Shared by the on-field agent
+        and the supports so both enforce the same rules.
+        """
+        active = [(int(level_raw), stacks)
+                  for level_raw, stacks in potentials.items() if stacks]
+        if len(active) > 1:
             raise CalcError(
-                f"Agent '{agent.name}' has no potential level {level} in "
-                f"the data"
+                f"Agent '{owner.name}': at most one Potential level may be "
+                f"active (its levels replace each other), got levels "
+                f"{sorted(level for level, _ in active)}"
             )
-        if potential.buff is None:
-            raise CalcError(
-                f"Potential level {level} ({potential.name}) has no "
-                f"modeled damage effect: {potential.note}"
-            )
-        check_stacks(stacks, potential.buff.max_stacks,
-                     f"Potential level {level} ({potential.name})")
-        if stacks:
-            apply(potential.buff, stacks, config.scaling_inputs,
-                  owner=f"{agent.potential_name} P{level}: ")
+        chosen = []
+        for level_raw, stacks in potentials.items():
+            level = int(level_raw)
+            potential = owner.potentials.get(level)
+            if potential is None:
+                raise CalcError(
+                    f"Agent '{owner.name}' has no potential level {level} "
+                    f"in the data"
+                )
+            if potential.buff is None:
+                raise CalcError(
+                    f"Potential level {level} ({potential.name}) has no "
+                    f"modeled damage effect: {potential.note}"
+                )
+            check_stacks(stacks, potential.buff.max_stacks,
+                         f"Potential level {level} ({potential.name})")
+            if stacks:
+                chosen.append((level, potential, stacks))
+        return chosen
+
+    for level, potential, stacks in active_potential(agent, config.potentials):
+        apply(potential.buff, stacks, config.scaling_inputs,
+              owner=f"{agent.potential_name} P{level}: ")
 
     # --- On-field agent's equipped-set AUTO 4pc DMG% (effectively-always-on
     # 4pc parts that ramp up in a rotation, e.g. Wuthering Salon's +18% on
@@ -1080,10 +1120,13 @@ def _kit_contributions(
             # exists to prevent. Only same-character pairs reach here, so
             # kits whose two copies target DIFFERENT characters (Seed's
             # M2: hers vs her Vanguard's) are unaffected: as a support
-            # her buffs arrive through ``supports``, never here.
+            # her buffs arrive through ``supports``, never here. Compared
+            # as a multiset: the same effects listed in another order are
+            # still the same buff (Velina's Tea Party Etiquette copies
+            # slipped past an in-order comparison until 2026-10-20).
             if stacks:
                 for slot_label, slot_buff in active_slots:
-                    if slot_buff.effects == buff.effects:
+                    if Counter(slot_buff.effects) == Counter(buff.effects):
                         raise CalcError(
                             f"Agent '{agent.name}': team buff "
                             f"'{buff.name}' has the same effects as their "
@@ -1125,6 +1168,20 @@ def _kit_contributions(
             if stacks:
                 apply(buff, stacks, support.scaling_inputs,
                       owner=f"{member.name}: ")
+        # The support's Potential level: only its squad-facing effects
+        # leave the support (Koleda's squad DMG, Rina's squad ATK).
+        for level, potential, stacks in active_potential(
+                member, support.potentials):
+            squad = potential.buff.squad_part()
+            if squad is None:
+                raise CalcError(
+                    f"Support '{member.name}': Potential level {level} "
+                    f"({potential.name}) has no squad-facing effect - it "
+                    f"is self-only, so it applies only when {member.name} "
+                    f"is the on-field agent"
+                )
+            apply(squad, stacks, support.scaling_inputs,
+                  owner=f"{member.name} {member.potential_name} P{level}: ")
         if support.squad_set is not None:
             entry = disc_sets.get(support.squad_set)
             if entry is None or entry.squad_4pc is None:
@@ -1703,10 +1760,10 @@ def calculate_anomaly(
         # The multiplier depends on AP, so it is finalised after the
         # buildup-weighted AP is known (below); here we set up the element.
         abloom_key = (config.abloom_element or attr).lower()
-        if abloom_key not in VIVIAN_ABLOOM_MV:
+        if abloom_key not in anomaly_data.abloom.mv_per_10_ap:
             raise CalcError(
                 f"No Abloom MV for element '{abloom_key}'; options: "
-                f"{sorted(VIVIAN_ABLOOM_MV)}"
+                f"{sorted(anomaly_data.abloom.mv_per_10_ap)}"
             )
         anomaly = anomaly_data.anomalies[abloom_key]
         try:
@@ -1719,11 +1776,6 @@ def calculate_anomaly(
         per_proc_mult = None            # set after weighted_ap
         hits = 1                        # one Abloom instance
     else:
-        anomaly = anomaly_data.anomalies[attr]
-        try:
-            anomaly.require_supported()
-        except Exception as exc:
-            raise CalcError(str(exc)) from None
         override = config.anomaly_mult_override
         if override is not None and (
                 isinstance(override, bool)
@@ -1733,11 +1785,28 @@ def calculate_anomaly(
                 "(Velina Ablooms: Condensed 1.45 / Sweeping 2.55 / "
                 "Ultimate 6.80; None = the element's normal proc)"
             )
+        # An override is an Abloom, which resolves the anomaly ALREADY on
+        # the target - any attribute, not only the attacker's (Phoenix,
+        # Nangong's Vibrato). ``abloom_element`` names it; without an
+        # override it is ignored (a normal proc is always the attacker's).
+        element_key = attr
+        if override is not None and config.abloom_element is not None:
+            element_key = config.abloom_element.lower()
+            if element_key not in anomaly_data.anomalies:
+                raise CalcError(
+                    f"Unknown Abloom element '{config.abloom_element}'; "
+                    f"options: {sorted(anomaly_data.anomalies)}"
+                )
+        anomaly = anomaly_data.anomalies[element_key]
+        try:
+            anomaly.require_supported()
+        except Exception as exc:
+            raise CalcError(str(exc)) from None
         kind = "anomaly"
         name = anomaly.name
         if override is not None:
             name += f" (Abloom / mult x{override:g})"
-        dealt_element = attr
+        dealt_element = element_key
         per_proc_mult = override if override is not None else anomaly.mult
         hits = anomaly.hits
         if luminize_mult is not None:
@@ -1773,7 +1842,7 @@ def calculate_anomaly(
                 rule.base, rule.time_mult, rule.window,
                 config.disorder_elapsed_seconds, extra_mult=0.0,
             )
-            per_proc_mult = (POLARITY_DISORDER_FRACTION * base_disorder
+            per_proc_mult = (anomaly_data.polarity.fraction * base_disorder
                              + disorder_additive)
         else:
             per_proc_mult = formulas.burst_conversion_mult(
@@ -1876,15 +1945,22 @@ def calculate_anomaly(
     weighted_bonus = 0.0
     for seg in segments:
         if seg.atk_override is not None:
-            # Teammate segment: their panel ATK / AP replace the build's.
+            # Teammate segment: their panel ATK / AP replace the build's
+            # (the build's own DMG% stays at the top-level set stacks).
             seg_atk = seg.atk_override
             seg_ap_base = 0.0
+            seg_dmg_bonuses = build.dmg_bonuses
+            seg_generic_dmg = build.generic_dmg_bonuses
         else:
             seg_build = aggregate_build(
                 agent, engine, config.discs, disc_data, consts,
                 disc_sets=disc_sets, set_stacks=seg.set_stacks,
                 attack_element=attr,
             )
+            # This slice's OWN set stacks: a stacked 4pc DMG% (Chaos Jazz,
+            # Fanged Metal) is up or down with the slice, like its ATK%.
+            seg_dmg_bonuses = seg_build.dmg_bonuses
+            seg_generic_dmg = seg_build.generic_dmg_bonuses
             # Kit/team ATK buffs join the panel bracket / flat bucket the
             # same way as in the direct-hit path (validation #4).
             seg_atk = (
@@ -1909,7 +1985,12 @@ def calculate_anomaly(
         )
         bonus_entries = list(seg.external_dmg_bonuses) + kit["dmg_bonus"]
         if dealt_element == attr:
-            bonus_entries = build.dmg_bonuses + bonus_entries
+            bonus_entries = seg_dmg_bonuses + bonus_entries
+        else:
+            # Another element's burst: the build's Attribute DMG% buffs a
+            # different element, but generic DMG% (Fanged Metal 4pc)
+            # covers all of the agent's damage.
+            bonus_entries = seg_generic_dmg + bonus_entries
         bonus_entries.extend(
             _engine_passive_bonuses(engine, dealt_element, rank)
         )
@@ -1939,10 +2020,9 @@ def calculate_anomaly(
         )
         bare_atk = bare_build.atk
         bare_ap = bare_build.anomaly_proficiency + engine.passive_ap(rank)
-        bare_entries = (
-            list(bare_build.dmg_bonuses)
-            if dealt_element == attr else []
-        )
+        bare_entries = list(
+            bare_build.dmg_bonuses if dealt_element == attr
+            else bare_build.generic_dmg_bonuses)
         bare_entries.extend(_engine_passive_bonuses(engine, dealt_element, rank))
         bare_bonus = formulas.dmg_bonus_mult(bare_entries)
         w = config.unbuffed_share
@@ -1958,11 +2038,12 @@ def calculate_anomaly(
 
     if config.abloom:
         # Vivian's Abloom multiplier = base_mult × (MV/100) × (AP/10),
-        # ×1.30 with her M2 (mindscapes[2]). AP-scaled, so finalised here
-        # with the buildup-weighted AP. ⚠️ PROVISIONAL (uncalibrated).
+        # × m2_factor with her M2 (mindscapes[2]). AP-scaled, so finalised
+        # here with the buildup-weighted AP. ⚠️ PROVISIONAL (uncalibrated).
         abloom_key = (config.abloom_element or attr).lower()
-        mv = VIVIAN_ABLOOM_MV[abloom_key]
-        m2 = VIVIAN_ABLOOM_M2_FACTOR if config.mindscapes.get(2) else 1.0
+        mv = anomaly_data.abloom.mv_per_10_ap[abloom_key]
+        m2 = (anomaly_data.abloom.m2_factor if config.mindscapes.get(2)
+              else 1.0)
         per_proc_mult = (anomaly_data.anomalies[abloom_key].mult
                          * (mv / 100.0) * (weighted_ap / 10.0) * m2)
 
@@ -1975,18 +2056,20 @@ def calculate_anomaly(
         # ⚠️ PROVISIONAL: matches the user's in-game LOWER bound at Lv12
         # (2026-07-05); the median/peak imply a higher effective
         # coefficient — needs a controlled measurement to pin exactly.
-        coeff = 0.05 + config.polarity_special_level * 0.0225
+        coeff = anomaly_data.polarity.coefficient(
+            config.polarity_special_level)
         per_proc_mult = per_proc_mult + coeff * (weighted_ap / 100.0)
 
     eff_def = formulas.effective_def(
         boss.base_def, build.pen_ratio + kit["pen_ratio"], build.pen_flat,
         def_red=kit["def_red"])
     defense = formulas.def_mult(consts.level_coefficient(agent.level), eff_def)
-    # Her M1 (Naive Oath) ignores 50% All-Attribute RES on Luminize only,
-    # and she is the SUPPORT here, so it cannot come from the attacker's
-    # mindscape toggles.
-    luminize_res = 0.50 if (config.luminize is not None
-                            and config.luminize.res_ignore) else 0.0
+    # Her M1 (Naive Oath) ignores All-Attribute RES on Luminize only (her
+    # luminize table's m1_res_ignore), and she is the SUPPORT here, so it
+    # cannot come from the attacker's mindscape toggles.
+    luminize_res = (agents[config.luminize.provider_key].luminize.m1_res_ignore
+                    if (config.luminize is not None
+                        and config.luminize.res_ignore) else 0.0)
     if luminize_res:
         kit["items"].append({
             "source": f"{config.luminize.provider_key} M1 (Luminize)",
@@ -2017,6 +2100,15 @@ def calculate_anomaly(
         list(config.external_daze_bonuses) + kit["daze_bonus"],
     )
 
+    # Anomaly crit zone (Phoenix's Sear; datamine anomaly_crit_mult_):
+    # its own multiplier, resolved at the hit — outside the buildup
+    # snapshot, since Sear is the enemy's state when the damage lands.
+    # ×1.0 exactly when nothing makes anomalies crit.
+    acr = kit["anomaly_crit_rate"]
+    acd = kit["anomaly_crit_dmg"]
+    crit_avg = formulas.crit_mult_average(acr, acd, consts.crit_rate_cap)
+    crit_full = formulas.crit_mult_crit(acd)
+
     def dmg(mult: float, stun: float) -> float:
         # weighted_product already contains ATK x AP x DMG% x buff-bracket
         # per segment — the exact snapshot math; the breakdown fields
@@ -2024,15 +2116,17 @@ def calculate_anomaly(
         return (mult * weighted_product * level_mult * refringe
                 * defense * res * taken * stun)
 
+    non_crit_off = dmg(per_proc_mult, stun_off)
+    non_crit_on = dmg(per_proc_mult, stun_on)
     return AnomalyResults(
         kind=kind,
         anomaly_name=name,
         element=dealt_element,
         hits=hits,
-        per_proc=dmg(per_proc_mult, stun_off),
-        per_proc_stunned=dmg(per_proc_mult, stun_on),
-        full=dmg(per_proc_mult, stun_off) * hits,
-        full_stunned=dmg(per_proc_mult, stun_on) * hits,
+        per_proc=non_crit_off * crit_avg,
+        per_proc_stunned=non_crit_on * crit_avg,
+        full=non_crit_off * crit_avg * hits,
+        full_stunned=non_crit_on * crit_avg * hits,
         atk_final=weighted_atk,
         anomaly_proficiency=weighted_ap,
         ap_mult=ap,
@@ -2047,6 +2141,12 @@ def calculate_anomaly(
         stun_mult=stun_on,
         buff_breakdown=tuple(kit["items"]),
         luminize_skill=luminize_name,
+        anomaly_crit_rate=acr,
+        anomaly_crit_dmg=acd,
+        per_proc_non_crit=non_crit_off,
+        per_proc_crit=non_crit_off * crit_full,
+        per_proc_non_crit_stunned=non_crit_on,
+        per_proc_crit_stunned=non_crit_on * crit_full,
     )
 
 
