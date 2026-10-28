@@ -93,16 +93,28 @@
         "rank": 1,
         "max_rank": 5,
         "passive_crit_by_rank": [0.15, 0.17, 0.19, 0.21, 0.23],
-        "conditional_buff": {
-          "name": "Sprouting Core: Electric DMG",
-          "element": "electric",
-          "per_stack_by_rank": [0.125, 0.145, 0.165, 0.185, 0.20],
-          "max_stacks": 2,
-          "auto": true,
-          "note": "Basic / EX Special hits grant a stack (40s each, once per skill): Electric DMG +12.5% (R1) per stack, max 2 (+25% R1 / +40% R5) - trivially maintained by Seed, RAMP-UP, auto-applied at max."
-        }
+        "conditional_buffs": [
+          {
+            "name": "Sprouting Core: Electric DMG",
+            "element": "electric",
+            "per_stack_by_rank": [0.125, 0.145, 0.165, 0.185, 0.20],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Basic / EX Special hits grant a stack (40s each, once per skill): Electric DMG +12.5% (R1) per stack, max 2 (+25% R1 / +40% R5) - trivially maintained by Seed, RAMP-UP, auto-applied at max."
+          },
+          {
+            "name": "Sprouting Core: Basic/Ultimate DEF ignore at 2 stacks",
+            "bracket": "pen_ratio",
+            "skill_tags": ["basic", "ultimate"],
+            "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+            "max_stacks": 2,
+            "at_max_only": true,
+            "auto": true,
+            "note": "At 2 stacks: the wearer's Basic Attack and Ultimate DMG ignore 20% (R1) to 32% (R5) of enemy DEF - attacker-side PEN Ratio, the project's reading of 'DMG ignores X% DEF' (frzyc pen_, sources.md audit #4). Shares the Electric DMG counter; all-or-nothing at 2. Basic / Ultimate hits only."
+          }
+        ]
       },
-      "passive_note": "Seed's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.15, 1, 0.125, 2, 40, 2, 0.2] at R1). Advanced stat CRIT Rate 24%; the passive's unconditional CRIT Rate +15% (R1) to +23% (R5) is auto-applied via passive_crit_by_rank. NOT modeled: at 2 stacks her Basic and Ultimate DMG ignore 20% (R1) to 32% (R5) of enemy DEF (no equipper-side DEF-ignore bracket in the engine system yet) - PROVISIONAL: account for it externally when comparing builds (roughly +10-14% damage vs a Lv. 60 boss at 20%)."
+      "passive_note": "Seed's signature (added 2026-07-15, zenless-optimizer datamine, wengine params [0.15, 1, 0.125, 2, 40, 2, 0.2] at R1; R5 [0.23, 1, 0.2, 2, 40, 2, 0.32]). Advanced stat CRIT Rate 24%; the passive's unconditional CRIT Rate +15% (R1) to +23% (R5) is auto-applied via passive_crit_by_rank. Both stack parts are auto-applied (Electric DMG per stack, Basic/Ultimate DEF ignore at 2 stacks - modeled 2026-10-24, previously entered by hand). Nothing to enter manually."
     },
     "sol_exuvia": {
       "name": "Sol Exuvia",
@@ -111,9 +123,18 @@
       "refinement": {
         "rank": 1,
         "max_rank": 5,
-        "passive_crit_by_rank": [0.20, 0.20, 0.20, 0.20, 0.20]
+        "passive_crit_by_rank": [0.20, 0.20, 0.20, 0.20, 0.20],
+        "conditional_buff": {
+          "name": "Eclipse: Ether RES ignore",
+          "bracket": "res_shred",
+          "element": "ether",
+          "per_stack_by_rank": [0.16, 0.175, 0.19, 0.205, 0.22],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "Eclipse (granted on entering combat, 45s; when the equipper is Pyrois his Ultimates refresh it - effectively permanent on him): the equipper's DMG ignores 16% (R1) to 22% (R5) of Ether RES. Auto ON; on anyone but Pyrois it only covers the first 45s of combat - untick it for later hits."
+        }
       },
-      "passive_note": "Pyrois' signature, free with the Season 3 story (added 2026-07-15, zenless-optimizer datamine, wengine params [0.2, 0.16, 45] at R1). Advanced stat ATK% 30 (0.12 x 2.5 at Lv. 60); the passive's CRIT Rate +20% is unconditional AND rank-independent - auto-applied via passive_crit_by_rank. NOT modeled: the Eclipse effect (granted on entering combat, refreshed by his Ultimates, 45s - effectively permanent on Pyrois): his DMG ignores 16% (R1) to 22% (R5) of ETHER RES - enter as external RES shred (no equipper-side engine RES bracket yet)."
+      "passive_note": "Pyrois' signature, free with the Season 3 story (added 2026-07-15, zenless-optimizer datamine, wengine params [0.2, 0.16, 45] at R1 to [0.2, 0.22, 45] at R5). Advanced stat ATK% 30 (0.12 x 2.5 at Lv. 60); the passive's CRIT Rate +20% is unconditional AND rank-independent - auto-applied via passive_crit_by_rank. The Eclipse Ether RES ignore is auto-applied as a conditional (modeled 2026-10-24, previously entered by hand). Nothing to enter manually."
     },
     "the_vault": {
       "name": "The Vault",
@@ -320,17 +341,28 @@
       "refinement": {
         "rank": 1,
         "max_rank": 5,
-        "conditional_buff": {
-          "name": "Heartstring: CRIT DMG",
-          "element": null,
-          "bracket": "crit_dmg",
-          "per_stack_by_rank": [0.50, 0.575, 0.65, 0.725, 0.80],
-          "max_stacks": 1,
-          "auto": true,
-          "note": "Unconditional passive: the equipper's CRIT DMG +50% (R1) to +80% (R5) - always active in-game, so auto-applied (default ON). If you previously entered it manually as external CRIT DMG, remove that entry or it double-counts."
-        }
+        "conditional_buffs": [
+          {
+            "name": "Heartstring: CRIT DMG",
+            "bracket": "crit_dmg",
+            "per_stack_by_rank": [0.50, 0.575, 0.65, 0.725, 0.80],
+            "max_stacks": 1,
+            "always_on": true,
+            "note": "Unconditional passive: the equipper's CRIT DMG +50% (R1) to +80% (R5) - always applied (no toggle since 2026-10-24; the stack counter now drives the Fire RES part). Do NOT also enter it as external CRIT DMG."
+          },
+          {
+            "name": "Heartstring: Chain/Ult Fire RES ignore",
+            "bracket": "res_shred",
+            "element": "fire",
+            "skill_tags": ["chain", "ultimate"],
+            "per_stack_by_rank": [0.125, 0.145, 0.165, 0.185, 0.20],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Heartstring stacks (1 on entering combat and on each Chain Attack / Ultimate, max 2, 30s, refreshed): each stack makes the equipper's Chain Attack and Ultimate ignore 12.5% (R1) to 20% (R5) of the target's Fire RES. RAMP-UP - entry plus any Chain/Ult keeps 2 up, auto-applied at 2. Chain / Ultimate hits only."
+          }
+        ]
       },
-      "passive_note": "Refinement modeled 2026-07-22 (zenless-optimizer datamine wengine params R1 [0.5, 1, 0.125, 2, 30] to R5 [0.8, 1, 0.2, 2, 30]). Heartstring stacks stay manual: launching a Chain Attack or Ultimate grants 1 stack (max 2, 30s); each stack makes attacks ignore 12.5/14.5/16.5/18.5/20% of the enemy's Fire RES - enter as external RES shred when active."
+      "passive_note": "Evelyn's signature. Refinement modeled 2026-07-22 (zenless-optimizer datamine wengine params R1 [0.5, 1, 0.125, 2, 30] to R5 [0.8, 1, 0.2, 2, 30]). Both parts are auto-applied: the unconditional CRIT DMG always, the Heartstring Fire RES ignore on Chain / Ultimate hits at the stack count (default 2; modeled 2026-10-24, previously entered by hand). Nothing to enter manually."
     },
     "elegant_vanity": {
       "name": "Elegant Vanity",
@@ -365,11 +397,20 @@
             "kind": "crit_dmg",
             "values": [0.015, 0.0172, 0.0195, 0.0217, 0.024],
             "max_stacks": 20,
-            "note": "The equipper's Basic Attack hits apply Wilt (max 20 stacks, 30s): any squad member's ICE and FIRE damage gains +1.5% CRIT DMG per stack (R1; +30% at max stacks). ONLY Ice/Fire DMG - the squad-buff system has no element gate, so check this only when the on-field attacker deals Ice or Fire damage (Lighter teams normally do). Enter the realistic stack count (Lighter's Morale Burst combos stack it fast)."
+            "elements": ["ice", "fire"],
+            "note": "The equipper's Basic Attack hits apply Wilt (max 20 stacks, 30s): any squad member's ICE and FIRE damage gains +1.5% CRIT DMG per stack (R1; +30% at max stacks). Element-gated (since 2026-10-24): it applies only to Ice / Fire damage, so it can stay ticked for any attacker. Enter the realistic stack count (Lighter's Morale Burst combos stack it fast)."
           }
-        ]
+        ],
+        "conditional_buff": {
+          "name": "Assist Impact%",
+          "bracket": "impact_pct",
+          "per_stack_by_rank": [0.25, 0.2875, 0.325, 0.3625, 0.40],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "On launching a Quick Assist or Perfect Assist: the equipper's Impact +25% (R1) to +40% (R5) of base Impact for 8s. No damage term of its own - it raises the WEARER's real-time Impact, which Lighter's Impact-scaled Elation reads (his core launches a Quick Assist on switching in at 80 Morale, right before the Morale Burst that grants Elation - RAMP-UP, auto ON)."
+        }
       },
-      "passive_note": "Lighter's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [0.25, 8, 30, 20, 0.015] at R1). Advanced stat Impact% 18 (0.072 x 2.5 at Lv. 60) - Impact affects Daze buildup only, tracked but not damage. The Impact +25% for 8s on Quick/Perfect Assist is buildup only - not modeled. Only one instance of the Wilt buff can exist per squad."
+      "passive_note": "Lighter's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [0.25, 8, 30, 20, 0.015] at R1 to [0.4, 8, 30, 20, 0.024] at R5). Advanced stat Impact% 18 (0.072 x 2.5 at Lv. 60) - on the panel. The Impact +25% for 8s on Quick/Perfect Assist feeds the wearer's real-time Impact (Lighter's Elation, Qingyi's Impact -> ATK) automatically (since 2026-10-24). Only one instance of the Wilt buff can exist per squad."
     },
     "chief_sidekick": {
       "name": "Chief Sidekick",
@@ -387,9 +428,28 @@
             "auto": true,
             "note": "When the equipper deals Fire DMG with an EX Special Attack: ALL Agents' DMG +12.5% (R1) per stack, max 2 stacks (+25% at R1), 30s, refreshed on repeat (once per skill) - Norma's EX/turrets fire constantly, so RAMP-UP, effectively always at max: auto-applied at 2 stacks."
           }
+        ],
+        "conditional_buffs": [
+          {
+            "name": "The Genius's Follower: Fire RES ignore",
+            "bracket": "res_shred",
+            "element": "fire",
+            "per_stack_by_rank": [0.15, 0.172, 0.195, 0.217, 0.24],
+            "max_stacks": 1,
+            "always_on": true,
+            "note": "Unconditional: the equipper's DMG ignores 15% (R1) to 24% (R5) of the target's Fire RES - Fire damage only. Always applied (modeled 2026-10-24, previously entered by hand)."
+          },
+          {
+            "name": "The Genius's Follower: Impact",
+            "bracket": "impact",
+            "per_stack_by_rank": [30, 33, 36, 39, 42],
+            "max_stacks": 1,
+            "always_on": true,
+            "note": "Unconditional: the equipper's Impact +30 (R1) to +42 (R5) - a combat bonus (not on the panel). No damage term of its own; it counts toward a wearer's REAL-TIME Impact-scaled buff (Qingyi's Impact -> ATK, Lighter's Elation) when one of them wears it."
+          }
         ]
       },
-      "passive_note": "Norma's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [30, 0.15, 0.4, 0.125, 30, 2] at R1). Advanced stat CRIT Rate 24% (0.096 x 2.5 at Lv. 60) - feeds her core CRIT->CRIT DMG conversion. NOT auto-applied: the equipper's own DMG ignores 15% (R1) - 24% (R5) of the target's FIRE RES - enter as external RES shred when NORMA is the attacker dealing Fire damage. Impact +30 flat and off-field Energy Regen +0.4/s affect buildup/resources only. Only one instance of the squad buff can exist per squad."
+      "passive_note": "Norma's signature (added 2026-07-14, zenless-optimizer datamine, wengine params [30, 0.15, 0.4, 0.125, 30, 2] at R1 to [42, 0.24, 0.64, 0.2, 30, 2] at R5). Advanced stat CRIT Rate 24% (0.096 x 2.5 at Lv. 60) - feeds her core CRIT->CRIT DMG conversion. Every damage-relevant part is auto-applied: the unconditional Fire RES ignore and Impact (always on), and the squad DMG stacks (squad buff). Off-field Energy Regen +0.4/s is resource-only. Only one instance of the squad buff can exist per squad."
     },
     "timeweaver": {
       "name": "Timeweaver",
@@ -519,9 +579,17 @@
             "auto": true,
             "note": "At 15+ stacks of the equipper's Tea-riffic (basics grant 1/hit, 30 max): ALL squad members' DMG +20% (R1) for 10s - RAMP-UP in Qingyi's basic-heavy loop, auto-applied."
           }
-        ]
+        ],
+        "conditional_buff": {
+          "name": "Tea-riffic: Impact%",
+          "bracket": "impact_pct",
+          "per_stack_by_rank": [0.007, 0.0088, 0.0105, 0.0122, 0.014],
+          "max_stacks": 30,
+          "auto": true,
+          "note": "Each Tea-riffic stack (1 per Basic Attack hit, 8s each, max 30): the equipper's Impact +0.7% (R1) to +1.4% (R5) of base Impact (30 stacks = +21% / +42%). No damage term of its own - it raises the wearer's REAL-TIME Impact, which Qingyi's Impact -> ATK ability reads. RAMP-UP in her basic-heavy loop, auto-applied at 30; enter fewer for a shorter Basic string."
+        }
       },
-      "passive_note": "Qingyi's signature (added 2026-07-10, zenless-optimizer datamine, wengine params [1, 0.007, 30, 8, 15, 0.2, 10] at R1). Advanced stat Impact 18% (0.072 x 2.5). The self Impact +0.7%/stack (R1, 30 stacks = +21%) raises her panel Impact - include it in the 'impact' input of her Additional Ability (Impact -> ATK); it has no direct damage-formula term of its own."
+      "passive_note": "Qingyi's signature (added 2026-07-10, zenless-optimizer datamine, wengine params [1, 0.007, 30, 8, 15, 0.2, 10] at R1 to [1, 0.014, 30, 8, 15, 0.32, 10] at R5). Advanced stat Impact 18% (0.072 x 2.5) - on the panel. The self Tea-riffic Impact% stacks are auto-applied to the WEARER's real-time Impact (since 2026-10-24): enter Qingyi's PANEL Impact in her ability box - do NOT add the Tea-riffic Impact yourself any more."
     },
     "dreamlit_hearth": {
       "name": "Dreamlit Hearth",
@@ -582,9 +650,17 @@
             "auto": true,
             "note": "When the equipper's Aftershock hits an enemy: ALL squad members' AP +60 (R1) for 40s (one instance per squad). Anomaly modes only. Yuzuha's Hard Candy Shot basics are Aftershocks - RAMP-UP, effectively always up, so auto-applied."
           }
-        ]
+        ],
+        "conditional_buff": {
+          "name": "Exquisite Ingenuity: self Anomaly Mastery",
+          "bracket": "anomaly_mastery",
+          "per_stack_by_rank": [30, 34, 39, 43, 48],
+          "max_stacks": 1,
+          "auto": true,
+          "note": "When the equipper's EX Special Attack or Ultimate deals Physical DMG: their Anomaly Mastery +30 (R1) to +48 (R5) for 40s. No damage term of its own - it raises the wearer's REAL-TIME AM, which Yuzuha's AM-scaled Additional Ability reads. RAMP-UP in her loop, auto ON."
+        }
       },
-      "passive_note": "Yuzuha's signature (added 2026-07-03, zenless-optimizer datamine, params [30, 40, 60, 40] at R1). The self Anomaly Mastery +30..48 (40s, on her Physical EX Special/Ultimate) is NOT auto-applied - AM only matters through HER AM-scaled Additional Ability: include it in the 'anomaly_mastery' input you enter for that team buff. Advanced stat Energy Regen +60% at Lv. 60."
+      "passive_note": "Yuzuha's signature (added 2026-07-03, zenless-optimizer datamine, params [30, 40, 60, 40] at R1 to [48, 40, 96, 40] at R5). The self Anomaly Mastery +30..48 is auto-applied to the WEARER's real-time AM (since 2026-10-24): enter Yuzuha's PANEL Anomaly Mastery in her ability box - do NOT add the engine's AM yourself any more. Advanced stat Energy Regen +60% at Lv. 60."
     },
     "tusks_of_fury": {
       "name": "Tusks of Fury",
@@ -654,16 +730,28 @@
       "refinement": {
         "rank": 1,
         "max_rank": 5,
-        "conditional_buff": {
-          "name": "Battle Edge: CRIT DMG",
-          "bracket": "crit_dmg",
-          "per_stack_by_rank": [0.32, 0.368, 0.416, 0.464, 0.512],
-          "max_stacks": 2,
-          "auto": true,
-          "note": "Per Battle Edge stack: the equipper's CRIT DMG +32% (R1) to +51.2% (R5), 25s, max 2 stacks (+64% R1 / +102.4% R5). A stack comes from a Basic Attack hit OR an EX Special HEAVY attack hit, and EACH SKILL TYPE GRANTS AT MOST 1 - so both halves of the loop are needed for 2 stacks; repeat triggers refresh all stacks. RAMP-UP, auto-applied at 2. READ BEFORE COMPARING TO AN IN-GAME NUMBER (same caveat as Severed Innocence): the hit that GRANTS a stack does not benefit from it, so the first Basic of a rotation lands at 0 and the EX heavy that adds the second stack lands at 1. Enter the stacks that were already up WHEN THE HIT LANDED; 2 is right for sustained mid-rotation DPS, not for the stack-granting hit itself."
-        }
+        "conditional_buffs": [
+          {
+            "name": "Battle Edge: CRIT DMG",
+            "bracket": "crit_dmg",
+            "per_stack_by_rank": [0.32, 0.368, 0.416, 0.464, 0.512],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Per Battle Edge stack: the equipper's CRIT DMG +32% (R1) to +51.2% (R5), 25s, max 2 stacks (+64% R1 / +102.4% R5). A stack comes from a Basic Attack hit OR an EX Special HEAVY attack hit, and EACH SKILL TYPE GRANTS AT MOST 1 - so both halves of the loop are needed for 2 stacks; repeat triggers refresh all stacks. RAMP-UP, auto-applied at 2. READ BEFORE COMPARING TO AN IN-GAME NUMBER (same caveat as Severed Innocence): the hit that GRANTS a stack does not benefit from it, so the first Basic of a rotation lands at 0 and the EX heavy that adds the second stack lands at 1. Enter the stacks that were already up WHEN THE HIT LANDED; 2 is right for sustained mid-rotation DPS, not for the stack-granting hit itself."
+          },
+          {
+            "name": "Bonechill: Ice RES ignore at 2 stacks",
+            "bracket": "res_shred",
+            "element": "ice",
+            "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+            "max_stacks": 2,
+            "at_max_only": true,
+            "auto": true,
+            "note": "At 2 Battle Edge stacks the equipper gains BONECHILL: their DMG ignores 20% (R1) to 32% (R5) of the target's Ice RES. Shares the Battle Edge counter, all-or-nothing at 2 (modeled 2026-10-24, previously entered by hand). Ice damage only."
+          }
+        ]
       },
-      "passive_note": "Sigrid's signature (added 2026-08-23; nanoka 3.1 weapon 14159, code_name Weapon_S_1591 = character 1591 Sigrid, CONFIRMED against frzyc KnightsExtolment.json: rarity S, type attack, atk_base 48 -> Lv. 60 base 713, crit_dmg_ 0.192 x 2.5 = 48%, phase params R1 [1, 0.32, 25, 2, 1, 2, 0.2] to R5 [1, 0.512, 25, 2, 1, 2, 0.32]). Both sources agree to the digit; nanoka 'live' is 3.1, so this is SHIPPED content, not a leak. The CRIT DMG half of Knight's Rite is auto-applied in full via the conditional buff - do NOT also enter it as external CRIT DMG (that double-counts). NOT auto-applied: at 2 Battle Edge stacks the equipper gains BONECHILL - their DMG ignores 20% (R1) to 32% (R5) of the target's ICE RES. There is no equipper-side RES-ignore bracket in the engine system yet, so enter it as external RES shred when the wearer is the attacker at 2 stacks (same treatment as Heartstring Nocturne, Chief Sidekick and Sol Exuvia). Sigrid herself is not in agents.json yet - the engine is usable by Ellen or any other Ice/Attack agent in the meantime."
+      "passive_note": "Sigrid's signature (added 2026-08-23; nanoka 3.1 weapon 14159, code_name Weapon_S_1591 = character 1591 Sigrid, CONFIRMED against frzyc KnightsExtolment.json: rarity S, type attack, atk_base 48 -> Lv. 60 base 713, crit_dmg_ 0.192 x 2.5 = 48%, phase params R1 [1, 0.32, 25, 2, 1, 2, 0.2] to R5 [1, 0.512, 25, 2, 1, 2, 0.32]). Both sources agree to the digit; nanoka 'live' is 3.1, so this is SHIPPED content, not a leak. Both halves of Knight's Rite are auto-applied via the shared Battle Edge counter: CRIT DMG per stack and the BONECHILL Ice RES ignore at 2 stacks (modeled 2026-10-24 - it used to be entered by hand). Do NOT also enter either as an external buff (that double-counts). Sigrid herself is not in agents.json yet - the engine is usable by Ellen or any other Ice/Attack agent in the meantime."
     },
     "neon_fantasies": {
       "name": "Neon Fantasies",
@@ -716,6 +804,80 @@
         }
       },
       "passive_note": "Phoenix's signature (added 2026-10-17; PROVISIONAL - nanoka 3.3 BETA build 3.3.12+19629936, weapon 14164, code_name Weapon_S_1641 = character 1641 Phoenix; frzyc has no entry yet). Base 48 -> Lv. 60 base ATK 713 (the standard 48 -> 713 curve), Anomaly Mastery 12% x 2.5 = 30%. The unconditional Anomaly Proficiency +90 (R1) to +126 (R5) is auto-applied via passive_ap_by_rank (anomaly modes). Its AM% advanced stat counts toward Phoenix's INITIAL Anomaly Mastery, which sets her Sear CRIT Rate (see her agent entry). Re-verify every number when 3.3 goes live or frzyc adds it."
+    },
+    "incarcerating_grip": {
+      "name": "Incarcerating Grip",
+      "base_atk": 713,
+      "advanced_stat": { "CRIT Rate": 0.24 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+        "conditional_buffs": [
+          {
+            "name": "Evil Caught Within: ATK on Basic hit",
+            "bracket": "atk_pct",
+            "per_stack_by_rank": [0.10, 0.115, 0.13, 0.145, 0.16],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "When the equipper's Basic Attack hits an enemy: their ATK +10% (R1) to +16% (R5) for 16s. Severian's damage IS Basic Attacks (Swift Edge, Raging Whirlwind, Azure Wind's Shadowhunt), so this is near-permanent - RAMP-UP, auto-applied. Combat ATK% bracket. Applies to every hit during the 16s, not only Basic ones (no skill-tag gate)."
+          },
+          {
+            "name": "Evil Caught Within: Wind RES ignore on Basic hit",
+            "bracket": "res_shred",
+            "element": "wind",
+            "per_stack_by_rank": [0.15, 0.173, 0.195, 0.218, 0.24],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "Same trigger and window: the equipper's DMG ignores 15% (R1) to 24% (R5) of the target's Wind RES. R2/R4 stored as nanoka prints them (17.3% / 21.8%): the same 15->24 ladder on Chief Sidekick is 17.2 / 21.7 in BOTH datamines, so the game does not use the exact linear 17.25 / 21.75 - the true raw may differ by <= 0.05 points until frzyc adds the engine. Wind damage only."
+          }
+        ]
+      },
+      "passive_note": "Severian's signature (added 2026-10-24; PROVISIONAL - nanoka LIVE 3.3 weapon 14163, code_name Weapon_S_1631 = character 1631 Severian, unchanged in the 3.4.1 beta; frzyc has no entry yet). Base 48 -> Lv. 60 base ATK 713 (the standard curve: 48 x (1 + 9.409 + 0.4461 at 5 stars) = 713.76), advanced stat CRIT Rate 9.6% x 2.5 = 24%. The passive's CRIT Rate +20% (R1) to +32% (R5) is unconditional and auto-applied via passive_crit_by_rank - it also feeds Severian's Optimal Setup (CRIT Rate -> ATK). Both Basic-hit parts share one on/off counter (auto ON). Nothing to enter manually."
+    },
+    "wrathful_vajra": {
+      "name": "Wrathful Vajra",
+      "base_atk": 713,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_crit_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+        "conditional_buffs": [
+          {
+            "name": "Purging Karmic Fire: Fire Sheer DMG",
+            "element": "fire",
+            "bracket": "sheer_dmg",
+            "modes": ["sheer"],
+            "per_stack_by_rank": [0.09, 0.1035, 0.117, 0.1305, 0.144],
+            "max_stacks": 2,
+            "auto": true,
+            "note": "Per stack (one per EX Special Attack launched, 20s each, durations tracked separately): the equipper's Fire Sheer DMG +9% (R1) to +14.4% (R5), max 2 stacks. Banyue's loop is built on EX Specials - Lin-0: 'easily able to maintain full uptime' - RAMP-UP, auto-applied at 2. Dedicated Sheer DMG bracket, element-gated to Fire (all of his damage)."
+          }
+        ]
+      },
+      "passive_note": "Banyue's signature (added 2026-10-27, zenless-optimizer datamine, wengine params [0.2, 0.09, 2, 20] at R1 to [0.32, 0.144, 2, 20] at R5; matches nanoka live 3.3 weapon 14147). Lv. 60 base ATK 713 (atk_base 48), advanced stat HP% 30 (0.12 x 2.5) - HP feeds his HP -> Sheer Force conversion (0.1 SF per Max HP). The always-on CRIT Rate +20% (R1) to +32% (R5) is modeled as passive_crit (crit-capable modes). PROVISIONAL until Sheer calibration."
+    },
+    "tremor_trigram_vessel": {
+      "name": "Tremor Trigram Vessel",
+      "base_atk": 624,
+      "advanced_stat": { "ATK%": 0.25 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buffs": [
+          {
+            "name": "Meridian Mapping: EX Special/Ultimate DMG",
+            "element": null,
+            "skill_tags": ["ex_special", "ultimate"],
+            "per_stack_by_rank": [0.25, 0.287, 0.325, 0.362, 0.40],
+            "max_stacks": 1,
+            "always_on": true,
+            "note": "Unconditional passive: the equipper's EX Special Attack and Ultimate DMG +25% (R1) to +40% (R5) - applies when the calculated hit carries one of those tags; always applied. Equipper-only: nothing reaches the squad."
+          }
+        ]
+      },
+      "passive_note": "Pan Yinhu's signature, A-RANK (added 2026-10-27, zenless-optimizer datamine, wengine params [0.25, 2, 5] at R1 to [0.4, 3.2, 5] at R5; matches nanoka live 3.3 weapon 13142). Lv. 60 base ATK 624 (atk_base 42, the A-rank curve), advanced stat ATK% 25 (0.10 x 2.5) - it raises Pan's ATK, so it raises his Meridian Flow (18% of his initial ATK): include it in the panel ATK you enter as his 'initial_atk'. The energy part (+2 to +3.2 Energy when any squad member takes DMG or heals, once per 5s) is resource-only, not modeled."
     }
   }
 }

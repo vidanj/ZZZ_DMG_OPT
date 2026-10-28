@@ -32,7 +32,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .constants import Constants
-from .discs import Disc, DiscData, DiscSet, disc_stats, set_bonus_stats
+from .discs import (
+    Disc, DiscData, DiscSet, disc_stats, set_bonus_stats, set_gated_4pc_stats,
+)
 from .enemies import ELEMENTS
 from .engines import Engine
 from . import formulas
@@ -70,12 +72,22 @@ class AgentError(ValueError):
 #: (the datamine's ``anomaly_crit_mult_``, also used by Jane Doe), and are
 #: deliberately separate from ``crit_rate``/``crit_dmg``: a build's CRIT
 #: stats never reach anomaly damage.
+#: ``anomaly_hits_add`` (Phoenix M2: Burn lasts 2s longer) adds procs to
+#: the full-duration count of a plain anomaly; ``impact_pct`` is one of
+#: the SCALING_ONLY_KINDS below.
 KIT_EFFECT_KINDS = ("crit_rate", "crit_dmg", "dmg_bonus", "res_shred",
                     "dmg_taken", "flat_atk", "atk_pct", "daze_bonus",
                     "anomaly_buff", "disorder_mult_add",
                     "anomaly_proficiency", "pen_ratio",
                     "sheer_force", "hp_pct", "sheer_dmg", "def_red",
-                    "refringe", "anomaly_crit_rate", "anomaly_crit_dmg")
+                    "refringe", "anomaly_crit_rate", "anomaly_crit_dmg",
+                    "anomaly_hits_add", "impact_pct")
+
+#: Kinds with NO damage term: they raise a stat of their OWNER that one of
+#: the owner's real-time scaling inputs reads (``EffectScaling.realtime``).
+#: Lighter's Morale-consumption Impact% feeds his Impact-scaled Elation.
+#: The calculation never adds them to the damage totals.
+SCALING_ONLY_KINDS = ("impact_pct",)
 
 #: Calculation modes an effect may be gated to via its ``modes`` list.
 #: An effect without ``modes`` applies in every mode (original behavior).
@@ -99,9 +111,43 @@ PERCENT_SCALING_INPUTS = ("initial_crit_rate", "initial_crit_dmg",
 #: ever rendered for it, so there is no unit to police.
 TOTAL_CRIT_DMG_INPUT = "total_crit_dmg"
 
+#: The CRIT Rate twin of TOTAL_CRIT_DMG_INPUT: the owner's total combat
+#: CRIT Rate. Severian's Optimal Setup — "for every 1% CRIT Rate Severian
+#: has, his ATK increases by 8.5" — has no "initial" in it, the wording
+#: Anby S's Silver Star used before the in-game test proved it reads the
+#: combat total. Only valid on a ``flat_atk`` effect gated to the
+#: crit-capable modes (direct / sheer): the anomaly modes compute no CRIT
+#: Rate total, so it is resolved by calculate() / calculate_sheer() once
+#: every CRIT Rate source is summed, and the ATK follows from it.
+TOTAL_CRIT_RATE_INPUT = "total_crit_rate"
+
+#: Scaling inputs the calculator resolves itself — never asked of the user.
+ENGINE_RESOLVED_INPUTS = (TOTAL_CRIT_DMG_INPUT, TOTAL_CRIT_RATE_INPUT)
+
+#: Scaling inputs an effect may read in REAL TIME (``EffectScaling.
+#: realtime``), mapped to the owner stat they stand for. The user enters
+#: the owner's PANEL value; the calculator adds the owner's own combat
+#: bonuses to that stat — their W-Engine's parts and their own active kit
+#: effects — before resolving. Only kits whose text lacks "initial" read
+#: real time (Qingyi / Lighter Impact, Yuzuha AM, Rina PEN Ratio, Remielle
+#: AP, Anby S's support-role CRIT DMG). Squad buffs from OTHER supports
+#: that raise a support's stat are not added: the data cannot tell an
+#: "all squad members" buff from an "on-field character" one.
+REALTIME_SCALING_STATS = {
+    "impact": "impact",
+    "anomaly_mastery": "anomaly_mastery",
+    "anomaly_proficiency": "anomaly_proficiency",
+    "initial_crit_dmg": "crit_dmg",
+    "pen_ratio": "pen_ratio",
+}
+
 #: Attacker-role slots a team buff may mirror (``self_duplicate_of``).
 #: See :class:`KitBuff` for why the duplication exists.
 SELF_DUPLICATE_SLOTS = ("core_passive", "additional_ability", "potential")
+
+#: Keys a rider's ``requires`` object may carry (see ``Agent.riders``):
+#: the mindscape level that must be active, or the lowest Potential level.
+RIDER_REQUIRES_KEYS = ("mindscape", "potential_min")
 
 #: The game's agent Specialties, as used by ``Agent.specialty`` and by the
 #: specialty lists inside a buff ``condition``. ``armorer`` is the 7th
@@ -176,6 +222,10 @@ class EffectScaling:
     support entry asks for that number (``input`` names it) and the value
     resolves as ``base + floor(max(x - threshold, 0) / per_step) ×
     per_value``, clamped to ``cap`` when one is set.
+
+    ``realtime`` marks an input that reads the owner's COMBAT stat, not the
+    initial one (see ``REALTIME_SCALING_STATS``): the entered panel value
+    gets the owner's own engine/kit combat bonuses added before resolving.
     """
 
     input: str                # e.g. "initial_max_hp" (asked at runtime)
@@ -184,6 +234,7 @@ class EffectScaling:
     per_step: float = 1.0
     per_value: float = 0.0
     cap: float | None = None
+    realtime: bool = False
 
     def resolve(self, x: float) -> float:
         # 1e-9 guard: fractional steps (Velina: 0.01 Energy Regen) would
@@ -211,7 +262,9 @@ class KitEffect:
 
     ``modes`` gates the effect to calculation modes (``direct`` /
     ``anomaly`` / ``disorder`` / ``vortex``); ``None`` applies everywhere.
-    ``element`` gates it to damage dealt as that element. An effect that
+    ``element`` gates it to damage dealt as that element; ``element_not``
+    to damage dealt as any OTHER element (Lycaon: "DMG from other
+    attributes +30%"). An effect that
     EXPLICITLY lists a disorder/vortex mode skips the element check there
     (those bursts deal another element on the kit owner's behalf); an
     effect without ``modes`` stays element-checked in every mode.
@@ -242,6 +295,7 @@ class KitEffect:
     at_max_stacks: bool = False
     squad: bool = False
     abloom_only: bool = False
+    element_not: str | None = None
 
 
 @dataclass(frozen=True)
@@ -266,6 +320,10 @@ class KitBuff:
     2026-08-02 found a build doing exactly that). Front ends hide these
     rows when the owner is the on-field agent, and ``api.calculate``
     rejects the pair outright.
+
+    ``requires`` (riders only — see ``Agent.riders``) names the kit
+    unlock the rider needs: ``{"mindscape": 2}`` or
+    ``{"potential_min": 1}``.
     """
 
     name: str
@@ -274,6 +332,7 @@ class KitBuff:
     note: str = ""
     condition: dict | None = None
     self_duplicate_of: str | None = None
+    requires: dict | None = None
 
     def squad_part(self) -> KitBuff | None:
         """This buff cut down to its ``squad`` effects, or ``None`` if it
@@ -407,6 +466,13 @@ class Agent:
     additional_ability: KitBuff | None = None
     mindscapes: dict[int, Mindscape] = field(default_factory=dict)
     team_buffs: tuple[KitBuff, ...] = ()
+    # Self-only kit parts that need their OWN toggle beside the slot they
+    # belong to: a squad-composition clause of a core (Severian's +30% DMG
+    # with another Wind agent) or a one-hit rider of a mindscape/Potential
+    # (Starlight Billy M2's Turbocharged Cool Wheelie). Each may carry a
+    # ``condition`` (pre-checks the toggle) and ``requires`` (the unlock
+    # the API checks against the active mindscapes / Potential level).
+    riders: tuple[KitBuff, ...] = ()
     # Potential Awakening (2.x system, mindscape-like): one named track
     # whose levels replace each other — the user activates at most ONE
     # level (their unlocked one). Levels without damage-relevant effects
@@ -488,12 +554,15 @@ class BuildStats:
     combat_atk_pct: float = 0.0
 
 
-def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
+def _parse_kit_buff(raw, where: str, allow_squad: bool = False,
+                    rider: bool = False) -> KitBuff:
     """Validate and build one kit buff (core passive / modeled mindscape).
 
     ``allow_squad`` is True only for Potential levels — the one slot whose
     effects may be marked ``squad`` (everywhere else the slot itself says
     who it reaches: team buffs are squad-wide, the rest are self-only).
+    ``rider`` is True only for ``riders`` entries — the one slot that may
+    carry ``requires`` (and never ``self_duplicate_of``).
 
     Raises:
         AgentError: missing name, bad stacks, unknown effect kind, a
@@ -540,6 +609,26 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
             if per_step <= 0:
                 raise AgentError(f"{where}: scaling 'per_step' must be > 0")
             cap_raw = scaling_raw.get("cap")
+            realtime = scaling_raw.get("realtime", False)
+            if not isinstance(realtime, bool):
+                raise AgentError(f"{where}: scaling 'realtime' must be a boolean")
+            if realtime and scaling_raw["input"] not in REALTIME_SCALING_STATS:
+                raise AgentError(
+                    f"{where}: scaling input {scaling_raw['input']!r} cannot "
+                    f"be 'realtime'; options: {list(REALTIME_SCALING_STATS)}"
+                )
+            if scaling_raw["input"] == TOTAL_CRIT_RATE_INPUT:
+                # Resolved only where a CRIT Rate total exists; anywhere
+                # else it would be parked and silently never applied.
+                gated = item.get("modes")
+                if (kind != "flat_atk" or not isinstance(gated, list)
+                        or not gated
+                        or any(m not in ("direct", "sheer") for m in gated)):
+                    raise AgentError(
+                        f"{where}: a '{TOTAL_CRIT_RATE_INPUT}' scaling must "
+                        f"be a 'flat_atk' effect with 'modes' drawn from "
+                        f"['direct', 'sheer']"
+                    )
             scaling = EffectScaling(
                 input=scaling_raw["input"],
                 base=scale_num("base", 0.0),
@@ -547,6 +636,7 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
                 per_step=per_step,
                 per_value=scale_num("per_value", 0.0),
                 cap=None if cap_raw is None else scale_num("cap", 0.0),
+                realtime=realtime,
             )
             value = 0.0
         else:
@@ -566,10 +656,18 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
                 )
             modes = tuple(modes)
         element = item.get("element")
-        if element is not None and element not in ELEMENTS:
+        element_not = item.get("element_not")
+        for gate_key, gate in (("element", element),
+                               ("element_not", element_not)):
+            if gate is not None and gate not in ELEMENTS:
+                raise AgentError(
+                    f"{where}: effect '{gate_key}' must be one of "
+                    f"{list(ELEMENTS)}, got {gate!r}"
+                )
+        if element is not None and element_not is not None:
             raise AgentError(
-                f"{where}: effect 'element' must be one of {list(ELEMENTS)}, "
-                f"got {element!r}"
+                f"{where}: an effect takes 'element' or 'element_not', "
+                f"not both"
             )
         flags = {}
         for flag in ("at_max_stacks", "squad", "abloom_only"):
@@ -588,7 +686,8 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
                                  modes=modes, element=element,
                                  at_max_stacks=flags["at_max_stacks"],
                                  squad=flags["squad"],
-                                 abloom_only=flags["abloom_only"]))
+                                 abloom_only=flags["abloom_only"],
+                                 element_not=element_not))
     condition = raw.get("condition")
     if condition is not None:
         if not isinstance(condition, dict) or not condition:
@@ -615,11 +714,25 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
                     f"{where}: condition '{ckey}' must be true"
                 )
     mirrors = raw.get("self_duplicate_of")
-    if mirrors is not None and mirrors not in SELF_DUPLICATE_SLOTS:
+    if mirrors is not None and (rider or mirrors not in SELF_DUPLICATE_SLOTS):
         raise AgentError(
             f"{where}: 'self_duplicate_of' must be one of "
-            f"{list(SELF_DUPLICATE_SLOTS)}, got {mirrors!r}"
+            f"{list(SELF_DUPLICATE_SLOTS)} (team buffs only), got {mirrors!r}"
         )
+    requires = raw.get("requires")
+    if requires is not None:
+        if (not rider or not isinstance(requires, dict) or len(requires) != 1
+                or not set(requires) <= set(RIDER_REQUIRES_KEYS)):
+            raise AgentError(
+                f"{where}: 'requires' is only valid on riders, as one of "
+                f"{{\"mindscape\": n}} or {{\"potential_min\": n}}"
+            )
+        (req_key, req_level), = requires.items()
+        if (isinstance(req_level, bool) or not isinstance(req_level, int)
+                or not 1 <= req_level <= 6):
+            raise AgentError(
+                f"{where}: 'requires' {req_key} must be an integer 1..6"
+            )
     return KitBuff(
         name=name,
         max_stacks=max_stacks,
@@ -627,6 +740,7 @@ def _parse_kit_buff(raw, where: str, allow_squad: bool = False) -> KitBuff:
         self_duplicate_of=mirrors,
         note=str(raw.get("note", "")),
         condition=condition,
+        requires=requires,
     )
 
 
@@ -883,6 +997,34 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
         if len(seen_names) != len(set(seen_names)):
             raise AgentError(f"Agent '{key}': duplicate team buff names")
 
+        riders_raw = entry.get("riders", [])
+        if not isinstance(riders_raw, list):
+            raise AgentError(f"Agent '{key}': 'riders' must be a list")
+        riders = tuple(
+            _parse_kit_buff(item, f"Agent '{key}' riders[{i}]", rider=True)
+            for i, item in enumerate(riders_raw)
+        )
+        rider_names = [b.name for b in riders]
+        if len(rider_names) != len(set(rider_names)):
+            raise AgentError(f"Agent '{key}': duplicate rider names")
+        for rider in riders:
+            # The unlock is checked against the ACTIVE toggles, so it must
+            # name a slot that has one — otherwise the rider could never
+            # be switched on.
+            required = rider.requires or {}
+            level = required.get("mindscape")
+            if level is not None and (level not in mindscapes
+                                      or mindscapes[level].buff is None):
+                raise AgentError(
+                    f"Agent '{key}' rider '{rider.name}': requires "
+                    f"Mindscape {level}, which has no modeled toggle"
+                )
+            if "potential_min" in required and not potentials:
+                raise AgentError(
+                    f"Agent '{key}' rider '{rider.name}': requires a "
+                    f"Potential level, but the agent has none modeled"
+                )
+
         hp_conversion = entry.get("sheer_force_hp_conversion", 0.0)
         if isinstance(hp_conversion, bool) or not isinstance(
                 hp_conversion, (int, float)) or hp_conversion < 0:
@@ -923,6 +1065,7 @@ def load_agents(path: Path = DATA_FILE) -> dict[str, Agent]:
             additional_ability=additional_ability,
             mindscapes=mindscapes,
             team_buffs=team_buffs,
+            riders=riders,
             potential_name=potential_name,
             potential_note=potential_note,
             potentials=potentials,
@@ -1101,4 +1244,12 @@ def aggregate_build(
     # multiplies the flat total (agent base + core; discs have no flat AM
     # sources). Verified in-game 2026-07-17: Yuzuha (88+36)×1.38 = 171.
     build.anomaly_mastery *= 1.0 + build.other.pop("_am_pct", 0.0)
+    # Stat-gated 4pc bases (Branch & Blade Song: CRIT DMG +30% while AM >=
+    # 115) — only now is the gating stat final. In combat only: the panel
+    # (set_stacks=None) carries no 4-piece part.
+    if disc_sets is not None and set_stacks is not None:
+        for stat, value in set_gated_4pc_stats(
+                discs, disc_sets,
+                {"Anomaly Mastery": build.anomaly_mastery}).items():
+            _fold_stat(build, stat, value)
     return build

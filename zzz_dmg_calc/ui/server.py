@@ -60,7 +60,7 @@ try:
         Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
         load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
         save_loadout, save_user_disc, set_bonus_stats,
-        set_tagged_dmg_bonuses,
+        set_gated_4pc_stats, set_tagged_dmg_bonuses, set_toggle_names,
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
@@ -86,7 +86,7 @@ except ImportError:
         Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
         load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
         save_loadout, save_user_disc, set_bonus_stats,
-        set_tagged_dmg_bonuses,
+        set_gated_4pc_stats, set_tagged_dmg_bonuses, set_toggle_names,
     )
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
@@ -226,6 +226,7 @@ def frontend_payload(data: AppData) -> dict:
                     "skill_tag": e.skill_tag,
                     "modes": list(e.modes) if e.modes else None,
                     "element": e.element,
+                    "element_not": e.element_not,
                     "at_max_stacks": e.at_max_stacks,
                     "squad": e.squad,
                     "abloom_only": e.abloom_only,
@@ -237,6 +238,7 @@ def frontend_payload(data: AppData) -> dict:
                             "per_step": e.scaling.per_step,
                             "per_value": e.scaling.per_value,
                             "cap": e.scaling.cap,
+                            "realtime": e.scaling.realtime,
                         }
                     ),
                 }
@@ -245,6 +247,7 @@ def frontend_payload(data: AppData) -> dict:
             "note": buff.note,
             "condition": buff.condition,
             "self_duplicate_of": buff.self_duplicate_of,
+            "requires": buff.requires,
         }
 
     return {
@@ -260,6 +263,10 @@ def frontend_payload(data: AppData) -> dict:
                 "core_passive": kit_buff(a.core_passive),
                 "additional_ability": kit_buff(a.additional_ability),
                 "team_buffs": [kit_buff(b) for b in a.team_buffs],
+                "riders": [kit_buff(b) for b in a.riders],
+                # Base Impact (agent + core): what Impact% parts multiply
+                # when the page previews a real-time Impact input.
+                "base_impact": a.base_impact + a.core_bonus_impact,
                 "mindscapes": {
                     str(level): {
                         "name": m.name,
@@ -332,10 +339,12 @@ def frontend_payload(data: AppData) -> dict:
                         "max_stacks": b.max_stacks,
                         "at_max_only": b.at_max_only,
                         "auto": b.auto,
+                        "always_on": b.always_on,
                         "note": b.note,
                     }
                     for b in e.conditional_buffs
                 ],
+                "passive_crit_dmg_by_rank": list(e.passive_crit_dmg_by_rank),
                 "conditional_buff": (
                     None if e.conditional_buff is None else {
                         "name": e.conditional_buff.name,
@@ -361,6 +370,10 @@ def frontend_payload(data: AppData) -> dict:
                         "values_by_rank": list(b.values_by_rank),
                         "max_stacks": b.max_stacks,
                         "auto": b.auto,
+                        "elements": list(b.elements) if b.elements else None,
+                        "modes": list(b.modes) if b.modes else None,
+                        "skill_tags": (
+                            list(b.skill_tags) if b.skill_tags else None),
                         "note": b.note,
                     }
                     for b in e.squad_buffs
@@ -402,9 +415,31 @@ def frontend_payload(data: AppData) -> dict:
                         "needs_squad_element":
                             s.bonus_4pc.needs_squad_element,
                         "note": s.bonus_4pc.note,
+                        # Auto-apply sweep (2026-10-24): unconditional
+                        # base, extra per-stack stats, element and
+                        # wearer-stat gates.
+                        "base": s.bonus_4pc.base,
+                        "also": s.bonus_4pc.also,
+                        "attributes": (list(s.bonus_4pc.attributes)
+                                       if s.bonus_4pc.attributes else None),
+                        "base_min_stat": (
+                            list(s.bonus_4pc.base_min_stat)
+                            if s.bonus_4pc.base_min_stat else None),
                     }
                 ),
+                # Windowed 4pc parts shown as checkboxes: toggle name ->
+                # its tagged DMG% parts.
+                "toggles": {
+                    name: [
+                        {"skill_tag": b.skill_tag, "value": b.value,
+                         "note": b.note}
+                        for b in s.bonus_4pc_dmg if b.toggle == name
+                    ]
+                    for name in set_toggle_names(s)
+                },
                 "auto_4pc_dmg": s.auto_4pc_dmg,
+                "auto_4pc_anomaly_dmg": s.auto_4pc_anomaly_dmg,
+                "auto_4pc_attribute": s.auto_4pc_attribute,
                 "squad_4pc": (
                     None if s.squad_4pc is None else {
                         "value": s.squad_4pc.value,
@@ -556,6 +591,19 @@ def _build_config(body: dict) -> CalcConfig:
         raise ValueError("'set_stacks' must be an object of set key -> stacks")
     set_stacks = {str(k): int(v) for k, v in set_stacks_raw.items() if int(v)}
 
+    # Windowed 4pc parts: set key -> {toggle name -> 0/1}; only the ON
+    # ones are kept (the API validates the names).
+    set_toggles_raw = body.get("set_toggles") or {}
+    if not isinstance(set_toggles_raw, dict) or not all(
+            isinstance(v, dict) for v in set_toggles_raw.values()):
+        raise ValueError(
+            "'set_toggles' must be an object of set key -> {toggle: 0/1}")
+    set_toggles = {
+        str(key): {str(n): 1 for n, on in picks.items() if on}
+        for key, picks in set_toggles_raw.items()
+        if any(picks.values())
+    }
+
     engine_squad_raw = body.get("engine_squad_buffs") or {}
     if not isinstance(engine_squad_raw, dict):
         raise ValueError(
@@ -573,6 +621,11 @@ def _build_config(body: dict) -> CalcConfig:
     own_team_buffs = {
         str(n): int(s) for n, s in own_team_raw.items() if int(s)
     }
+
+    riders_raw = body.get("riders") or {}
+    if not isinstance(riders_raw, dict):
+        raise ValueError("'riders' must be an object of rider name -> stacks")
+    riders = {str(n): int(s) for n, s in riders_raw.items() if int(s)}
 
     dmg_bonus = _number(body, "external_dmg_bonus")
     dmg_taken = _number(body, "external_dmg_taken")
@@ -620,6 +673,7 @@ def _build_config(body: dict) -> CalcConfig:
             potentials={int(level): int(stacks)
                         for level, stacks in support_potentials_raw.items()
                         if int(stacks)},
+            engine_buff_stacks=_number(entry, "engine_buff_stacks"),
         ))
 
     return CalcConfig(
@@ -654,8 +708,10 @@ def _build_config(body: dict) -> CalcConfig:
         supports=supports,
         discs=discs,
         set_stacks=set_stacks,
+        set_toggles=set_toggles,
         engine_squad_buffs=engine_squad_buffs,
         own_team_buffs=own_team_buffs,
+        riders=riders,
         engine_buff_stacks=_number(body, "engine_buff_stacks"),
         external_dmg_bonuses=[dmg_bonus] if dmg_bonus else [],
         external_crit_rate=_number(body, "external_crit_rate"),
@@ -786,6 +842,7 @@ def run_calculation(data: AppData, body: dict) -> dict:
         for key, value in set_tagged_dmg_bonuses(
             config.discs, data.disc_sets, config.skill_tag,
             counts_as_aftershock=config.counts_as_aftershock,
+            toggles=config.set_toggles,
         ).items()
     }
     # Approximate in-game character-panel stats for the equipped build
@@ -795,6 +852,14 @@ def run_calculation(data: AppData, body: dict) -> dict:
         agents=data.agents, engines=data.engines,
         disc_sets=data.disc_sets,
     )
+    # Stat-gated 4pc bases the build earned (Branch & Blade Song's CRIT
+    # DMG at AM >= 115) — gated on the panel AM, as the calculation is.
+    for stat, value in set_gated_4pc_stats(
+            config.discs, data.disc_sets,
+            {"Anomaly Mastery": payload["panel_stats"]["Anomaly Mastery"]},
+    ).items():
+        payload["set_bonuses"][stat] = (
+            payload["set_bonuses"].get(stat, 0.0) + value)
     return payload
 
 
@@ -804,7 +869,10 @@ def run_optimization(data: AppData, body: dict,
 
     The body is the same payload as ``/calculate`` plus an ``optimize``
     object: ``{objective, set_assumption, locked_slots, top_n, min_stats,
-    required_4pc, required_2pc, maximize_stat, maximize_tolerance}``.
+    min_panel_stats, required_4pc, required_2pc, maximize_stat,
+    maximize_tolerance}``. ``min_stats`` are COMBAT minimums (every buff
+    counted); ``min_panel_stats`` are BASE-STAT minimums the build itself
+    must reach on the out-of-combat panel (no kit / team / combat buffs).
     The response also lists ``gated_sets`` — sets whose 4pc the search
     credited at 0 stacks because no squad member has the anomaly
     element that triggers it (§18). Direct mode runs
@@ -840,6 +908,10 @@ def run_optimization(data: AppData, body: dict,
     min_stats_raw = opt_raw.get("min_stats") or {}
     if not isinstance(min_stats_raw, dict):
         raise ValueError("'min_stats' must be an object of stat -> minimum")
+    min_panel_raw = opt_raw.get("min_panel_stats") or {}
+    if not isinstance(min_panel_raw, dict):
+        raise ValueError(
+            "'min_panel_stats' must be an object of stat -> minimum")
     slot_mains_raw = opt_raw.get("slot_main_stats") or {}
     if not isinstance(slot_mains_raw, dict):
         raise ValueError(
@@ -855,6 +927,8 @@ def run_optimization(data: AppData, body: dict,
         top_n=int(opt_raw.get("top_n") or 5),
         min_stats={str(stat): float(minimum)
                    for stat, minimum in min_stats_raw.items()},
+        min_panel_stats={str(stat): float(minimum)
+                         for stat, minimum in min_panel_raw.items()},
         required_4pc=opt_raw.get("required_4pc") or None,
         required_2pc=opt_raw.get("required_2pc") or None,
         slot_main_stats={int(slot): str(main)

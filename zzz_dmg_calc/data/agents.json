@@ -184,8 +184,8 @@
         {
           "name": "Metallic Paws: non-Ice vulnerability",
           "max_stacks": 1,
-          "effects": [ { "kind": "dmg_taken", "value": 0.30 } ],
-          "note": "Same core hits also make the target take +30% DMG from OTHER (non-Ice) attributes for 30s. The effect system has no 'every element EXCEPT ice' gate, so this is stored ungated: check it ONLY when the on-field attacker deals NON-Ice damage (never together with an Ice DPS; the Ice half is the RES shred above). Datamine coreParams [0.3]. Bracket PROVISIONAL (DMG-taken bracket assumed)."
+          "effects": [ { "kind": "dmg_taken", "value": 0.30, "element_not": "ice" } ],
+          "note": "Same core hits also make the target take +30% DMG from OTHER (non-Ice) attributes for 30s. Gated with element_not 'ice' (since 2026-10-24): it applies to every damage that is NOT Ice, so it can stay ticked with any attacker - an Ice DPS gets the RES shred above instead. Datamine coreParams [0.3]. Bracket PROVISIONAL (DMG-taken bracket assumed)."
         },
         {
           "name": "Elegant Predator: stunned vulnerability",
@@ -691,9 +691,9 @@
           "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "anomaly_buff", "modes": ["anomaly", "disorder"],
-              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.002, "cap": 0.20 } }
+              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.002, "cap": 0.20, "realtime": true } }
           ],
-          "note": "The More the Merrier - needs an Anomaly squadmate or another Spook Shack member, and Tanuki Wish up. Per point of HER Anomaly Mastery over 100: Attribute Anomaly DMG and Disorder DMG +0.2%, cap 20% (full at 200 AM). Enter HER total AM as 'anomaly_mastery' (incl. Metanukimorphosis +30 when its condition is up). Joins the separate Anomaly/Disorder Buff Multiplier bracket (zenless-optimizer bracket - PROVISIONAL); does NOT buff Vortex (datamine gates it to anomaly/disorder damage). The Anomaly Buildup Rate half affects buildup speed only - not modeled."
+          "note": "The More the Merrier - needs an Anomaly squadmate or another Spook Shack member, and Tanuki Wish up. Per point of HER Anomaly Mastery over 100: Attribute Anomaly DMG and Disorder DMG +0.2%, cap 20% (full at 200 AM). The text reads her REAL-TIME AM (no 'initial'): enter her PANEL AM as 'anomaly_mastery' - Metanukimorphosis' self AM +30..48 is added automatically from her support slot's engine (since 2026-10-24; do not fold it in yourself). Joins the separate Anomaly/Disorder Buff Multiplier bracket (zenless-optimizer bracket - PROVISIONAL); does NOT buff Vortex (datamine gates it to anomaly/disorder damage). The Anomaly Buildup Rate half affects buildup speed only - not modeled."
         },
         {
           "name": "M1: Sweet Scare RES shred",
@@ -706,7 +706,7 @@
           "max_stacks": 1,
           "effects": [
             { "kind": "anomaly_buff", "modes": ["anomaly", "disorder"],
-              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.0006, "cap": 0.06 } }
+              "scaling": { "input": "anomaly_mastery", "threshold": 100, "per_step": 1, "per_value": 0.0006, "cap": 0.06, "realtime": true } }
           ],
           "note": "Requires Yuzuha at Mindscape 1. Her Additional Ability buff is raised to 130% of its value - modeled as the additive extra (+0.06%/AM point, cap +6%): check TOGETHER with the Additional Ability buff, with the same 'anomaly_mastery' input."
         },
@@ -904,11 +904,11 @@
         "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
         "effects": [
           { "kind": "dmg_bonus", "element": "ice",
-            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
+            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375, "realtime": true } },
           { "kind": "dmg_bonus", "element": "fire",
-            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } }
+            "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375, "realtime": true } }
         ],
-        "note": "Needs an Attack squadmate OR another Sons of Calydon member (both clauses are checked). During Morale Burst, his Basic 5th-hit grants the squad Elation stacks (max 20, 30s, refreshed by any Chain Attack): each stack +1.25% Ice DMG and Fire DMG, +0.25% more per 10 Impact above 170, total cap +75% (per-stack cap 3.75%). Enter HIS panel Impact as 'impact' (base 119 + core +18 + engine). Applies to his own hits too - same effect as his 'Fighting Spirit' team buff: never apply both at once. Datamine abilityParams [20, 30, 0.0125, 170, 10, 0.0025, 0.75]."
+        "note": "Needs an Attack squadmate OR another Sons of Calydon member (both clauses are checked). During Morale Burst, his Basic 5th-hit grants the squad Elation stacks (max 20, 30s, refreshed by any Chain Attack): each stack +1.25% Ice DMG and Fire DMG, +0.25% more per 10 Impact above 170, total cap +75% (per-stack cap 3.75%). 'When obtaining Elation, if Lighter's Impact exceeds 170' reads his REAL-TIME Impact: enter his PANEL Impact as 'impact' (base 119 + core +18 + discs + engine advanced stat) - his W-Engine's combat Impact (Blazing Laurel's assist Impact%, Chief Sidekick's +30) and his own 'Accelerant: Morale Impact' buff are added automatically (since 2026-10-24). Applies to his own hits too - same effect as his 'Fighting Spirit' team buff: never apply both at once. Datamine abilityParams [20, 30, 0.0125, 170, 10, 0.0025, 0.75]."
       },
       "mindscapes": {
         "1": {
@@ -955,11 +955,11 @@
           "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
           "effects": [
             { "kind": "dmg_bonus", "element": "ice",
-              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } },
+              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375, "realtime": true } },
             { "kind": "dmg_bonus", "element": "fire",
-              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375 } }
+              "scaling": { "input": "impact", "base": 0.0125, "threshold": 170, "per_step": 10, "per_value": 0.0025, "cap": 0.0375, "realtime": true } }
           ],
-          "note": "His Additional Ability as a support (needs an Attack squadmate or another Sons of Calydon member): Elation stacks buff the whole squad's Ice and Fire DMG (+1.25%/stack, Impact-scaled up to +3.75%/stack, total cap +75% at 20 stacks). Enter LIGHTER's panel Impact as 'impact'. Same effect as his attacker-role additional ability: never apply both at once."
+          "note": "His Additional Ability as a support (needs an Attack squadmate or another Sons of Calydon member): Elation stacks buff the whole squad's Ice and Fire DMG (+1.25%/stack, Impact-scaled up to +3.75%/stack, total cap +75% at 20 stacks). Enter LIGHTER's PANEL Impact as 'impact' - it reads his real-time Impact, and his W-Engine's combat Impact plus his 'Accelerant: Morale Impact' buff (tick it in his slot) are added automatically. Same effect as his attacker-role additional ability: never apply both at once."
         },
         {
           "name": "M1: Collapse extra Ice/Fire RES shred",
@@ -981,15 +981,21 @@
           "max_stacks": 20,
           "effects": [
             { "kind": "dmg_bonus", "element": "ice",
-              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075 } },
+              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075, "realtime": true } },
             { "kind": "dmg_bonus", "element": "fire",
-              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075 } }
+              "scaling": { "input": "impact", "base": 0.0025, "threshold": 170, "per_step": 10, "per_value": 0.0005, "cap": 0.0075, "realtime": true } }
           ],
           "note": "Requires Lighter at Mindscape 2 (Red Scarf). The Elation Ice/Fire DMG buff is raised to 120% of its value (total cap 75% -> 90%) - modeled as the EXTRA 20% per stack: check TOGETHER with the Fighting Spirit buff at the SAME stack count and 'impact' input."
+        },
+        {
+          "name": "Accelerant: Morale Impact (feeds Elation)",
+          "max_stacks": 10,
+          "effects": [ { "kind": "impact_pct", "value": 0.02 } ],
+          "note": "SELF-ONLY, no damage term of its own: core passive (max rank) - every 10 Morale his enhanced Morale Burst skills consume raises HIS Impact by 2% of base Impact (max +20% at 100 Morale, 6s). Elation is granted mid-Burst (the 5th-hit Finishing Move) and reads his REAL-TIME Impact, so this counts toward the Elation 'impact' input automatically: enter the 10-Morale steps consumed by then (10 for a full 100-Morale Burst). Tick it in his support slot, or as main in his kit card. It never buffs the on-field agent directly."
         }
       ],
       "default_engine": "blazing_laurel",
-      "_note": "Fire stunner (added 2026-07-14, zenless-optimizer datamine: HP 677+59x91.8185+2159=8253, ATK 109+59x6.3891+237=722, DEF 612, Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119: enter panel Impact incl. it for the Elation 'impact' input). His value: the Morale Burst Ice/Fire RES shred + squad Elation Ice/Fire DMG (Impact-scaled) + M1/M2 upgrades - built for Fire (Evelyn) and Ice teams. Core Impact +2%/10 Morale consumed (max +20%) affects Daze buildup only - not modeled. His own attacker role (fire direct hits) works via the same effects (they are enemy debuffs / squad buffs that include him). M6 Blazing Impact is extra-hit damage (see note). Not yet panel-checked in-game; PROVISIONAL until calibration."
+      "_note": "Fire stunner (added 2026-07-14, zenless-optimizer datamine: HP 677+59x91.8185+2159=8253, ATK 109+59x6.3891+237=722, DEF 612, Impact 119, AM 91, AP 90; max core ATK+75, Impact+18 - the +18 is NOT folded into the stored 119: enter panel Impact incl. it for the Elation 'impact' input). His value: the Morale Burst Ice/Fire RES shred + squad Elation Ice/Fire DMG (Impact-scaled) + M1/M2 upgrades - built for Fire (Evelyn) and Ice teams. Core Impact +2%/10 Morale consumed (max +20%) is modeled as the 'Accelerant: Morale Impact' buff: it raises his real-time Impact, which his Impact-scaled Elation reads (corrected 2026-10-24 - it was filed as Daze-only before). His own attacker role (fire direct hits) works via the same effects (they are enemy debuffs / squad buffs that include him). M6 Blazing Impact is extra-hit damage (see note). Not yet panel-checked in-game; PROVISIONAL until calibration."
     },
     "norma": {
       "name": "Norma",
@@ -1189,9 +1195,9 @@
           "max_stacks": 1,
           "effects": [
             { "kind": "crit_dmg", "skill_tag": "aftershock",
-              "scaling": { "input": "initial_crit_dmg", "per_step": 0.0001, "per_value": 0.000035 } }
+              "scaling": { "input": "initial_crit_dmg", "per_step": 0.0001, "per_value": 0.000035, "realtime": true } }
           ],
-          "note": "Core passive as a support: Silver Star-marked enemies take extra CRIT DMG from ALL allies' Aftershocks = 35% of ANBY S's OWN total CRIT DMG. She is off-field here, so the calculator cannot read her build - type HER CRIT DMG into the box (the web page takes 289.6 for 289.6%; the Python API takes the fraction 2.896 -> +101.4%). Include her combat buffs, not just her panel: in-game the multiplier is 0.35 x her initial+combat CRIT DMG (CONFIRMED 2026-08-02). Applies to hits tagged 'aftershock' (e.g. Trigger's Harmonizing Shots). Same effect as her attacker-role core passive, which is why this row is hidden when SHE is the on-field agent (that role reads the total automatically)."
+          "note": "Core passive as a support: Silver Star-marked enemies take extra CRIT DMG from ALL allies' Aftershocks = 35% of ANBY S's OWN total CRIT DMG. She is off-field here, so the calculator cannot read her build - type HER PANEL CRIT DMG into the box (the web page takes 289.6 for 289.6%; the Python API takes the fraction 2.896 -> +101.4%). In-game the multiplier is 0.35 x her initial+combat CRIT DMG (CONFIRMED 2026-08-02): her own W-Engine's CRIT DMG (Severed Innocence's +30..48% passive and Tranquil Blossom stacks, at her slot's engine stacks) is added automatically since 2026-10-24 - add only CRIT DMG that OTHER teammates give her (e.g. Astra's squad buff) on top of the panel figure. Applies to hits tagged 'aftershock' (e.g. Trigger's Harmonizing Shots). Same effect as her attacker-role core passive, which is why this row is hidden when SHE is the on-field agent (that role reads the total automatically)."
         },
         {
           "name": "Voltage Surge: squad Aftershock DMG (Anby S ACTIVE)",
@@ -1325,7 +1331,7 @@
           "name": "\"Light Absorption Technique\"",
           "max_stacks": 1,
           "effects": [ { "kind": "pen_ratio", "value": 0.20 } ],
-          "note": "SELF part: while her Besiege is active, her DMG ignores 20% of enemy DEF (multiplies enemy DEF in the DEF zone). The Vanguard's copy is the 'M2: Vanguard DEF ignore' team buff. RIDER not modeled: each 5 Energy consumed by EX Special: Raining Iron Petals gives the FOLLOWING Slaughter +5% DMG (up to 120 Energy = +120% on that one hit) - enter as external DMG% when measuring that specific follow-up. Datamine mindscapeParams[1] [0.2, 60, 120, 5, 0.05]."
+          "note": "SELF part: while her Besiege is active, her DMG ignores 20% of enemy DEF (multiplies enemy DEF in the DEF zone). The Vanguard's copy is the 'M2: Vanguard DEF ignore' team buff. Its one-hit Slaughter ramp is the 'M2: Slaughter Energy ramp' rider (modeled since 2026-10-24). Datamine mindscapeParams[1] [0.2, 60, 120, 5, 0.05]."
         },
         "3": {
           "name": "\"A Story of Sprouting\"",
@@ -1348,6 +1354,15 @@
           "note": "Her CRIT DMG +50%, unconditional. The 3 extra laser beams on Slaughter (165% ATK each, once/3s) are EXTRA HITS - run separately with skill multiplier 1.65 each. Datamine mindscapeParams[5] [0.5, 3, 1.65, 3]."
         }
       },
+      "riders": [
+        {
+          "name": "M2: Slaughter Energy ramp",
+          "max_stacks": 24,
+          "requires": { "mindscape": 2 },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.05, "skill_tag": "basic" } ],
+          "note": "ONE-HIT rider: for every 5 Energy her EX Special: Raining Iron Petals consumed (60 base, holdable to 120 at M2), the FOLLOWING Basic Attack: Falling Petals - Slaughter deals +5% DMG (24 steps = +120%). Enter the 5-Energy steps (12 for a plain 60-Energy EX, 24 for a full 120) only when calculating THAT Slaughter hit (tag Basic Attack); 0 for everything else. Needs M2 ticked."
+        }
+      ],
       "team_buffs": [
         {
           "name": "Direct Strike: Vanguard ATK + CRIT DMG",
@@ -1603,7 +1618,9 @@
       "mindscapes": {
         "1": {
           "name": "Know Thy Self, Know Thy Enemy",
-          "note": "Clarity stacks (max 3) grant AP / buildup on being hit - resource/buildup mechanic, not a clean damage toggle; not modeled (enter the AP as external if measuring)."
+          "max_stacks": 1,
+          "effects": [ { "kind": "anomaly_proficiency", "value": 80 } ],
+          "note": "When any squad member inflicts an Anomaly, Yanagi gains 1 Clarity stack (15s, max 3); while she has 1 or more, her Anomaly Proficiency +80 (anomaly modes). Near-permanent in an anomaly squad - modeled since 2026-10-24 (live 3.3 text; was 'enter as external'). Being hit consumes a stack for 1s invulnerability - defensive, not modeled."
         },
         "2": {
           "name": "Outstanding Adaptability",
@@ -1645,7 +1662,7 @@
         }
       ],
       "default_engine": "timeweaver",
-      "_note": "Anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 710+... = 7789, ATK 798, DEF 613, AM 112, AP 114; max core ATK+75 AM+36). POLARITY DISORDER is her main DMG source - see the anomaly_plan / calc note: her downward thrust on an anomalous enemy triggers Polarity Disorder = 15% of a normal Disorder's DMG (+ a flat ~27.25% of her AP term at max skill) and does NOT consume the anomaly, so it repeats many times. To calc: run Disorder mode (electric), apply her core +250% mult and Timeweaver +25%, then take 15% per trigger. M1/M2/M3/M5 not modeled (buildup/MV). ADDITIONAL ABILITY (Gessou - needs an Anomaly squadmate or one sharing her attribute, electric): after switching stances, a Basic Attack: Tsukuyomi Kagura hit raises Electric Anomaly Buildup by 45% for 8s - BUILDUP ONLY, not modeled (documented 2026-08-02; it carries no condition entry because there is no buff to gate). Disorder numbers PROVISIONAL until in-game calibration."
+      "_note": "Anomaly attacker (Team 3, added 2026-07-04, zenless-optimizer datamine: HP 710+... = 7789, ATK 798, DEF 613, AM 112, AP 114; max core ATK+75 AM+36). POLARITY DISORDER is her main DMG source - see the anomaly_plan / calc note: her downward thrust on an anomalous enemy triggers Polarity Disorder = 15% of a normal Disorder's DMG (+ a flat ~27.25% of her AP term at max skill) and does NOT consume the anomaly, so it repeats many times. To calc: run Disorder mode (electric), apply her core +250% mult and Timeweaver +25%, then take 15% per trigger. M1 (Clarity AP +80) is modeled since 2026-10-24; M2/M3/M5 not modeled (buildup/MV). ADDITIONAL ABILITY (Gessou - needs an Anomaly squadmate or one sharing her attribute, electric): after switching stances, a Basic Attack: Tsukuyomi Kagura hit raises Electric Anomaly Buildup by 45% for 8s - BUILDUP ONLY, not modeled (documented 2026-08-02; it carries no condition entry because there is no buff to gate). Disorder numbers PROVISIONAL until in-game calibration."
     },
     "vivian": {
       "name": "Vivian Banshee",
@@ -1960,9 +1977,9 @@
         "condition": { "teammate_specialty_any_of": ["attack"], "teammate_shares_faction": true },
         "effects": [
           { "kind": "flat_atk",
-            "scaling": { "input": "impact", "threshold": 120, "per_step": 1, "per_value": 6, "cap": 600 } }
+            "scaling": { "input": "impact", "threshold": 120, "per_step": 1, "per_value": 6, "cap": 600, "realtime": true } }
         ],
-        "note": "Needs an Attack squadmate or another Criminal Investigation Special Response Team member. Her ATK +6 per point of Impact above 120, capped at +600 (reached at 220 Impact). Enter HER panel Impact as 'impact' (base 118 + core +18 + Ice-Jade Teapot stacks). Basics +20% Daze affects buildup only. Datamine abilityParams [0.2, 120, 6, 600]."
+        "note": "Needs an Attack squadmate or another Criminal Investigation Special Response Team member. Her ATK +6 per point of Impact above 120, capped at +600 (reached at 220 Impact). The text reads her REAL-TIME Impact (no 'initial'): enter her PANEL Impact as 'impact' (base 118 + core +18 + discs + engine advanced stat) - her W-Engine's combat Impact (Ice-Jade Teapot's Tea-riffic stacks, Blazing Laurel's assist Impact%, Chief Sidekick's +30) is added automatically, so do not fold it in yourself any more (since 2026-10-24). Basics +20% Daze affects buildup only. Datamine abilityParams [0.2, 120, 6, 600]."
       },
       "mindscapes": {
         "1": {
@@ -2145,7 +2162,7 @@
           { "kind": "dmg_bonus",
             "scaling": { "input": "initial_energy_regen", "threshold": 1.2, "per_step": 0.01, "per_value": 0.0021, "cap": 0.35 } }
         ],
-        "note": "Per 0.01 initial Energy Regen above 1.2: DMG +0.21%, cap +35% (and AM +0.5, cap +84 - buildup only, not modeled). Enter her panel Energy Regen as 'initial_energy_regen' (e.g. 1.92 with Joyau Dore's +60%). Effectively always active. The Windbite part (consuming 2 points: that Vortex's base multiplier +150% at max core) is a per-burst input - enter it as the additive Vortex-mult increase in Vortex mode. Cyclone-explosion ABLOOMS: a SEPARATE wind-anomaly instance at its OWN multiplier - Condensed 145% / Sweeping 255% at max core (datamine coreParams). The stated % IS the anomaly multiplier (like Windswept is 1250%), NOT a scale on 12.5 - run wind Anomaly mode with the multiplier OVERRIDE set to 145 / 255. CONFIRMED in-game 2026-07-04 (calibration #5: Ultimate Abloom = 6.80/12.5 of the Windswept popup, exact)."
+        "note": "Per 0.01 initial Energy Regen above 1.2: DMG +0.21%, cap +35% (and AM +0.5, cap +84 - buildup only, not modeled). Enter her panel Energy Regen as 'initial_energy_regen' (e.g. 1.92 with Joyau Dore's +60%). Effectively always active. The Windbite part (consuming 2 points: that Vortex's base multiplier +150% at max core) is modeled as her 'Windbite: enhanced Vortex base-mult' buff - tick it in her support slot, or as the on-field agent in her kit card's squad-buff (self) rows, for a Windbite Vortex. Cyclone-explosion ABLOOMS: a SEPARATE wind-anomaly instance at its OWN multiplier - Condensed 145% / Sweeping 255% at max core (datamine coreParams). The stated % IS the anomaly multiplier (like Windswept is 1250%), NOT a scale on 12.5 - run wind Anomaly mode with the multiplier OVERRIDE set to 145 / 255. CONFIRMED in-game 2026-07-04 (calibration #5: Ultimate Abloom = 6.80/12.5 of the Windswept popup, exact)."
       },
       "additional_ability": {
         "name": "Tea Party Etiquette",
@@ -2238,7 +2255,7 @@
         }
       ],
       "default_engine": "joyau_dore",
-      "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = a SEPARATE wind-anomaly instance (its own popup) at its OWN multiplier (cyclones 145%/255%, Ultimate 680%): the stated % IS the anomaly multiplier, NOT a scale on the 12.5 Windswept base - calculate as wind Anomaly mode with the multiplier OVERRIDE (145/255/680). CONFIRMED in-game 2026-07-04 (calibration #5). VORTEX ROLE (added 2026-07-04): a physical/other-element Vortex is dealt as the INFUSED anomaly and scales off the infused-anomaly carrier's stats (e.g. Piper) - set that agent as the on-field attacker; Velina's Windswept/Vortex AMPLIFIERS then apply via her 'team_buffs' (her ability +10%, M1 20% RES ignore, M2 +15%, Windbite +150%). Her attacker-role kit (core_passive / additional_ability / mindscapes) and her team_buffs are the SAME effects for the two roles - never apply both at once. Joyau Dore's squad AP (+60 at 2 stacks) reaches Velina herself (squad buffs apply to the wearer too, since 2026-07-04) - toggle it via the on-field engine squad-buff control. Its squad-facing Vortex/Windswept DMG stacks are NOT yet modeled as a squad buff (squad_buffs lack the anomaly_buff bracket) - enter those as external Anomaly-buff % for now. Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
+      "_note": "Kit completed 2026-07-03 (Game8 + Icy Veins + zenless-optimizer datamine; conflicts resolved by the datamine at max core: Windbite +150% NOT Game8's 159%, Ablooms 145%/255%, Chromatic Tint shreds Anomaly BUILDUP RES not damage RES). Stats confirmed by datamine (ATK 126+224+59x7.586=797). ABLOOM = a SEPARATE wind-anomaly instance (its own popup) at its OWN multiplier (cyclones 145%/255%, Ultimate 680%): the stated % IS the anomaly multiplier, NOT a scale on the 12.5 Windswept base - calculate as wind Anomaly mode with the multiplier OVERRIDE (145/255/680). CONFIRMED in-game 2026-07-04 (calibration #5). VORTEX ROLE (added 2026-07-04): a physical/other-element Vortex is dealt as the INFUSED anomaly and scales off the infused-anomaly carrier's stats (e.g. Piper) - set that agent as the on-field attacker; Velina's Windswept/Vortex AMPLIFIERS then apply via her 'team_buffs' (her ability +10%, M1 20% RES ignore, M2 +15%, Windbite +150%). Her attacker-role kit (core_passive / additional_ability / mindscapes) and her team_buffs are the SAME effects for the two roles - never apply both at once. Joyau Dore's squad AP (+60 at 2 stacks) reaches Velina herself (squad buffs apply to the wearer too, since 2026-07-04) - toggle it via the on-field engine squad-buff control. Joyau Dore's Vortex/Windswept DMG stacks are EQUIPPER-ONLY (live 3.3 text: 'the DMG dealt by THEIR Vortex and Windswept'), modeled as the engine's own conditional buff - nothing to enter (corrected 2026-10-24; this note used to call them squad-facing). Vortex/Windswept numbers PROVISIONAL until in-game calibration (anomaly_plan.md 5e)."
     },
     "remielle": {
       "name": "Remielle Dan",
@@ -2289,9 +2306,9 @@
           "effects": [
             { "kind": "refringe",
               "modes": ["anomaly", "disorder", "vortex"],
-              "scaling": { "input": "anomaly_proficiency", "per_step": 1, "per_value": 0.0002 } }
+              "scaling": { "input": "anomaly_proficiency", "per_step": 1, "per_value": 0.0002, "realtime": true } }
           ],
-          "note": "HER SIGNATURE MECHANIC. While an enemy carries Lumiflux Buildup, the NEXT Anomaly a teammate inflicts is Refringed: its Anomaly Effect Strength - and so its whole damage - is multiplied by (1 + Refringe Coefficient). Base coefficient = 0.02% per point of REMIELLE's Anomaly Proficiency (enter her panel AP as 'anomaly_proficiency'; 1,200 AP = +24%). Reaches everything derived from the anomaly: Disorder, Vortex, Abloom - and her own Luminize. Its own multiplicative zone, so it does NOT dilute against 'Anomaly DMG +X%' buffs (Lin-0/Mobalytics: 'a unique multiplier... the only source of saturation on this is Remielle herself'). Tick the two riders below on top when they apply - the coefficient's parts are ADDITIVE percentage points. NEVER tick this when REMIELLE herself is the calculated attacker: her Luminize already inherits the Refringe baked into the stored Voidflare.",
+          "note": "HER SIGNATURE MECHANIC. While an enemy carries Lumiflux Buildup, the NEXT Anomaly a teammate inflicts is Refringed: its Anomaly Effect Strength - and so its whole damage - is multiplied by (1 + Refringe Coefficient). Base coefficient = 0.02% per point of REMIELLE's Anomaly Proficiency, read in real time (1,200 AP = +24%): enter her PANEL AP as 'anomaly_proficiency' - her W-Engine's combat AP (Ode of Resurrected Wings' passive +96..135, Weeping Gemini's stacks, Neon Fantasies...) is added automatically (since 2026-10-24); add squad AP other teammates give her yourself. Reaches everything derived from the anomaly: Disorder, Vortex, Abloom - and her own Luminize. Its own multiplicative zone, so it does NOT dilute against 'Anomaly DMG +X%' buffs (Lin-0/Mobalytics: 'a unique multiplier... the only source of saturation on this is Remielle herself'). Tick the two riders below on top when they apply - the coefficient's parts are ADDITIVE percentage points. NEVER tick this when REMIELLE herself is the calculated attacker: her Luminize already inherits the Refringe baked into the stored Voidflare.",
           "condition": { "teammate_specialty_any_of": ["anomaly"] }
         },
         {
@@ -2552,7 +2569,7 @@
             { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "ex_special" },
             { "kind": "dmg_bonus", "value": 0.50, "skill_tag": "ultimate" }
           ],
-          "note": "+50% DMG to exactly THREE skills: Basic Attack: Full-Throttle Starlight ('basic' tag), EX Special Attack: Cool Wheelie ('ex_special' tag - NOT High-Traction Wheels or Rocking Footwork), and Ultimate: Starlight Knight Flying Kick - only check the toggle when the calculated hit is one of those. The Turbocharged follow-up (Drive Suppression consuming it chains into a Cool Wheelie with +50% CRIT DMG on THAT instance) is a one-instance buff: add +50% external CRIT DMG when measuring that specific hit. Datamine mindscapeParams[1] [0.5, 0.5, 1]."
+          "note": "+50% DMG to exactly THREE skills: Basic Attack: Full-Throttle Starlight ('basic' tag), EX Special Attack: Cool Wheelie ('ex_special' tag - NOT High-Traction Wheels or Rocking Footwork), and Ultimate: Starlight Knight Flying Kick - only check the toggle when the calculated hit is one of those. The Turbocharged follow-up's +50% CRIT DMG is the 'M2: Turbocharged Cool Wheelie' rider (modeled since 2026-10-24). Datamine mindscapeParams[1] [0.5, 0.5, 1]."
         },
         "3": {
           "name": "Knight's Chivalry",
@@ -2580,6 +2597,15 @@
           "note": "Ultimate: Starlight Knight Flying Kick and Basic Attack: Full-Throttle Starlight Sheer DMG +18% (dedicated Sheer DMG bracket; 'basic' = Full-Throttle only). Brilliant Starlight stacks (max 6; from the 4th Knight's Technique hit / Cool Wheelie / Knight's Swagger): using the Ultimate or Full-Throttle consumes up to 2, each adding an EXTRA final-hit instance of 100% Sheer Force as Physical DMG - run each separately in Sheer mode with skill multiplier 1.0. Datamine mindscapeParams[5] [0.18, 1, 6, 1, 2, 1]."
         }
       },
+      "riders": [
+        {
+          "name": "M2: Turbocharged Cool Wheelie",
+          "max_stacks": 1,
+          "requires": { "mindscape": 2 },
+          "effects": [ { "kind": "crit_dmg", "value": 0.50, "skill_tag": "ex_special" } ],
+          "note": "ONE-HIT rider: a Drive Suppression that consumes Turbocharged chains into an EX Special Attack: Cool Wheelie whose CRIT DMG is +50% on THAT instance. Tick it only when calculating that Cool Wheelie (tag EX Special); untick for every other hit. Needs M2 ticked."
+        }
+      ],
       "default_engine": "starlight_rider_faceplate",
       "_note": "Physical RUPTURE (Sheer) DPS (Team 9, added 2026-07-15, zenless-optimizer datamine: Lv. 60 HP 8497.14, ATK 784.91, DEF 445.99 -> stored 8497/784/445; Impact 95, AM 90, AP 89; max core ATK+75, CRIT Rate+14.4%). Cunning Hares (Nicole/Nekomata/Billy). SHEER AGENT like Yixuan: Sheer Force = 30% ATK (global rupture rate) + 0.1 x Max HP (his conversion field); ALL his Physical DMG is Sheer DMG - ignore enemy DEF, use the Sheer calc mode with Sheer Force as the multiplier base. HP is his premium stat (feeds SF via the conversion; Starlight Rider Faceplate's HP% 30% doubles down). NO team buffs - pure DPS; his Additional Ability is a self buff. Sheet upstream is a TODO stub except the HP->SF conversion - kit magnitudes decoded from the loc text (exact per-rank tables). Not yet panel-checked in-game; PROVISIONAL until Sheer calibration."
     },
@@ -2722,7 +2748,7 @@
       },
       "potential": {
         "name": "Potential Awakening: Demolition Ops",
-        "note": "Track 'Get Workin'! I-VI' (in-game levels I..VI stored as 1..6). Every level includes the level-I rework; II..VI add a squad CRIT DMG ladder. Almost the whole Potential is SQUAD-FACING (squad: true): as a SUPPORT pick the level you own in her support slot's Potential select; as the ON-FIELD agent the level applies to her too. Levels replace each other. NOT MODELED: (a) the Armorer half of II..VI (Armorer agents +4/6/8/10/12% Laceration DMG - the Sharp DMG / Laceration formula is not in this calculator and no Armorer is in the roster; the CRIT DMG ladder is gated to NON-Armorer agents, which today means everyone); (b) the rework's self part, the enhanced Basic 2nd hit +10% DMG and +20% Daze per Furnace Fire stack consumed (max 2) - enter +10%/stack as external DMG% on that one hit. Sources: nanoka 3.2 (live) character 1101 potential_detail + potential-gated skill/passive variants; frzyc potentialParams [[0, 0.04..0.12], [0, 0.11..0.35]] and Koleda.ts agree to the digit (P1 35% = teamBuff common_dmg_, the ordinary DMG% bracket). Not yet calibrated in-game.",
+        "note": "Track 'Get Workin'! I-VI' (in-game levels I..VI stored as 1..6). Every level includes the level-I rework; II..VI add a squad CRIT DMG ladder. Almost the whole Potential is SQUAD-FACING (squad: true): as a SUPPORT pick the level you own in her support slot's Potential select; as the ON-FIELD agent the level applies to her too. Levels replace each other. NOT MODELED: (a) the Armorer half of II..VI (Armorer agents +4/6/8/10/12% Laceration DMG - the Sharp DMG / Laceration formula is not in this calculator and no Armorer is in the roster; the CRIT DMG ladder is gated to NON-Armorer agents, which today means everyone); (b) the rework's self part's Daze +20% per Furnace Fire stack (buildup only) - its +10% DMG per stack on the enhanced Basic's 2nd hit IS modeled, as the 'Potential: Furnace Fire enhanced Basic' rider (since 2026-10-24). Sources: nanoka 3.2 (live) character 1101 potential_detail + potential-gated skill/passive variants; frzyc potentialParams [[0, 0.04..0.12], [0, 0.11..0.35]] and Koleda.ts agree to the digit (P1 35% = teamBuff common_dmg_, the ordinary DMG% bracket). Not yet calibrated in-game.",
         "levels": {
           "1": {
             "name": "Get Workin'! I",
@@ -2787,6 +2813,15 @@
           "note": "Additional Ability (needs another Rupture / Fire / Belobog squadmate; Armorer too with her Potential). Her EX Special explosion debuffs the target (max 2 stacks): while it is STUNNED, every squad member's Chain Attacks deal +35% DMG per stack. STUNNED ONLY - read the STUNNED column of a Chain Attack. Resets when the stun ends."
         }
       ],
+      "riders": [
+        {
+          "name": "Potential: Furnace Fire enhanced Basic",
+          "max_stacks": 2,
+          "requires": { "potential_min": 1 },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.10, "skill_tag": "basic" } ],
+          "note": "ONE-HIT rider (Potential rework, any level): the 2nd hit of her enhanced Basic Attack deals +10% DMG per Furnace Fire stack it consumes (max 2 = +20%). Enter the stacks consumed only when calculating THAT hit (tag Basic Attack); 0 for everything else. The matching +20% Daze per stack is buildup only. Needs her Potential level picked."
+        }
+      ],
       "default_engine": "hellfire_gears",
       "_note": "Fire stunner, Belobog Heavy Industries (Team 10, added 2026-10-17, zenless-optimizer datamine: Lv. 60 HP 8127.31, ATK 660.84, DEF 594.59 -> stored 8127/660/594; Impact 116, AM 97, AP 96; max core ATK+75, Impact+18 - nanoka 3.2 agrees). CORE PASSIVE (Demolition Hammer) is Daze-only (EX Special / enhanced Basic Daze +60% at rank F) - nothing to model, so there is no core_passive block. Her damage value is support-side: the Additional Ability's Chain DMG vs Stunned and, since 3.2, her squad-wide Potential Awakening (squad DMG +35%, squad CRIT DMG up to +35%), delivered through the support slot's Potential select. Furnace Fire comes from her EX Special, Chain Attack, Ultimate and Assist Follow-Up; the enhanced Basic consumes it. Ben coordinated-attack (Teamwork) multipliers are separate MVs, entered by hand. Default engine: her signature Hellfire Gears (no damage-relevant passive). PROVISIONAL until an in-game calibration."
     },
@@ -2808,32 +2843,35 @@
         "name": "Nirvana: Sear (Anomaly DMG can crit)",
         "max_stacks": 1,
         "effects": [
-          { "kind": "anomaly_crit_rate", "modes": ["anomaly", "disorder", "vortex"],
+          { "kind": "anomaly_crit_rate", "modes": ["anomaly", "vortex"],
             "scaling": { "input": "anomaly_mastery", "base": 0.30, "threshold": 155, "per_step": 1, "per_value": 0.007, "cap": 1.0 } },
-          { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] },
+          { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "vortex"] },
           { "kind": "anomaly_crit_dmg", "value": 0.40, "abloom_only": true }
         ],
-        "note": "Core passive, max rank F. Any squad Anomaly DMG puts the enemy in SEAR (20s, refreshed - permanent in an anomaly team); Anomaly DMG against a Seared enemy can CRIT: CRIT Rate 30% +0.7% per point of Phoenix's INITIAL Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. Enter her panel (out-of-combat) AM as 'anomaly_mastery'; the optimizer then keeps builds at or above it. Reaching the cap: (116 base + 36 core) x (1 + 30% slot-6 AM% + 30% Plume of Rebirth + 8% Phaethon's Melody 2pc) = 255.4 AM. A build's CRIT stats never reach anomaly crits. Third effect (Abloom only): her own Ablooms (Purifying Flame, Soul-Searching Blaze) get +40% CRIT DMG when they crit - it applies only with an Abloom multiplier override set. Not modeled: the Sear DoT (25..50% ATK every 8s, Fire, counts as EX Special DMG - direct-mode recipe: multiplier 0.50, tag EX Special), Pyre / Combustion Attacks / Wither and Bloom / Rebirth (resources and QoL). The core's Anomaly Proficiency +85 is folded into core_skill_bonuses (unconditional, Nangong precedent). Self-facing copy; as a support use the 'Sear' team buff (same effect - never both)."
+        "note": "Core passive, max rank F. Any squad Anomaly DMG puts the enemy in SEAR (20s, refreshed - permanent in an anomaly team); Anomaly DMG against a Seared enemy can CRIT: CRIT Rate 30% +0.7% per point of Phoenix's INITIAL Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. ANOMALY DMG ONLY: anomaly procs, Vortexes and Ablooms crit (anomaly / vortex modes) - Disorder and Polarity Disorder do NOT (fixed 2026-10-21; live 3.3 text: Vortex 'deals Anomaly DMG', Disorder is 'additional DMG' - Lin-0 agrees). Enter her panel (out-of-combat) AM as 'anomaly_mastery'; the optimizer then keeps builds at or above it. Reaching the cap: (116 base + 36 core) x (1 + 30% slot-6 AM% + 30% Plume of Rebirth + 8% Phaethon's Melody 2pc) = 255.4 AM. A build's CRIT stats never reach anomaly crits. Third effect (Abloom only): her own Ablooms (Purifying Flame, Soul-Searching Blaze) get +40% CRIT DMG when they crit - it applies only with an Abloom multiplier override set. Not modeled: the Sear DoT (25..50% ATK every 8s, Fire, counts as EX Special DMG - direct-mode recipe: multiplier 0.50, tag EX Special), Pyre / Combustion Attacks / Wither and Bloom / Rebirth (resources and QoL). The core's Anomaly Proficiency +85 is folded into core_skill_bonuses (unconditional, Nangong precedent). Self-facing copy; as a support use the 'Sear' team buff (same effect - never both)."
       },
       "additional_ability": {
         "name": "Krampus Ace: Sear Anomaly CRIT DMG",
         "max_stacks": 1,
         "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
-        "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "disorder", "vortex"] } ],
+        "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "vortex"] } ],
         "note": "Additional Ability - needs another Anomaly squadmate or one sharing her Faction (Krampus Compliance Authority: Zhao, Dialyn). Anomaly DMG against Seared enemies: CRIT DMG +15% (squad-wide; this is the self-facing copy - as a support use the 'Krampus Ace' team buff, never both)."
       },
       "mindscapes": {
         "1": {
           "name": "Lingering Pain and Thrilling Procession",
           "max_stacks": 1,
-          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "vortex"] } ],
           "note": "Anomaly DMG against Seared enemies: CRIT DMG +25% more (squad-wide in-game - as a support use the 'M1' team buff instead). Ascension on entering the field and Pyre +15% on Combustion Attacks are resource-only."
         },
         "2": {
           "name": "Curiosity Won't Kill the Cat",
           "max_stacks": 1,
-          "effects": [ { "kind": "dmg_bonus", "value": 0.30 } ],
-          "note": "Phoenix's DMG against Seared enemies +30% (self-only; Sear is near-permanent in an anomaly team - direct hits and her anomalies alike). Her Burn lasts 2s longer: 4 more ticks at the 0.5s interval - add them by hand to a full-duration Burn total."
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.30 },
+            { "kind": "anomaly_hits_add", "value": 4, "element": "fire", "modes": ["anomaly"] }
+          ],
+          "note": "Phoenix's DMG against Seared enemies +30% (self-only; Sear is near-permanent in an anomaly team - direct hits and her anomalies alike). Her Burn lasts 2s longer: 4 more ticks at the 0.5s interval - modeled since 2026-10-24 (anomaly_hits_add): a full-duration Burn counts 24 ticks instead of 20. Abloom / Disorder / Vortex windows are unchanged (the Vortex window question is still open)."
         },
         "3": {
           "name": "Scarecrow Complex",
@@ -2852,9 +2890,9 @@
           "max_stacks": 1,
           "effects": [
             { "kind": "res_shred", "value": 0.15 },
-            { "kind": "def_red", "value": 0.40, "abloom_only": true }
+            { "kind": "pen_ratio", "value": 0.40, "abloom_only": true }
           ],
-          "note": "Phoenix ignores 15% of All-Attribute RES (all of her damage), and Ablooms she triggers ignore 40% of enemy DEF (applies only with an Abloom multiplier override set). Ascension from Dazzling Flare is resource-only."
+          "note": "Phoenix ignores 15% of All-Attribute RES (all of her damage), and Ablooms she triggers ignore 40% of enemy DEF (applies only with an Abloom multiplier override set). 'DMG ignores X% DEF' is ATTACKER-side PEN Ratio in this project (frzyc pen_, sources.md audit #4) - stored as pen_ratio since 2026-10-24 (it was def_red, which multiplied separately from her build's PEN Ratio). Ascension from Dazzling Flare is resource-only."
         }
       },
       "team_buffs": [
@@ -2863,29 +2901,279 @@
           "self_duplicate_of": "core_passive",
           "max_stacks": 1,
           "effects": [
-            { "kind": "anomaly_crit_rate", "modes": ["anomaly", "disorder", "vortex"],
+            { "kind": "anomaly_crit_rate", "modes": ["anomaly", "vortex"],
               "scaling": { "input": "anomaly_mastery", "base": 0.30, "threshold": 155, "per_step": 1, "per_value": 0.007, "cap": 1.0 } },
-            { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] }
+            { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "vortex"] }
           ],
-          "note": "Core passive, max rank F: any squad Anomaly DMG Sears the enemy, and ALL Anomaly DMG it takes can crit - CRIT Rate 30% +0.7% per point of PHOENIX's initial Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. Enter HER panel AM as 'anomaly_mastery'. The on-field agent's anomaly procs, Disorders and Vortexes all crit; their build CRIT stats do not apply."
+          "note": "Core passive, max rank F: any squad Anomaly DMG Sears the enemy, and ALL Anomaly DMG it takes can crit - CRIT Rate 30% +0.7% per point of PHOENIX's initial Anomaly Mastery above 155 (100% at 255), CRIT DMG 25%. Enter HER panel AM as 'anomaly_mastery'. The on-field agent's anomaly procs, Vortexes and Ablooms crit - NOT Disorders or Polarity Disorders (not Anomaly DMG; fixed 2026-10-21); their build CRIT stats do not apply."
         },
         {
           "name": "Krampus Ace: Sear Anomaly CRIT DMG",
           "self_duplicate_of": "additional_ability",
           "max_stacks": 1,
           "condition": { "teammate_specialty_any_of": ["anomaly"], "teammate_shares_faction": true },
-          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.15, "modes": ["anomaly", "vortex"] } ],
           "note": "Additional Ability (needs another Anomaly squadmate or a Krampus one). Anomaly DMG against Seared enemies: CRIT DMG +15%. Check together with the Sear buff."
         },
         {
           "name": "M1: Sear Anomaly CRIT DMG +25%",
           "max_stacks": 1,
-          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "disorder", "vortex"] } ],
+          "effects": [ { "kind": "anomaly_crit_dmg", "value": 0.25, "modes": ["anomaly", "vortex"] } ],
           "note": "Requires Phoenix at Mindscape 1. Anomaly DMG against Seared enemies: CRIT DMG +25% more. Check together with the Sear buff."
         }
       ],
       "default_engine": "plume_of_rebirth",
-      "_note": "Fire ANOMALY, Krampus Compliance Authority (Team 10, added 2026-10-17). PROVISIONAL - nanoka 3.3 BETA build 3.3.12+19629936, character 1641 (code name 'Pheony'); frzyc has no entry yet, Lin-0 has no guide. Lv. 60 stats from the nanoka growth curves (same formula that reproduces frzyc's Pyrois / Koleda): HP 7673.70, ATK 797.57, DEF 612.60 -> stored 7673/797/612; Impact 86, AM 116, AP 118 (nanoka element_abnormal_power = AM, element_mystery = AP - checked against Koleda in frzyc); core ATK+75, AM+36, plus the core passive's AP+85. HER MECHANIC: SEAR makes squad Anomaly DMG crit (core_passive / 'Sear' team buff). ABLOOM RECIPES (she triggers them; run Anomaly mode as Phoenix with the multiplier OVERRIDE and the Abloom element set to the anomaly already on the target - any attribute): Basic Attack: Purifying Flame finisher (90 Pyre) = 225% + 20% per skill level above 1 -> 4.45 at Lv. 12; Soul-Searching Blaze finisher (re-entry after her Ultimate / Chain) = 300% + 27% per level -> 5.97 at Lv. 12; M4 adds one more at a fixed 6.00. The override IS the multiplier, NOT a scale on the anomaly's base: her text 'resolving the corresponding Attribute Anomaly at a X% multiplier' / 'a fixed 600% multiplier' is Velina's wording, which was confirmed in-game as the direct multiplier (2026-07-04); a single number for all six attributes only makes sense that way (Nangong and Vivian instead list per-element ratios OF the original anomaly). Each of her Ablooms gets +40% CRIT DMG when it crits (core_passive's Abloom-only rider) and, at M6, ignores 40% DEF. Ultimate: Perpetual Resurrection 1813.9% +164.9%/level (consumes her HP, then Wither); Chain Attack 882.7% +80.3%/level - direct hits. NOT MODELED: the Sear DoT (recipe in the core note), Pyre/Ascension/Wither resources, Combustion Attack tags (no damage gate uses them). Re-verify everything when 3.3 goes live or frzyc adds her."
+      "_note": "Fire ANOMALY, Krampus Compliance Authority (Team 10, added 2026-10-17). PROVISIONAL - nanoka 3.3 BETA build 3.3.12+19629936, character 1641 (code name 'Pheony'); RE-CHECKED against LIVE 3.3 (nanoka live 3.3, 2026-10-21): stats, core, Krampus Ace, M1-M6, Abloom / Ultimate / Chain multipliers and Plume of Rebirth all unchanged from the beta. frzyc still has no entry (main branch at 3.2 content); Lin-0 guide 2026-10-21 (mobalytics /zzz/builds/phoenix-build). Lv. 60 stats from the nanoka growth curves (same formula that reproduces frzyc's Pyrois / Koleda): HP 7673.70, ATK 797.57, DEF 612.60 -> stored 7673/797/612; Impact 86, AM 116, AP 118 (nanoka element_abnormal_power = AM, element_mystery = AP - checked against Koleda in frzyc); core ATK+75, AM+36, plus the core passive's AP+85. HER MECHANIC: SEAR makes squad Anomaly DMG crit (core_passive / 'Sear' team buff). ABLOOM RECIPES (she triggers them; run Anomaly mode as Phoenix with the multiplier OVERRIDE and the Abloom element set to the anomaly already on the target - any attribute): Basic Attack: Purifying Flame finisher (90 Pyre) = 225% + 20% per skill level above 1 -> 4.45 at Lv. 12; Soul-Searching Blaze finisher (re-entry after her Ultimate / Chain) = 300% + 27% per level -> 5.97 at Lv. 12; M4 adds one more at a fixed 6.00. The override IS the multiplier, NOT a scale on the anomaly's base: her text 'resolving the corresponding Attribute Anomaly at a X% multiplier' / 'a fixed 600% multiplier' is Velina's wording, which was confirmed in-game as the direct multiplier (2026-07-04); a single number for all six attributes only makes sense that way (Nangong and Vivian instead list per-element ratios OF the original anomaly). Each of her Ablooms gets +40% CRIT DMG when it crits (core_passive's Abloom-only rider) and, at M6, ignores 40% DEF. Ultimate: Perpetual Resurrection 1813.9% +164.9%/level (consumes her HP, then Wither); Chain Attack 882.7% +80.3%/level - direct hits. NOT MODELED: the Sear DoT (recipe in the core note), Pyre/Ascension/Wither resources, Combustion Attack tags (no damage gate uses them). Re-verify when frzyc adds her."
+    },
+    "severian": {
+      "name": "Severian (Severian Lowell)",
+      "attribute": "wind",
+      "specialty": "attack",
+      "faction": "criminal_investigation_special_response_team",
+      "level": 60,
+      "base_hp": 7826,
+      "base_atk": 858,
+      "base_def": 606,
+      "impact": 94,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 91,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75, "crit_dmg": 0.288 },
+      "core_passive": {
+        "name": "Endless Breeze",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "crit_dmg", "value": 0.60 },
+          { "kind": "dmg_bonus", "value": 0.25 }
+        ],
+        "note": "Core passive, max rank F (level 7): Severian's CRIT DMG +60% and his DMG +25%, unconditional (core A..F: CRIT DMG 30/35/40/45/50/55/60%, DMG 12.5/14.6/16.7/18.8/20.8/22.9/25%). The extra +30% DMG with another Wind agent in the squad is its own toggle - the 'Endless Breeze: another Wind agent' rider. Not modeled: Swift Edge auto-dodge into Raging Whirlwind, Shadowflash (2 stacks on entry, auto-dodge), Windborne (Entry Skill charges), Flow (150 cap; 100 Flow = Azure Wind's Shadowhunt) - resource/QoL mechanics."
+      },
+      "riders": [
+        {
+          "name": "Endless Breeze: another Wind agent",
+          "max_stacks": 1,
+          "condition": { "teammate_shares_attribute": true },
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30 } ],
+          "note": "Core passive clause, max rank F: if another Wind character is in the squad, Severian's DMG +30% MORE (core A..F: 15/17.5/20/22.5/25/27.5/30%). On top of the core's +25% - same DMG% bracket. In the current roster only Velina is Wind."
+        }
+      ],
+      "additional_ability": {
+        "name": "Optimal Setup: CRIT Rate -> ATK",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["support", "stun"], "teammate_shares_faction": true },
+        "effects": [
+          { "kind": "flat_atk", "modes": ["direct", "sheer"],
+            "scaling": { "input": "total_crit_rate", "per_step": 0.01, "per_value": 8.5, "cap": 850 } }
+        ],
+        "note": "Additional Ability - needs a Support or Stun squadmate, or one sharing his Faction (New Eridu Public Security / the Criminal Investigation Special Response Team: Qingyi qualifies twice). For every 1% CRIT Rate Severian has, his ATK +8.5, capped at 100% CRIT Rate (+850). Nothing to enter: the text has no 'initial', which is the Anby S wording the in-game test proved reads the COMBAT total, so the calculator reads his total CRIT Rate off the build (panel + engine passive + kit + team + external) and the optimizer follows each candidate build's CRIT Rate. Stepped per whole 1% like Norma's core (the continuous reading differs by at most 8.5 ATK - calibrate in-game). Direct-hit mode only: the anomaly modes compute no CRIT Rate total, so his Windswept procs are calculated without it."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Double Espresso",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.15, "element": "wind" } ],
+          "note": "Severian's attacks ignore 15% of the target's Wind RES. Resource / QoL parts not modeled: a Chain Attack sets Flow to 50, Entry Skill: Clear Out becomes a Chain Attack (once/60s), Azure Wind's Shadowhunt grants 1 Windborne."
+        },
+        "2": {
+          "name": "Reins of Reason",
+          "max_stacks": 1,
+          "effects": [ { "kind": "pen_ratio", "value": 0.20 } ],
+          "note": "After a Perfect Dodge or Basic Attack: Azure Wind's Shadowhunt: his PEN Ratio +20% for 25s - near-permanent in his dodge/Shadowhunt loop. The +150 Flow on entering the field is resource-only."
+        },
+        "3": {
+          "name": "The Last Light",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled (project convention: enter the higher multiplier)."
+        },
+        "4": {
+          "name": "Between Light and Shadow",
+          "max_stacks": 1,
+          "effects": [ { "kind": "atk_pct", "value": 0.10 } ],
+          "note": "On entering combat or switching on-field: his ATK +10% for 30s (repeated triggers reset it) - combat ATK% bracket. The Decibel Generation Rate +10% after Raging Whirlwind / Shadowhunt is resource-only."
+        },
+        "5": {
+          "name": "A Heart Above 0°C",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Beneath a Little Star",
+          "note": "MOTION VALUE: the final hit of Basic Attack: Azure Wind's Shadowhunt gets a fixed +350% additional DMG Multiplier - enter the higher multiplier for that hit (project convention). Max Flow 180 / 180 Flow on entry and Windrise (+5 Flow/s for 5s) are resource-only."
+        }
+      },
+      "default_engine": "incarcerating_grip",
+      "_note": "Wind ATTACK, New Eridu Public Security (nanoka camp 7 - the same camp as Qingyi, whose older faction key is reused). Added 2026-10-24. PROVISIONAL - nanoka LIVE 3.3 character 1631 (also unchanged in the 3.4.1 beta); frzyc has no entry yet (main branch at 3.2 content); Lin-0's Mobalytics guide is listed but not published (the page 404s). Lv. 60 stats from the nanoka growth curves (the formula that reproduces Phoenix / Koleda): HP 629 + 85.3932 x 59 + 2159 = 7826.20, ATK 134 + 8.2119 x 59 + 240 = 858.50, DEF 49 + 6.6203 x 59 + 167 = 606.60 -> stored 7826 / 858 / 606; Impact 94 (break_stun), AM 91 (element_abnormal_power), AP 90 (element_mystery), sp_recover 120 -> ER 1.2; base CRIT 5% / 50%. extra_level 6: Base ATK +75, CRIT DMG +28.8% -> core_skill_bonuses. NO Potential, NO team buffs (all-self kit - as a support he adds nothing). MULTIPLIERS at skill Lv. 12 (enter them with the matching tag): Basic Attack: Swift Edge 131.4 / 213.3 / 356.2 / 483.6% (4th hit after a successful dodge 677.0%); Basic Attack: Raging Whirlwind 677.0%; Basic Attack: Azure Wind's Shadowhunt 4056.1% (his headline hit, 100 Flow); Dash Attack: Sheer Assault 215.2%; Dodge Counter: Fatal End 613.8%; Special Attack: Gale Rend 117.8%; EX Special Attack: Swiftwind Rupture 1132.5% + wind blades up to 818.4%; Chain Attack: Coldblade Reap 1743.7%; Ultimate: Annihilating Windstorm 5353.8%; Quick Assist: Field Orders 129.1%; Assist Follow-Up: Fight Force with Force 729.9%; Entry Skill: Clear Out 309.2% (counts as a Quick Assist). Raging Whirlwind and Shadowhunt ARE Basic Attacks (tag 'basic'), which keeps Incarcerating Grip's Basic-hit buff up."
+    },
+    "banyue": {
+      "name": "Banyue",
+      "attribute": "fire",
+      "specialty": "rupture",
+      "faction": "krampus",
+      "level": 60,
+      "base_hp": 8497,
+      "base_atk": 784,
+      "base_def": 445,
+      "impact": 95,
+      "energy_regen": 0,
+      "anomaly_mastery": 90,
+      "anomaly_proficiency": 89,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "sheer_force_hp_conversion": 0.1,
+      "core_passive": {
+        "name": "One With the Mountains: Sheer Force / Fire DMG / CRIT DMG",
+        "max_stacks": 1,
+        "effects": [
+          { "kind": "sheer_force", "value": 300, "modes": ["sheer"] },
+          { "kind": "dmg_bonus", "value": 0.36, "element": "fire" },
+          { "kind": "crit_dmg", "value": 0.36 }
+        ],
+        "note": "Core passive, max rank F (level 7): when Banyue uses an EX Special Attack or Assist Follow-Up, his Sheer Force +300 (flat, combat), Fire DMG +36% and CRIT DMG +36% for 30s, refreshed. His EX Specials cost only 20 Adrenaline and his parry chains into Assist Follow-Up: Pierce Heavens, so Lin-0 rates it FULL UPTIME - tick it for every hit. Core A..F: Sheer Force 150/175/200/225/250/275/300, Fire DMG and CRIT DMG 18/21/24/27/30/33/36%. His HP -> Sheer Force conversion (0.1 per Max HP point) and the Rupture 30% ATK conversion are separate always-on fields, not this toggle; ALL his Fire DMG is Sheer DMG (use the Sheer calc mode). Not modeled (resources / QoL): 60 Adrenaline on entry, Wrathful Fires (150 cap, 120 enters Visage of Wrath), Mountain's Might (4 Adrenaline-free EX Specials per Visage of Wrath). Datamine coreParams [150..300], [0.18..0.36] x2, 30s."
+      },
+      "additional_ability": {
+        "name": "Mountain's Zenith: Vidyaraja",
+        "max_stacks": 3,
+        "condition": { "teammate_specialty_any_of": ["support", "stun"] },
+        "effects": [ { "kind": "dmg_bonus", "value": 0.05, "element": "fire" } ],
+        "note": "Needs a Support or Stun squadmate (Lucia, Dialyn, Koleda...; Pan Yinhu is DEFENSE and does not qualify) - at M6 no squadmate is needed: tick it anyway. In Visage of Wrath, each EX Special unleashed by consuming Mountain's Might through a Basic Attack branch or quick input grants a Vidyaraja stack: Fire DMG +5% per stack, max 3, 8s, repeated triggers reset the duration (M6: 30s and +8% more per stack - the M6 toggle). Enter the stacks active at the calculated hit: 3 for the end of a Wrath combo (Crushing Peaks / Toppling Mountain), fewer for its first EX Specials (Lin-0: the first few attacks do not get the full buff). Datamine abilityParams [0.05, 3, 8]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Greed Burns Like Fire",
+          "max_stacks": 1,
+          "effects": [ { "kind": "res_shred", "value": 0.10, "element": "fire" } ],
+          "note": "When EX Special Attack: One's Path or Earth Shaker hits, the enemy enters Tremor for 30s: its Fire RES -10% (all his hits). An enemy debuff, but only his own EX Specials apply it, so it is modeled self-side only (he is an on-field DPS, not an off-field support). The Tremor Sheer DMG +10% for six named skills is the 'M1: Tremor Sheer DMG' rider (one-hit toggle - tick it only for those skills). The +2s stun extension on Crushing Peaks (once per stun) is QoL. Datamine mindscapeParams[0] [0.1, 30, 0.1, 2]."
+        },
+        "2": {
+          "name": "Anger Cuts Like a Blade",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "crit_dmg", "value": 0.15 },
+            { "kind": "dmg_bonus", "value": 0.15, "element": "fire" }
+          ],
+          "note": "The core passive's CRIT DMG and Fire DMG bonuses are each raised by +15% more (36 -> 51%): check TOGETHER with the core passive toggle (same 30s state). The extra +5 Adrenaline per Mountain's Might EX Special is resource-only. Datamine mindscapeParams[1] [0.15, 0.15, 5]."
+        },
+        "3": {
+          "name": "Ignorance Binds Like Chains",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled (project convention: enter the higher multiplier)."
+        },
+        "4": {
+          "name": "Purge Unit - Type Zero",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "ex_special" },
+            { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "basic" }
+          ],
+          "note": "+30% DMG to exactly FOUR skills: EX Special Attack: Lion's Roar - Wrath and Mountain Tremor - Wrath ('ex_special' tag - NOT the plain Lion's Roar / Mountain Tremor, Earth Shaker or One's Path), Basic Attack: Toppling Mountain and Crushing Peaks ('basic' tag - NOT his Towering Peaks / Majestic Summit chains or Immolate). Only tick it when the calculated hit is one of those four. Datamine mindscapeParams[3] [0.3]."
+        },
+        "5": {
+          "name": "Student",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Descended Vidyaraja",
+          "max_stacks": 3,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.08, "element": "fire" } ],
+          "note": "Every EX Special (and Dodge: Battle Cry right after one) grants Vidyaraja - no Wrath state or Support/Stun squadmate needed - and each stack gives +8% MORE Fire DMG (5 -> 13% per stack, 39% at 3 stacks), lasting 30s. Check TOGETHER with the Additional Ability at the SAME stack count. EXTRA HIT: Basic Attack: Crushing Peaks also deals Fire DMG equal to 600% of his Sheer Force - run it separately in Sheer mode with skill multiplier 6.0 and NO skill tag (the datamine types it as plain elemental damage, so the basic-tagged M1 rider / M4 do not reach it). Datamine mindscapeParams[5] [0.08, 30, 6]; frzyc: vidyaraja x (5% + 8%)."
+        }
+      },
+      "riders": [
+        {
+          "name": "M1: Tremor Sheer DMG",
+          "max_stacks": 1,
+          "requires": { "mindscape": 1 },
+          "effects": [
+            { "kind": "sheer_dmg", "value": 0.10, "skill_tag": "ex_special", "modes": ["sheer"] },
+            { "kind": "sheer_dmg", "value": 0.10, "skill_tag": "basic", "modes": ["sheer"] }
+          ],
+          "note": "ONE-HIT rider: against an enemy in Tremor, the Sheer DMG of EX Special Attack: Lion's Roar / Lion's Roar - Wrath / Mountain Tremor / Mountain Tremor - Wrath ('ex_special' tag) and Basic Attack: Toppling Mountain / Crushing Peaks ('basic' tag) +10% (dedicated Sheer DMG bracket). Tick it only when calculating one of those six skills; untick it for Earth Shaker, One's Path and his plain basic chains. Needs M1 ticked."
+        }
+      ],
+      "default_engine": "wrathful_vajra",
+      "_note": "Fire RUPTURE (Sheer) DPS, Krampus Compliance Authority (nanoka camp 12 - Zhao/Dialyn/Phoenix's faction key). Added 2026-10-27 from the frzyc datamine (allStat_gen + Banyue.ts sheet), cross-checked against nanoka LIVE 3.3 character 1471 (identical) and Lin-0's guide (core and ability numbers confirmed; its mindscape section is still TBC). Lv. 60: HP 683 + 92.7143 x 59 + 2344 = 8497.14, ATK 124 + 7.4561 x 59 + 221 = 784.91, DEF 36 + 4.8644 x 59 + 123 = 445.99 -> stored 8497 / 784 / 445 (Starlight Billy's exact template); Impact 95, AM 90, AP 89, no Energy (Rupture); max core ATK +75, CRIT Rate +14.4%. SHEER AGENT like Yixuan / Billy: Sheer Force = 30% ATK (global rupture rate) + 0.1 x Max HP (his conversion field) + flat Sheer Force buffs; ALL his Fire DMG is Sheer DMG - ignores enemy DEF, use the Sheer calc mode. HP is his premium stat (Lin-0: HP% disc 6, Wrathful Vajra's HP% 30). NO team buffs - all-self kit. PROVISIONAL until an in-game Sheer calibration. MULTIPLIERS at skill Lv. 12 (enter them with the matching tag): Basic Attack: Towering Peaks 79.2 / 100.4 / 203.6 / 232.9%; Basic Attack: Majestic Summit 105.6 / 140.8 / 271.9 / 184.8%; Basic Attack: Immolate 221.7%; Basic Attack: Toppling Mountain 1739.9%; Basic Attack: Crushing Peaks 756.7% (both 'basic'); Dash Attack: Scattering Sands 80.4%; Dodge Counter: Stoneburst 390.7%; EX Special Attack: Earth Shaker 510.0%, Mountain Tremor 342.9%, One's Path 325.2%, Lion's Roar 307.7%, Mountain Tremor - Wrath 650.6%, Lion's Roar - Wrath 600.4%; Chain Attack: Blazing Wrath 1121.9%; Ultimate: The World Trembles 3197.8%; Quick Assist: Batholith 147.1%; Assist Follow-Up: Lofty Ascent 483.6%, Pierce Heavens 443.8%."
+    },
+    "pan_yinhu": {
+      "name": "Pan Yinhu",
+      "attribute": "physical",
+      "specialty": "defense",
+      "faction": "yunkui_summit",
+      "level": 60,
+      "base_hp": 8453,
+      "base_atk": 586,
+      "base_def": 712,
+      "impact": 94,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 91,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75, "energy_regen": 0.36 },
+      "additional_ability": {
+        "name": "Iron Stomach: Depleted Qi",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["rupture"], "teammate_shares_faction": true },
+        "effects": [ { "kind": "dmg_taken", "value": 0.20 } ],
+        "note": "Needs a Rupture squadmate or another Yunkui Summit member (Yixuan qualifies twice; Banyue and Starlight Billy are Rupture). Each Special Attack: Touch of Death hit inflicts Depleted Qi for 10s (12s at M2; does not stack, repeated hits extend it): the enemy takes +20% DMG from ALL units - an enemy vulnerability debuff (datamine dmgInc_, the same 'DMG taken' bracket as Caesar's Battle Spirit). ATTACKER ROLE: applies to his own hits too. Same effect as the 'Depleted Qi: DMG taken' team buff - NEVER apply both at once. Datamine abilityParams [0.2, 10]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "Qi Shield",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_taken", "value": 0.10 } ],
+          "note": "All units deal +10% more DMG to enemies with Depleted Qi (datamine dmgInc_, the same vulnerability bracket: Depleted Qi totals +30%). SELF part, for when Pan attacks; check together with the Additional Ability. The squad copy is the 'M1: Depleted Qi boost' team buff - never apply both at once. Datamine mindscapeParams[0] [0.1]."
+        },
+        "2": {
+          "name": "Yunkui Pressure-Point Strike",
+          "note": "4 Energy per 6 Break Force consumed, and Depleted Qi lasts 12s instead of 10s - resource / uptime QoL, not modeled. Datamine mindscapeParams[1] [6, 4, 12]."
+        },
+        "3": {
+          "name": "Non-Meridian Pressure Point",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled (project convention)."
+        },
+        "4": {
+          "name": "First-Class Head Chef",
+          "note": "Ultimate healing +25% (instant and over time) plus a Backup Provisions re-heal - healing only, not modeled. Datamine mindscapeParams[3] [0.25, 0.25, 0.5]."
+        },
+        "5": {
+          "name": "\"Thiren\"",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Meridian Theory",
+          "note": "Team-facing: Meridian Flow grows by 6% more of Pan's initial ATK (18 -> 24%) and its cap 540 -> 720 - modeled as the 'M6: Meridian Flow boost' team buff (check it together with Meridian Flow). Nothing for Pan himself. Datamine mindscapeParams[5] [0.06, 720]."
+        }
+      },
+      "team_buffs": [
+        {
+          "name": "Meridian Flow: squad Sheer Force",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "sheer_force", "modes": ["sheer"],
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.18, "cap": 540 } }
+          ],
+          "note": "Core passive, max rank F: when his EX Special Attack: Mountainous Pulse Strike hits and triggers the previous agent's Quick Assist, the next agent entering through that Quick Assist or a Chain Attack gains Meridian Flow for 25s: flat Sheer Force = 18% of PAN's INITIAL ATK, capped at 540 (reached at 3,000 panel ATK). Enter HIS panel ATK as 'initial_atk' (the text says 'initial ATK'; frzyc reads his final ATK - the game text wins, as for Lucy/Yuzuha). It reaches the agent ENTERING the field (your Rupture DPS), never Pan himself - skip it when he is the main. Sheer mode only. Core A..F: 9/10.5/12/13.5/15/16.5/18%. Datamine coreParams [0.09..0.18], 25s, 540."
+        },
+        {
+          "name": "M6: Meridian Flow boost",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "sheer_force", "modes": ["sheer"],
+              "scaling": { "input": "initial_atk", "per_step": 1, "per_value": 0.06, "cap": 180 } }
+          ],
+          "note": "Requires Pan at Mindscape 6 (Meridian Theory). Meridian Flow grows to 24% of his initial ATK with its cap raised 540 -> 720 - modeled as the EXTRA 6% capped at 180: check TOGETHER with 'Meridian Flow: squad Sheer Force' (same 'initial_atk'). The split is EXACT: min(24% x ATK, 720) = min(18% x ATK, 540) + min(6% x ATK, 180), because both caps are reached at the same 3,000 ATK."
+        },
+        {
+          "name": "Depleted Qi: DMG taken",
+          "self_duplicate_of": "additional_ability",
+          "max_stacks": 1,
+          "condition": { "teammate_specialty_any_of": ["rupture"], "teammate_shares_faction": true },
+          "effects": [ { "kind": "dmg_taken", "value": 0.20 } ],
+          "note": "Additional Ability - needs a Rupture squadmate or another Yunkui Summit member. Special Attack: Touch of Death (which Pan keeps casting off-field after his EX Special hands over the field) inflicts Depleted Qi for 10s: the enemy takes +20% DMG from ALL squad members (vulnerability bracket, datamine dmgInc_). Near-permanent in his Quick Assist loop. Datamine abilityParams [0.2, 10]."
+        },
+        {
+          "name": "M1: Depleted Qi boost",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_taken", "value": 0.10 } ],
+          "note": "Requires Pan at Mindscape 1 (Qi Shield). All units deal +10% more DMG to enemies with Depleted Qi (same vulnerability bracket - total +30%): check TOGETHER with Depleted Qi. Same effect as his M1 mindscape: never apply both at once."
+        }
+      ],
+      "default_engine": "tremor_trigram_vessel",
+      "_note": "Physical DEFENSE support for RUPTURE teams, Yunkui Summit (Yixuan's faction key). A-RANK. Added 2026-10-27 from the frzyc datamine (allStat_gen + PanYinhu.ts sheet), cross-checked against nanoka LIVE 3.3 character 1421 (identical); Lin-0's Banyue guide names him the F2P alternative to Lucia (no guide of his own). Lv. 60: HP 680 + 92.2338 x 59 + 2332 = 8453.79, ATK 95 + 5.4562 x 59 + 170 = 586.92, DEF 57 + 7.7787 x 59 + 197 = 712.94 -> stored 8453 / 586 / 712; Impact 94, AM 91, AP 90, Energy Regen 1.2; max core ATK +75, Energy Regen +0.36. His value: squad flat SHEER FORCE (Meridian Flow, 18% of his initial ATK, cap 540; M6 24% / 720) and the +20% DMG-taken debuff (Depleted Qi, +30% at M1). NO core_passive block: Meridian Flow only reaches the agent entering the field (datamine notOwnBuff), never Pan, so it exists as a team buff only. His Ultimate's heals and M4 are healing only - not modeled. PROVISIONAL until an in-game check. His own hits are normal (ATK-based) Physical damage. MULTIPLIERS at skill Lv. 12: Basic Attack: Unyielding Strikes 100.3 / 100.4 / 219.4 / 423.6%; Dash Attack: Sizzling Oil Supreme 167.0%; Dodge Counter: Moving Mountains and Seas 439.2%; Special Attack: Sonic Pressure-Point Strike 125.2%; Special Attack: Touch of Death 195.2% per hit (x3); EX Special Attack: Mountainous Pulse Strike 769.1%; Chain Attack: Anointed with Wok Steam 1264.8%; Ultimate: A Feast Fit for an Emperor! 3255.9%; Quick Assist: Lift Your Gaze to Good Fortune 184.1%; Assist Follow-Up: Ride the Momentum 675.1%."
     }
   }
 }

@@ -153,9 +153,14 @@ _B_ATK_PCT, _B_COMBAT_ATK_PCT, _B_ATK_FLAT, _B_CRIT_RATE, _B_CRIT_DMG, \
     _B_PEN_RATIO, _B_PEN_FLAT, _B_ATTR_DMG, _B_AP, _B_AM, \
     _B_HP_PCT, _B_HP_FLAT, _B_SHEER_DMG, \
     _B_DEF_PCT, _B_DEF_FLAT, _B_IMPACT, _B_ER, _B_AM_PCT, \
-    _B_GEN_DMG = range(19)
+    _B_GEN_DMG, _B_GATED_CD = range(20)
 
-_N_BUCKETS = 19
+_N_BUCKETS = 20
+#: A stat-GATED 4pc CRIT DMG (Branch & Blade Song: +30% while Anomaly
+#: Mastery >= 115) — bucket 19, filled only by set vectors. The fast paths
+#: credit it only when the combination's panel AM clears the gate
+#: (``_StatModel.gated_crit_dmg``); bounds assume it is met (it only ever
+#: adds), so they stay valid.
 #: Generic (element-agnostic) DMG% — Fanged Metal 4pc, tag-gated 2pc DMG%
 #: — has its own bucket (18): it joins the same additive bracket as
 #: Attribute DMG% in every mode, but unlike it still applies to a
@@ -367,11 +372,14 @@ class OptimizeOptions:
             optimum may use a disc outside the cap. 0 = exact search.
         min_panel_stats: like ``min_stats``, but checked against the
             PANEL totals (agent base + core + engine + discs + set
-            stats) — no kit/team/combat brackets. This is where the
-            self-scaling kit inputs land automatically: Astra claiming
+            stats) — no kit/team/combat brackets. The user's BASE-STAT
+            constraints ("the build itself must reach X, no combat buffs
+            counted" — UI 'Base (panel)' rows) land here, and so do the
+            self-scaling kit inputs, automatically: Astra claiming
             ``initial_atk`` 3,430 must reach panel ATK 3,430, and the
             combat total (which contains the very flat ATK that claim
-            grants — circular) must not satisfy it.
+            grants — circular) must not satisfy it. An explicit and an
+            automatic minimum on the same stat merge by max.
         maximize_stat: Stat to maximize as the PRIMARY objective (§15
             E5), with damage demoted to a floor + tie-break: the search
             reports the build with the most of this stat among those
@@ -870,6 +878,18 @@ class _StatModel:
     sf_atk_conv: float = 0.0  # Sheer Force (rupture mode only)
     sf_hp_conv: float = 0.0
     sf_flat: float = 0.0
+    deferred_atk: tuple = ()  # total-CRIT-Rate-scaled flat ATK (Severian)
+    am_gate: float | None = None  # stat-gated 4pc AM threshold (B&B: 115)
+
+    def gated_crit_dmg(self, buckets) -> float:
+        """The stat-gated set CRIT DMG this combination earns: all of it
+        when its PANEL Anomaly Mastery (composed like aggregate_build)
+        clears the gate, else none."""
+        gated = buckets[_B_GATED_CD]
+        if not gated or self.am_gate is None:
+            return 0.0
+        am = (self.am_base + buckets[_B_AM]) * (1.0 + buckets[_B_AM_PCT])
+        return gated if am >= self.am_gate - 1e-9 else 0.0
 
     def crit_dmg_total(self, total: float) -> float:
         """CRIT DMG after effects that take a share of the total."""
@@ -883,7 +903,10 @@ class _StatModel:
                           + buckets[_B_ATK_FLAT])
         return (atk_pre_combat
                 * (1.0 + buckets[_B_COMBAT_ATK_PCT] + self.kit_atk_pct)
-                + self.kit_flat_atk)
+                + self.kit_flat_atk
+                + _deferred_atk_value(
+                    self.deferred_atk, self.crit_rate_base
+                    + buckets[_B_CRIT_RATE] + self.crit_rate_extra))
 
     def hp(self, buckets) -> float:
         return (self.hp_base * (1.0 + self.core_hp_pct + buckets[_B_HP_PCT])
@@ -907,6 +930,7 @@ class _StatModel:
         if stat == "CRIT DMG":
             return self.crit_dmg_total(self.crit_dmg_base
                                        + buckets[_B_CRIT_DMG]
+                                       + self.gated_crit_dmg(buckets)
                                        + self.crit_dmg_extra)
         if stat == "PEN Ratio":
             return buckets[_B_PEN_RATIO] + self.pen_ratio_base
@@ -930,8 +954,12 @@ class _StatModel:
                     (_B_HP_FLAT, self.kit_hp_mult))
         if stat in ("ATK", "Sheer Force"):
             u, v = _atk_factors(self.atk_base, self.kit_atk_pct)
-            atk = affine_combine((1.0, mccormick_upper(u, v, x0, lo, hi)),
-                                 const=self.kit_flat_atk)
+            atk = affine_combine(
+                (1.0, mccormick_upper(u, v, x0, lo, hi)),
+                (1.0, _deferred_atk_upper(
+                    self.deferred_atk,
+                    self.crit_rate_base + self.crit_rate_extra, x0, lo, hi)),
+                const=self.kit_flat_atk)
             if stat == "ATK":
                 return atk
             return affine_combine((self.sf_atk_conv, atk),
@@ -946,9 +974,11 @@ class _StatModel:
                           (_B_CRIT_RATE, 1.0))
         if stat == "CRIT DMG":
             base = self.crit_dmg_base + self.crit_dmg_extra
-            dmg = affine(base, (_B_CRIT_DMG, 1.0))
-            d_lo, d_hi = base + lo[_B_CRIT_DMG], base + hi[_B_CRIT_DMG]
-            d0 = base + x0[_B_CRIT_DMG]
+            # The gated set bucket is counted as if met: a valid bound.
+            dmg = affine(base, (_B_CRIT_DMG, 1.0), (_B_GATED_CD, 1.0))
+            d_lo = base + lo[_B_CRIT_DMG] + lo[_B_GATED_CD]
+            d_hi = base + hi[_B_CRIT_DMG] + hi[_B_GATED_CD]
+            d0 = base + x0[_B_CRIT_DMG] + x0[_B_GATED_CD]
             slope, const = 1.0, 0.0
             for stacks, *shape in _deferred_params(list(self.deferred_cd)):
                 k0, k1 = step_scaling_upper(*shape, d_lo, d_hi, d0)
@@ -1111,7 +1141,7 @@ def _apply_scaling_input_minimums(
 
     Collects the scaling inputs read by the agent's ACTIVE kit buffs
     (core passive / additional ability / mindscapes / potentials / own
-    team buffs — mirroring ``_kit_contributions``) and, for each that
+    team buffs / riders — mirroring ``_kit_contributions``) and, for each that
     maps to a constrainable stat, raises the PANEL minimum to the
     entered value. Panel, not combat: an ``initial_*`` input is the
     character-screen value BEFORE kit/team buffs — comparing against the
@@ -1131,11 +1161,13 @@ def _apply_scaling_input_minimums(
         entry = agent.potentials.get(int(level))
         if stacks and entry is not None and entry.buff is not None:
             active_buffs.append(entry.buff)
-    own_by_name = {b.name: b for b in agent.team_buffs}
-    for name, stacks in config.own_team_buffs.items():
-        buff = own_by_name.get(name)
-        if stacks and buff is not None:
-            active_buffs.append(buff)
+    for pool, picks in ((agent.team_buffs, config.own_team_buffs),
+                        (agent.riders, config.riders)):
+        by_name = {b.name: b for b in pool}
+        for name, stacks in picks.items():
+            buff = by_name.get(name)
+            if stacks and buff is not None:
+                active_buffs.append(buff)
 
     minimums = dict(options.min_panel_stats)
     changed = False
@@ -2583,6 +2615,53 @@ def _atk_factors(sheet_base: float, kit_atk_pct: float):
     return u, v
 
 
+def _am_gate(disc_sets: dict) -> float | None:
+    """The Anomaly Mastery threshold of the registry's stat-gated 4pc
+    bases (Branch & Blade Song: 115), or ``None`` without one. One
+    ``_B_GATED_CD`` bucket carries them, so they must share it.
+
+    Raises:
+        OptimizeError: two gated sets with different thresholds.
+    """
+    thresholds = {
+        entry.bonus_4pc.base_min_stat[1] for entry in disc_sets.values()
+        if entry.bonus_4pc is not None
+        and entry.bonus_4pc.base_min_stat is not None
+    }
+    if len(thresholds) > 1:
+        raise OptimizeError(
+            f"Stat-gated 4pc sets with different thresholds "
+            f"{sorted(thresholds)} are not supported by the optimizer"
+        )
+    return next(iter(thresholds), None)
+
+
+def _deferred_atk_value(deferred_atk, crit_rate_total: float) -> float:
+    """Flat ATK of the total-CRIT-Rate-scaled kit effects (Severian's
+    Optimal Setup) — mirrors :func:`~.api._resolve_deferred_flat_atk`."""
+    return sum(p["scaling"].resolve(crit_rate_total) * p["stacks"]
+               for p in deferred_atk)
+
+
+def _deferred_atk_upper(deferred_atk, rate_const: float, x0, lo, hi):
+    """Affine upper bound of :func:`_deferred_atk_value` on the box: the
+    CRIT Rate total is ``rate_const`` + the CRIT Rate bucket, and each
+    stepped scaling is bounded by its chord / cap
+    (:func:`~.linear_bound.step_scaling_upper`)."""
+    const, slope = 0.0, 0.0
+    if deferred_atk:
+        r_lo = rate_const + lo[_B_CRIT_RATE]
+        r_hi = rate_const + hi[_B_CRIT_RATE]
+        r0 = rate_const + x0[_B_CRIT_RATE]
+        for p in deferred_atk:
+            s = p["scaling"]
+            k0, k1 = step_scaling_upper(s.base, s.threshold, s.per_step,
+                                        s.per_value, s.cap, r_lo, r_hi, r0)
+            const += p["stacks"] * (k0 + k1 * rate_const)
+            slope += p["stacks"] * k1
+    return affine(const, (_B_CRIT_RATE, slope))
+
+
 def _deferred_params(deferred_cd: list) -> list[tuple]:
     """Total-CRIT-DMG-scaled kit effects (Anby S's Silver Star) as the
     ``(stacks, base, threshold, per_step, per_value, cap)`` tuples
@@ -2597,11 +2676,12 @@ def _add_crit_zone(lb: LogLinear, variant: str, rate_base: float,
                    x0, lo, hi) -> None:
     """Add the crit zone's log bound (§17) for ``variant`` (non_crit /
     crit / average): CRIT Rate = ``rate_base`` + bucket, CRIT DMG =
-    ``dmg_base`` + bucket before the total-scaled kit effects."""
+    ``dmg_base`` + bucket (+ the stat-gated set bucket, assumed met)
+    before the total-scaled kit effects."""
     zone = crit_zone_log_upper(
         variant, affine(rate_base, (_B_CRIT_RATE, 1.0)), cap,
-        affine(dmg_base, (_B_CRIT_DMG, 1.0)), _deferred_params(deferred_cd),
-        x0, lo, hi,
+        affine(dmg_base, (_B_CRIT_DMG, 1.0), (_B_GATED_CD, 1.0)),
+        _deferred_params(deferred_cd), x0, lo, hi,
     )
     if zone is not None:
         lb.add_linear(zone)
@@ -2700,6 +2780,13 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
         return total + sum(p["scaling"].resolve(total) * p["stacks"]
                            for p in deferred_cd)
 
+    # Severian's Optimal Setup: flat ATK from the CRIT Rate TOTAL — like
+    # the CRIT DMG case it follows the candidate build's own CRIT Rate
+    # rolls (see api._resolve_deferred_flat_atk), so ATK now rises with
+    # the CRIT Rate bucket too (still monotone: dominance stays exact).
+    deferred_atk = tuple(kit["deferred_flat_atk"])
+    rate_const = base_crit_rate + crit_rate_const
+
     # Kit/support PEN Ratio (e.g. Rina's squad PEN Ratio) — a constant that
     # calculate() folds into the DEF zone (build.pen_ratio + kit pen_ratio);
     # the fast path must too, or a support granting PEN Ratio under-values
@@ -2757,7 +2844,8 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
         if crit_variant == "non_crit":
             return 1.0
         crit_dmg = with_deferred_cd(
-            base_crit_dmg + buckets[_B_CRIT_DMG] + crit_dmg_const)
+            base_crit_dmg + buckets[_B_CRIT_DMG]
+            + stats.gated_crit_dmg(buckets) + crit_dmg_const)
         if crit_variant == "crit":
             return 1.0 + crit_dmg
         crit_rate = base_crit_rate + buckets[_B_CRIT_RATE] + crit_rate_const
@@ -2770,7 +2858,9 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
         )
         return (atk_pre_combat
                 * (1.0 + buckets[_B_COMBAT_ATK_PCT] + kit_atk_pct)
-                + kit_flat_atk)
+                + kit_flat_atk
+                + _deferred_atk_value(
+                    deferred_atk, rate_const + buckets[_B_CRIT_RATE]))
 
     if sheer:
         def evaluate(buckets: list[float], tagged: tuple[float, float]):
@@ -2810,16 +2900,29 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
         Force is ``conv · (u·v + kit flat ATK) + HP part + flat SF``: with
         no HP conversion it is the ATK product shifted by a constant
         (concave in log); with one, a McCormick plane bounds ``u·v`` and
-        the whole Sheer Force becomes affine."""
+        the whole Sheer Force becomes affine. A CRIT-Rate-scaled flat ATK
+        (Severian) makes the ATK zone ``u·v + flat + g(CRIT Rate)``: the
+        McCormick plane plus the chord of ``g`` is affine, so its log
+        tangent bounds the zone."""
         if const_mult <= 0:
             return None
         lb = LogLinear(_N_LINEAR)
         try:
             lb.add_const(math.log(const_mult))
             u, v = _atk_factors(agent_plus_engine_atk, kit_atk_pct)
+            atk_plane = None
+            if deferred_atk:
+                atk_plane = affine_combine(
+                    (1.0, mccormick_upper(u, v, x0, lo, hi)),
+                    (1.0, _deferred_atk_upper(deferred_atk, rate_const,
+                                              x0, lo, hi)),
+                    const=kit_flat_atk)
             if not sheer:
-                lb.add_log_product(u, v, kit_flat_atk, x0, lo, hi)
-            elif sf_hp_conv == 0 and sf_atk_conv > 0:
+                if atk_plane is None:
+                    lb.add_log_product(u, v, kit_flat_atk, x0, lo, hi)
+                else:
+                    lb.add_log_affine(atk_plane, x0)
+            elif sf_hp_conv == 0 and sf_atk_conv > 0 and atk_plane is None:
                 lb.add_const(math.log(sf_atk_conv))
                 lb.add_log_product(u, v,
                                    kit_flat_atk + flat_sf_const / sf_atk_conv,
@@ -2828,10 +2931,13 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
                 hp_scale = hp_base * kit_hp_mult
                 hp = affine(hp_scale * (1.0 + core_hp_pct),
                             (_B_HP_PCT, hp_scale), (_B_HP_FLAT, kit_hp_mult))
+                if atk_plane is None:
+                    atk_plane = affine_combine(
+                        (1.0, mccormick_upper(u, v, x0, lo, hi)),
+                        const=kit_flat_atk)
                 sheer_force = affine_combine(
-                    (sf_atk_conv, mccormick_upper(u, v, x0, lo, hi)),
-                    (sf_hp_conv, hp),
-                    const=sf_atk_conv * kit_flat_atk + flat_sf_const,
+                    (sf_atk_conv, atk_plane), (sf_hp_conv, hp),
+                    const=flat_sf_const,
                 )
                 lb.add_log_affine(sheer_force, x0)
             _add_crit_zone(lb, crit_variant, base_crit_rate + crit_rate_const,
@@ -2879,6 +2985,8 @@ def _crit_hit_model(config: CalcConfig, objective: str, agent: Agent,
                  + config.external_anomaly_proficiency),
         am_base=agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery,
         sf_atk_conv=sf_atk_conv, sf_hp_conv=sf_hp_conv, sf_flat=flat_sf_const,
+        deferred_atk=deferred_atk,
+        am_gate=_am_gate(data["disc_sets"]),
     )
     return _ModeModel(damage_indices, evaluate, linearize, stats)
 
@@ -2943,6 +3051,12 @@ def _anomaly_model(config, objective, agent, attr, engine, boss, rank, data,
         agent, replace(config, discs=[]), data["agents"], data["disc_sets"],
         data["engines"], mode=kind, dealt_element=dealt_element,
     )
+    # Duration extensions (Phoenix M2's +4 Burn ticks) — a plain proc only,
+    # exactly as calculate_anomaly.
+    if (kind == "anomaly" and not config.abloom
+            and config.anomaly_mult_override is None
+            and config.luminize is None and kit["anomaly_hits_add"]):
+        hits += int(round(kit["anomaly_hits_add"]))
 
     agent_plus_engine_atk = agent.total_base_atk() + engine.base_atk
     kit_atk_pct = kit["atk_pct"]
@@ -3148,6 +3262,7 @@ def _anomaly_model(config, objective, agent, attr, engine, boss, rank, data,
         er_base=agent.base_energy_regen + agent.core_bonus_energy_regen,
         ap_base=ap_const,
         am_base=agent.base_anomaly_mastery + agent.core_bonus_anomaly_mastery,
+        am_gate=_am_gate(data["disc_sets"]),
     )
     damage_indices = (_ANOMALY_DAMAGE_INDICES if attr_dmg_applies
                       else _ANOMALY_DAMAGE_INDICES_NO_ATTR)
@@ -3246,8 +3361,18 @@ def _optimize(
         return stats.total(stat, buckets)
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
-    dominance_indices = _dominance_indices(
-        model.damage_indices, _watched_stats(options))
+    watched = _watched_stats(options)
+    # A stat-gated 4pc (Branch & Blade Song's AM >= 115) makes Anomaly
+    # Mastery decide damage whenever such a set can be worn: an AM disc
+    # must not be pruned as dominated, or the gate could never flip.
+    gated_sets = {key for key, entry in disc_sets.items()
+                  if entry.bonus_4pc is not None
+                  and entry.bonus_4pc.base_min_stat is not None}
+    if gated_sets and any(
+            d.disc_set in gated_sets
+            for d in (*user_discs.values(), *equipped.values())):
+        watched.setdefault("Anomaly Mastery", 0.0)
+    dominance_indices = _dominance_indices(model.damage_indices, watched)
     candidates, pruned_count = _gather_candidates(
         equipped, user_discs, disc_data, attr, options,
         dominance_indices, _prune,
@@ -3327,19 +3452,29 @@ def _optimize(
         # Wearer-side 4pc stats at the assumed stacks (mirrors
         # set_bonus_stats: classic bonus incl. the at-max extra — Yunkui
         # Tales' Sheer DMG% lands in _B_SHEER_DMG, which only the sheer
-        # fast path reads — or a squad-facing part mapped to a build stat).
-        set_4pc[key] = _bucket_vector(set_4pc_stats(entry, stacks))
+        # fast path reads — or a squad-facing part mapped to a build stat),
+        # incl. the unconditional base and the attribute gate. A stat-gated
+        # base (Branch & Blade Song) goes to its own bucket, credited only
+        # when the combination clears the gate (_StatModel.gated_crit_dmg).
+        vector = list(_bucket_vector(set_4pc_stats(entry, stacks, attr)))
+        if (entry.bonus_4pc is not None
+                and entry.bonus_4pc.base_min_stat is not None):
+            vector[_B_GATED_CD] += sum(entry.bonus_4pc.base.values())
+        set_4pc[key] = tuple(vector)
         # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
-        # skill-tag-gated ones (Puffer Electro's Ultimate +20%) and a set's
+        # skill-tag-gated ones (Puffer Electro's Ultimate +20%; a windowed
+        # one only while its config toggle is on) and a set's
         # auto 4pc DMG% (Wuthering Salon +18%; Phaethon's Melody needs a
         # teammate) — the auto part mirrors _kit_contributions, which is why
         # the mode's kit excludes it (discs=[]).
+        toggles = config.set_toggles.get(key, {})
         tag_skill = sum(
             b.value for b in entry.bonus_4pc_dmg
-            if (config.skill_tag is not None
-                and b.skill_tag == config.skill_tag)
-            or (config.counts_as_aftershock
-                and b.skill_tag == "aftershock")
+            if (b.toggle is None or toggles.get(b.toggle))
+            and ((config.skill_tag is not None
+                  and b.skill_tag == config.skill_tag)
+                 or (config.counts_as_aftershock
+                     and b.skill_tag == "aftershock"))
         )
         auto = 0.0
         if entry.auto_4pc_dmg and (

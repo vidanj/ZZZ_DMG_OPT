@@ -498,7 +498,7 @@
         or Fast search</span></div>
       <div id="opt-constraints"></div>
       <button class="mini" id="opt-add-constraint" style="margin-bottom:4px"
-              title="Minimums are checked against COMBAT totals — agent base + core + discs + set 2pc, plus the always-on engine passive, the assumed 4pc stacks and kit/team buffs. The Final stats card shows the out-of-combat panel, which excludes the last three and is lower.">
+              title="Each row picks what its minimum is checked against. 'in combat': agent base + core + discs + set 2pc, plus the always-on engine passive, the assumed 4pc stacks and kit/team buffs. 'base (panel)': the build's own out-of-combat stats only — exactly the Final stats card, no combat buffs or effects.">
         + Minimum-stat constraint</button>
       <button class="primary optimize" id="optimize">Optimize discs</button>
       <button class="primary optimize-stop" id="optimize-stop" hidden
@@ -815,8 +815,9 @@ function refreshSetStacks() {
   }
   const wrap = $("set-stacks");
   const previous = {};
-  for (const inp of wrap.querySelectorAll("input"))
+  for (const inp of wrap.querySelectorAll("input[data-set]"))
     previous[inp.dataset.set] = setStackValue(inp);
+  const prevToggles = setTogglesState();
   wrap.innerHTML = "";
   // Squad-facing 4pc kinds the WEARER can use as a build stat (the
   // wearer is a squad member too — King of the Summit on the on-field
@@ -836,18 +837,31 @@ function refreshSetStacks() {
         + "squad member too — don't ALSO tick it on a support wearing "
         + "the same set (same-name passives don't stack).",
     });
-    if (count < 4 || !bonus) continue;
+    if (count < 4 || (!bonus && !Object.keys(s.toggles || {}).length))
+      continue;
+    const div = document.createElement("div");
+    div.style.marginTop = "10px";
+    // The unconditional base (Chaotic Metal's CRIT DMG +20%), its
+    // wearer-stat gate (Branch & Blade Song: AM >= 115) and the element
+    // gate (Chaos Jazz: Fire/Electric) — applied automatically, so a
+    // line, not a control.
+    const always = bonus ? setAlwaysLine(s, bonus) : "";
+    if (!bonus || !bonus.stat || !bonus.max_stacks) {
+      div.innerHTML = `<p class="note" style="color:var(--accent)">${
+        DB.sets[key].name} 4pc: ${always || "no stacking part"}</p>
+        ${bonus && bonus.note ? `<p class="note">${bonus.note}</p>` : ""}`;
+      appendSetToggles(div, key, s, prevToggles);
+      wrap.appendChild(div);
+      continue;
+    }
     // Flat stats (AP, ATK) show +N; percent stats show +N%.
-    const flat = ["Anomaly Proficiency", "Anomaly Mastery", "ATK", "PEN",
-                  "Impact"].includes(bonus.stat);
-    const per = flat ? `+${bonus.per_stack} ${bonus.stat}`
-                     : `+${(bonus.per_stack * 100).toFixed(0)}% ${bonus.stat}`;
+    const per = [[bonus.stat, bonus.per_stack],
+                 ...Object.entries(bonus.also || {})]
+      .map(([stat, value]) => fmtSetStat(stat, value)).join(" & ");
     // Ramp-up (auto) 4pc default to max — the range covers uptime.
     const saved = previous[key] != null ? previous[key]
                   : (bonus.auto ? bonus.max_stacks : 0);
     const autoTag = bonus.auto ? " (auto)" : "";
-    const div = document.createElement("div");
-    div.style.marginTop = "10px";
     if (bonus.max_stacks === 1) {
       div.innerHTML = `
         <div class="tgl">
@@ -865,20 +879,86 @@ function refreshSetStacks() {
                data-set="${key}" value="${saved}">
         <p class="note">${bonus.note}</p>`;
     }
+    if (always)
+      div.insertAdjacentHTML("beforeend", `<p class="note"
+        style="color:var(--accent)">Also: ${always}</p>`);
+    appendSetToggles(div, key, s, prevToggles);
     wrap.appendChild(div);
   }
   // Auto 4pc DMG% parts (e.g. Wuthering Salon +18%) — applied server-side,
   // shown here as a note so the user knows it's in without a control.
   for (const [key, count] of Object.entries(counts)) {
     const set = DB.sets[key];
-    if (count < 4 || !set.auto_4pc_dmg) continue;
+    if (count < 4 || !(set.auto_4pc_dmg || set.auto_4pc_anomaly_dmg)) continue;
+    const parts = [];
+    if (set.auto_4pc_dmg)
+      parts.push(`+${(set.auto_4pc_dmg * 100).toFixed(0)}% DMG`);
+    if (set.auto_4pc_anomaly_dmg)
+      parts.push(`+${(set.auto_4pc_anomaly_dmg * 100).toFixed(0)}% Anomaly/`
+        + `Disorder DMG (anomaly modes${set.auto_4pc_attribute
+          ? `, ${set.auto_4pc_attribute} wearers only` : ""})`);
     const div = document.createElement("div");
     div.style.marginTop = "8px";
     div.innerHTML = `<p class="note" style="color:var(--accent)">
-      ${set.name} 4pc: +${(set.auto_4pc_dmg * 100).toFixed(0)}% DMG auto-applied
+      ${set.name} 4pc: ${parts.join(" · ")} auto-applied
       (ramp-up; the range covers uptime).</p>`;
     wrap.appendChild(div);
   }
+}
+
+/* One set stat as the set card prints it: flat stats +N, the rest +N%. */
+function fmtSetStat(stat, value) {
+  const flat = ["Anomaly Proficiency", "Anomaly Mastery", "ATK", "PEN",
+                "Impact"].includes(stat);
+  return flat ? `+${value} ${stat}` : `+${+(value * 100).toFixed(1)}% ${stat}`;
+}
+
+/* The always-applied part of a 4pc as one line: its unconditional base
+   (with the wearer-stat gate, checked automatically) and the element
+   gate of the whole 4pc. "" when it has neither. */
+function setAlwaysLine(set, bonus) {
+  const parts = [];
+  const base = Object.entries(bonus.base || {})
+    .map(([stat, value]) => fmtSetStat(stat, value)).join(" & ");
+  if (base) {
+    const gate = bonus.base_min_stat
+      ? ` while ${bonus.base_min_stat[0]} >= ${bonus.base_min_stat[1]} `
+        + `(checked automatically against the build)` : "";
+    parts.push(`${base} always applied${gate}`);
+  }
+  if (bonus.attributes)
+    parts.push(`only on ${bonus.attributes.join(" / ")} damage`);
+  return parts.join(" — ");
+}
+
+/* Checkboxes for a set's WINDOWED 4pc parts (Polar Metal's Freeze/Shatter
+   window): off by default, applied only while ticked. */
+function appendSetToggles(div, key, set, prevToggles) {
+  for (const [name, parts] of Object.entries(set.toggles || {})) {
+    const per = parts.map(p => `+${+(p.value * 100).toFixed(1)}% `
+      + `${DB.skill_tags[p.skill_tag] || p.skill_tag} DMG`).join(", ");
+    const on = ((prevToggles || {})[key] || {})[name] ? "checked" : "";
+    const note = parts.map(p => p.note).filter(Boolean).join(" ");
+    div.insertAdjacentHTML("beforeend", `
+      <div class="tgl" style="margin-top:6px"
+           title="${note.replace(/"/g, "&quot;")}">
+        <label><input type="checkbox" data-settoggle="${key}"
+                      data-name="${name.replace(/"/g, "&quot;")}" ${on}>
+          ${set.name} 4pc: ${name}</label>
+        <span>— ${per} (tick only for hits inside the window)</span>
+      </div>`);
+  }
+}
+
+/* The windowed-4pc checkboxes as {set key: {toggle name: 1}} (on ones). */
+function setTogglesState() {
+  const state = {};
+  for (const inp of $("set-stacks").querySelectorAll("[data-settoggle]")) {
+    if (!inp.checked) continue;
+    (state[inp.dataset.settoggle] = state[inp.dataset.settoggle] || {})[
+      inp.dataset.name] = 1;
+  }
+  return state;
 }
 
 /* A set-stacks control's value as a stack count (checkbox -> 1/0). */
@@ -925,11 +1005,22 @@ function updateDerived(resetRank = false) {
       ? kept : engine.refinement_rank);
   rankSel.disabled = engine.max_rank === 1;
 
-  // Always-on rank-scaled passive parts (e.g. Steel Cushion Physical DMG%)
+  // Always-on rank-scaled passive parts (e.g. Steel Cushion Physical DMG%,
+  // Incarcerating Grip's CRIT Rate) — applied with no control to tick.
   const rank = currentRank();
-  $("engine-auto").textContent = engine.passive_dmg.map(pd =>
-    `Auto-applied at R${rank}: +${(pd.values_by_rank[rank - 1] * 100).toFixed(0)}% `
-    + `${pd.element || "all"} DMG`).join(" · ");
+  const at = list => (list && list.length ? list[rank - 1] : 0);
+  const autoParts = [
+    ...engine.passive_dmg.map(pd =>
+      `+${(pd.values_by_rank[rank - 1] * 100).toFixed(0)}% ${pd.element || "all"} DMG`),
+    ...(at(engine.passive_crit_by_rank)
+      ? [`+${+(at(engine.passive_crit_by_rank) * 100).toFixed(1)}% CRIT Rate`] : []),
+    ...(at(engine.passive_crit_dmg_by_rank)
+      ? [`+${+(at(engine.passive_crit_dmg_by_rank) * 100).toFixed(1)}% CRIT DMG`] : []),
+    ...(at(engine.passive_ap_by_rank)
+      ? [`+${at(engine.passive_ap_by_rank)} Anomaly Proficiency (anomaly modes)`] : []),
+  ];
+  $("engine-auto").textContent = autoParts.length
+    ? `Auto-applied at R${rank}: ${autoParts.join(" · ")}` : "";
   $("engine-note").textContent = engine.passive_note || "";
 
   renderEngineBuff(engine, rank);
@@ -949,7 +1040,8 @@ function renderOwnEngineSquadBuffs(engine, rank) {
     const per = b.kind === "flat_atk" || b.kind === "anomaly_proficiency"
       ? `+${b.values_by_rank[rank - 1]}`
       : `+${+(b.values_by_rank[rank - 1] * 100).toFixed(1)}%`;
-    const kind = KIT_KIND_LABELS[b.kind] || b.kind;
+    const kind = (KIT_KIND_LABELS[b.kind] || b.kind)
+      + (b.elements ? ` (${b.elements.join("/")} DMG only)` : "");
     // Ramp-up (auto) squad buffs default on — the range covers uptime.
     const saved = previous[b.name] || (b.auto ? b.max_stacks : 0);
     const autoTag = b.auto ? " (auto)" : "";
@@ -984,44 +1076,75 @@ function ownEngineSquadState() {
   return state;
 }
 
+/* Engine conditional brackets that raise the stat each REAL-TIME scaling
+   input reads (api._realtime_stat_bonus) — they have no damage term of
+   their own, so they only matter where such an input is asked. */
+const REALTIME_ENGINE_BRACKETS = {
+  impact: ["impact", "impact_pct"],
+  anomaly_mastery: ["anomaly_mastery"],
+  anomaly_proficiency: ["anomaly_proficiency"],
+  initial_crit_dmg: ["crit_dmg"],
+  pen_ratio: ["pen_ratio"],
+};
+
+/* One engine conditional part as "+16% ATK" etc., at refinement `rank`.
+   `maxStacks` is the shared counter's cap (for the per-stack wording). */
+function engineBuffPartLabel(b, rank, maxStacks) {
+  const tags = b.skill_tags ? ` on ${b.skill_tags.join("/")}` : "";
+  const value = b.per_stack_by_rank[rank - 1];
+  // Parts of one shared counter scale differently: all-or-nothing at
+  // the cap (Severed Innocence's Electric DMG), per stack, or flat
+  // once any stack is up (Deep Sea Visitor's Ice DMG caps at 1 while
+  // the counter runs to 2); always-on parts ignore the counter.
+  const gate = b.always_on ? " (always on)"
+    : b.at_max_only ? ` at ${b.max_stacks} stacks`
+    : b.max_stacks > 1 ? " per stack"
+    : maxStacks > 1 ? " (from 1 stack)" : "";
+  // Flat brackets: plain numbers, not percentages (Weeping Gemini's AP,
+  // Chief Sidekick's Impact, Metanukimorphosis' AM).
+  const FLAT = { anomaly_proficiency: "Anomaly Proficiency",
+                 impact: "Impact", anomaly_mastery: "Anomaly Mastery" };
+  if (FLAT[b.bracket]) return `+${value} ${FLAT[b.bracket]}${tags}${gate}`;
+  const word = b.bracket === "crit_dmg" ? "CRIT DMG"
+    : b.bracket === "crit_rate" ? "CRIT Rate"
+    : b.bracket === "atk_pct" ? "ATK%"
+    : b.bracket === "pen_ratio" ? "PEN Ratio (DEF ignore)"
+    : b.bracket === "impact_pct" ? "Impact%"
+    : b.bracket === "res_shred" ? `${b.element || "all"} RES ignore`
+    : `${b.element || "DMG"}${b.bracket === "sheer_dmg" ? " Sheer"
+        : b.bracket === "anomaly_buff" ? " (buff bracket)" : ""}`;
+  return `+${+(value * 100).toFixed(2)}% ${word}${tags}${gate}`;
+}
+
 /* The engine's conditional buff control: checkbox when on/off
    (max_stacks 1, e.g. Steel Cushion's back-attack bonus), number input
    for stacking buffs (e.g. Sharpened Stinger). One stack counter may
    drive SEVERAL buff parts (Qingming Companion: Ether DMG% + Ult/EX
-   Sheer DMG%) — one control, the label lists every part. Rebuilt on
-   engine/rank change, preserving the current value. */
+   Sheer DMG%) — one control, the label lists every part. ALWAYS-ON
+   parts (Heartstring's CRIT DMG, Chief Sidekick's Fire RES ignore) need
+   no control: they are listed on the "Auto-applied" line instead. Rebuilt
+   on engine/rank change, preserving the current value. */
 function renderEngineBuff(engine, rank) {
   const wrap = $("engine-buff-wrap");
   const prev = engineBuffValue();
-  const buffs = engine.conditional_buffs
+  const all = engine.conditional_buffs
     || (engine.conditional_buff ? [engine.conditional_buff] : []);
+  const buffs = all.filter(b => !b.always_on);
+  const always = all.filter(b => b.always_on);
+  if (always.length) {
+    const line = always.map(b => engineBuffPartLabel(b, rank, 1)).join(" · ");
+    $("engine-auto").textContent += ($("engine-auto").textContent
+      ? " · " : `Auto-applied at R${rank}: `) + line;
+  }
   const buff = buffs[0];
   if (!buff) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
   const maxStacks = Math.max(...buffs.map(b => b.max_stacks));
   // Ramp-up buffs (auto) default to max — the anomaly range covers uptime.
   const previous = prev || (buff.auto ? maxStacks : 0);
   const autoTag = buff.auto ? " (auto)" : "";
-  const per = buffs.map(b => {
-    const tags = b.skill_tags ? ` on ${b.skill_tags.join("/")}` : "";
-    const value = b.per_stack_by_rank[rank - 1];
-    // Flat-AP bracket (Weeping Gemini): a plain number, not a percentage.
-    if (b.bracket === "anomaly_proficiency")
-      return `+${value} Anomaly Proficiency${tags}`;
-    const bracket = b.bracket === "sheer_dmg" ? " Sheer"
-      : b.bracket === "anomaly_buff" ? " (buff bracket)" : "";
-    const word = b.bracket === "crit_dmg" ? "CRIT DMG"
-      : b.bracket === "crit_rate" ? "CRIT Rate"
-      : `${b.element || "DMG"}${bracket}`;
-    // Parts of one shared counter scale differently: all-or-nothing at
-    // the cap (Severed Innocence's Electric DMG), per stack, or flat
-    // once any stack is up (Deep Sea Visitor's Ice DMG caps at 1 while
-    // the counter runs to 2).
-    const gate = b.at_max_only ? ` at ${b.max_stacks} stacks`
-      : b.max_stacks > 1 ? " per stack"
-      : maxStacks > 1 ? " (from 1 stack)" : "";
-    return `+${+(value * 100).toFixed(1)}% ${word}${tags}${gate}`;
-  }).join(" & ");
-  const note = buffs.map(b => b.note).filter(Boolean).join(" | ");
+  const per = buffs.map(b => engineBuffPartLabel(b, rank, maxStacks))
+    .join(" & ");
+  const note = all.map(b => b.note).filter(Boolean).join(" | ");
   wrap.style.display = "";
   if (maxStacks === 1) {
     wrap.innerHTML = `
@@ -1243,10 +1366,13 @@ const KIT_KIND_LABELS = {
   sheer_dmg: "Sheer DMG (dedicated bracket)", def_red: "enemy DEF reduction",
   refringe: "Refringe (Lumiflux zone)",
   anomaly_crit_rate: "Anomaly CRIT Rate", anomaly_crit_dmg: "Anomaly CRIT DMG",
+  anomaly_hits_add: "extra anomaly ticks",
+  impact_pct: "own Impact% (feeds their Impact-scaled buffs)",
 };
 
 //: Kit kinds whose values are plain numbers, not fractions.
-const FLAT_KINDS = new Set(["flat_atk", "anomaly_proficiency", "sheer_force"]);
+const FLAT_KINDS = new Set(["flat_atk", "anomaly_proficiency", "sheer_force",
+                            "anomaly_hits_add"]);
 
 const fmtBuff = (kind, v) =>
   FLAT_KINDS.has(kind) ? `+${+v.toFixed(1)}` : `+${+(v * 100).toFixed(1)}%`;
@@ -1287,6 +1413,7 @@ function effectLabel(effect, maxStacks) {
   const gates = [
     ...(effect.modes || []),
     ...(effect.element ? [effect.element] : []),
+    ...(effect.element_not ? [`non-${effect.element_not}`] : []),
     ...(effect.abloom_only ? ["Abloom only"] : []),
   ];
   const gate = (gates.length ? ` [${gates.join("/")}]` : "")
@@ -1364,8 +1491,10 @@ const PERCENT_SCALING_INPUTS = new Set(
   ["initial_crit_rate", "initial_crit_dmg", "pen_ratio"]);
 
 /* Scaling inputs the CALCULATOR resolves from the build, so the page must
-   never render a box for them (agent.TOTAL_CRIT_DMG_INPUT). */
-const ENGINE_RESOLVED_SCALING_INPUTS = new Set(["total_crit_dmg"]);
+   never render a box for them (agent.ENGINE_RESOLVED_INPUTS: Anby S's
+   total CRIT DMG, Severian's total CRIT Rate). */
+const ENGINE_RESOLVED_SCALING_INPUTS = new Set(
+  ["total_crit_dmg", "total_crit_rate"]);
 
 /* Scaling inputs that are a small ENUM, not a panel stat: rendered as a
    dropdown so the box can't ask for "e.g. 27000" when it wants 1-5. */
@@ -1378,14 +1507,16 @@ const ENUM_SCALING_INPUTS = {
    Percent inputs are converted to the page's units by the shared
    PERCENT_SCALING_INPUTS rule, exactly as a typed value would be.
 
-   Deliberately absent: 'initial_crit_dmg' (Anby S's reads her COMBAT
-   CRIT DMG — the panel figure would under-report it), 'power_at_smash'
-   (a combat gauge), 'potential_level' (an enum) and 'total_crit_dmg'
-   (the engine resolves it). Those stay manual. */
+   Real-time inputs (Anby S's support-role CRIT DMG, Qingyi's Impact, ...)
+   are panel values too: the calculator adds the owner's own engine / kit
+   combat bonuses on top. Deliberately absent: 'power_at_smash' (a combat
+   gauge), 'potential_level' (an enum) and the engine-resolved totals.
+   Those stay manual. */
 const SCALING_PANEL_STAT = {
   initial_atk: "ATK",
   initial_max_hp: "HP",
   initial_crit_rate: "CRIT Rate",
+  initial_crit_dmg: "CRIT DMG",
   initial_energy_regen: "Energy Regen",
   impact: "Impact",
   pen_ratio: "PEN Ratio",
@@ -1394,12 +1525,20 @@ const SCALING_PANEL_STAT = {
   sheer_force: "Sheer Force",
 };
 
-/* Friendlier wording than the raw input name, where the name understates
-   what the buff actually reads (Anby S's Silver Star takes her COMBAT
-   CRIT DMG, not the panel figure). */
+/* Friendlier wording than the raw input name, where the name misleads
+   (Anby S's support-role input is her PANEL CRIT DMG; her engine's
+   combat CRIT DMG is added for her). */
 const SCALING_LABELS = {
-  initial_crit_dmg: "total CRIT DMG, incl. combat buffs",
+  initial_crit_dmg: "panel CRIT DMG",
 };
+
+/* The inputs these buffs read in REAL TIME (scaling.realtime): their box
+   asks for the panel value and says the combat bonuses are automatic. */
+function realtimeScalingInputs(buffs) {
+  return new Set(buffs.flatMap(b => b.effects
+    .filter(e => e.scaling && e.scaling.realtime)
+    .map(e => e.scaling.input)));
+}
 
 /* Label unit + placeholder for one scaling-input box. Percent inputs are
    typed as the PERCENTAGE (289.6 for 289.6%) and converted on send by
@@ -1413,8 +1552,9 @@ function scalingUnitHint(name) {
 
 /* One scaling-input control. `attr` is the data-attribute the reader
    looks for (data-kitscaling on the main agent, data-scaling on a
-   support), `saved` the previously entered value. */
-function scalingInputHTML(ownerName, name, attr, saved = "") {
+   support), `saved` the previously entered value, `realtime` whether the
+   buff reads the combat stat (the box still takes the panel value). */
+function scalingInputHTML(ownerName, name, attr, saved = "", realtime = false) {
   const enumSpec = ENUM_SCALING_INPUTS[name];
   if (enumSpec) {
     const opts = enumSpec.options
@@ -1430,8 +1570,11 @@ function scalingInputHTML(ownerName, name, attr, saved = "") {
   }
   const { unit, placeholder } = scalingUnitHint(name);
   const label = SCALING_LABELS[name] || name.replace(/_/g, " ");
+  const live = realtime
+    ? ` — panel value; ${ownerName}'s W-Engine / kit combat bonuses are added automatically`
+    : "";
   return `
-    <label>${ownerName}'s ${label} (${unit})</label>
+    <label>${ownerName}'s ${label} (${unit})${live}</label>
     <input type="number" ${attr}="${name}" min="0" step="any"
            value="${saved}" placeholder="${placeholder}">`;
 }
@@ -1513,6 +1656,20 @@ function renderKit() {
   const potLevels = Object.entries(agent.potentials || {})
     .filter(([, p]) => p.buff);
   if (potLevels.length) rows.push({ potential: potLevels });
+  // RIDERS: self-only kit parts with their own toggle — a core's
+  // squad-composition clause (Severian + another Wind agent) or a one-hit
+  // mindscape / Potential rider. The API refuses one whose unlock is off.
+  for (const b of agent.riders || []) {
+    const req = b.requires || {};
+    const needs = req.mindscape
+      ? ` <span class="note">(needs M${req.mindscape} ticked)</span>`
+      : req.potential_min
+        ? ` <span class="note">(needs Potential P${req.potential_min}+)</span>`
+        : "";
+    rows.push({ attr: `data-kit="rider" data-name="${b.name.replace(/"/g, "&quot;")}"`,
+                buff: b, label: `Rider — ${b.name}`,
+                hint: conditionHint(b.condition, "") + needs });
+  }
   // The agent's OWN team buffs: squad-wide buffs and enemy debuffs cover
   // their owner too, and the main agent can't sit in the Team card — tick
   // here the parts that apply to the agent itself (each note says which;
@@ -1577,12 +1734,15 @@ function renderKit() {
 
   // Owner-stat inputs for the ON-FIELD agent's scaled effects
   // (e.g. Zhao as attacker: her core-passive CRIT scales with her HP).
-  const scalingInputs = neededScalingInputs(rows.flatMap(row =>
-    row.potential ? row.potential.map(([, p]) => p.buff) : [row.buff]));
+  const kitBuffs = rows.flatMap(row =>
+    row.potential ? row.potential.map(([, p]) => p.buff) : [row.buff]);
+  const scalingInputs = neededScalingInputs(kitBuffs);
+  const realtime = realtimeScalingInputs(kitBuffs);
   for (const name of scalingInputs) {
     controls.insertAdjacentHTML("beforeend", `
       <div style="margin-bottom:10px">
-        ${scalingInputHTML(agent.name, name, "data-kitscaling")}
+        ${scalingInputHTML(agent.name, name, "data-kitscaling", "",
+                           realtime.has(name))}
       </div>`);
   }
 
@@ -1672,9 +1832,11 @@ function renderPotentialBody(div, stacks) {
 
 /* Read the kit controls:
    { core: 0|1, aa: stacks, mind: {level: stacks}, pot: {level: stacks},
-     team: {buff name: stacks}, scaling: {name: value} }. */
+     team: {buff name: stacks}, riders: {rider name: stacks},
+     scaling: {name: value} }. */
 function kitState() {
-  const state = { core: 0, aa: 0, mind: {}, pot: {}, team: {}, scaling: {} };
+  const state = { core: 0, aa: 0, mind: {}, pot: {}, team: {}, riders: {},
+                  scaling: {} };
   // "select" too: enum scaling inputs (potential_level) render as
   // a dropdown, not a number box.
   for (const inp of $("kit-controls").querySelectorAll("input, select")) {
@@ -1695,6 +1857,7 @@ function kitState() {
     if (inp.dataset.kit === "core") state.core = value;
     else if (inp.dataset.kit === "aa") state.aa = value;
     else if (inp.dataset.kit === "tb") state.team[inp.dataset.name] = value;
+    else if (inp.dataset.kit === "rider") state.riders[inp.dataset.name] = value;
     else state.mind[inp.dataset.level] = value;
   }
   return state;
@@ -1742,6 +1905,7 @@ function applyKit(state) {
     const saved = inp.dataset.kit === "core" ? state.core
       : inp.dataset.kit === "aa" ? state.aa
       : inp.dataset.kit === "tb" ? (state.team || {})[inp.dataset.name]
+      : inp.dataset.kit === "rider" ? (state.riders || {})[inp.dataset.name]
       : (state.mind || {})[inp.dataset.level];
     if (saved == null) continue;
     if (inp.type === "checkbox") inp.checked = saved > 0;
@@ -1783,6 +1947,9 @@ function supportSlotState(slot) {
     state.engineBuffs[inp.dataset.ebuff] = inp.type === "checkbox"
       ? (inp.checked ? 1 : 0) : (parseInt(inp.value, 10) || 0);
   }
+  const est = slot.querySelector("[data-estacks]");
+  if (est) state.engineStacks = est.type === "checkbox"
+    ? (est.checked ? 1 : 0) : (parseFloat(est.value) || 0);
   const setSel = slot.querySelector(".squad-set");
   if (setSel && setSel.value) {
     state.set = setSel.value;
@@ -1931,15 +2098,17 @@ function renderSupportBody(slot, prev) {
 
   // Owner-stat inputs for scaled buffs (e.g. Zhao's initial Max HP),
   // fillable from one of that support's own saved builds.
-  const scalingInputs = neededScalingInputs(
-    [...buffs, ...squadPotentials.map(([, , squad]) => squad)]);
+  const scalingBuffs = [...buffs, ...squadPotentials.map(([, , squad]) => squad)];
+  const scalingInputs = neededScalingInputs(scalingBuffs);
+  const realtime = realtimeScalingInputs(scalingBuffs);
   const picker = scalingInputs.some(n => n in SCALING_PANEL_STAT)
     ? renderBuildPicker(body, key, prev && prev.build) : null;
   for (const name of scalingInputs) {
     const saved = prev && prev.scaling ? (prev.scaling[name] || "") : "";
     body.insertAdjacentHTML("beforeend", `
       <div style="margin-top:8px">
-        ${scalingInputHTML(agent.name, name, "data-scaling", saved)}
+        ${scalingInputHTML(agent.name, name, "data-scaling", saved,
+                           realtime.has(name))}
       </div>`);
   }
   if (picker) syncBuildPicker(body, picker, scalingInputs);
@@ -2027,7 +2196,8 @@ function renderSupportBody(slot, prev) {
         <label>Refinement</label>
         <select class="support-engine-rank"></select>
       </div>
-      <div class="engine-squad-buffs"></div>`;
+      <div class="engine-squad-buffs"></div>
+      <div class="engine-own-stacks"></div>`;
     const rankSel = cont.querySelector(".support-engine-rank");
     fillSelect(rankSel, Array.from({ length: engine.max_rank },
       (_, i) => [String(i + 1), `R${i + 1}`]));
@@ -2057,7 +2227,8 @@ function renderSupportBody(slot, prev) {
         const per = b.kind === "flat_atk" || b.kind === "anomaly_proficiency"
           ? `+${b.values_by_rank[rank - 1]}`
           : `+${+(b.values_by_rank[rank - 1] * 100).toFixed(1)}%`;
-        const kind = KIT_KIND_LABELS[b.kind] || b.kind;
+        const kind = (KIT_KIND_LABELS[b.kind] || b.kind)
+          + (b.elements ? ` (${b.elements.join("/")} DMG only)` : "");
         // Ramp-up (auto) squad buffs default on — the range covers uptime.
         const dflt = b.auto ? b.max_stacks : 0;
         const saved = current[b.name] != null ? current[b.name]
@@ -2084,6 +2255,41 @@ function renderSupportBody(slot, prev) {
         }
         buffsDiv.appendChild(row);
       }
+      renderOwnStacks(rank);
+    };
+    // The support's OWN engine stack counter — only when a stack-driven
+    // part raises a stat one of THEIR real-time inputs reads (Ice-Jade
+    // Teapot's Tea-riffic Impact under Qingyi's Impact -> ATK ability).
+    const renderOwnStacks = rank => {
+      const wrap = cont.querySelector(".engine-own-stacks");
+      const current = wrap.querySelector("[data-estacks]");
+      const keep = current ? (current.type === "checkbox"
+        ? (current.checked ? 1 : 0) : parseFloat(current.value) || 0) : null;
+      wrap.innerHTML = "";
+      const parts = engine.conditional_buffs.filter(b => !b.always_on
+        && [...realtime].some(input =>
+          (REALTIME_ENGINE_BRACKETS[input] || []).includes(b.bracket)));
+      if (!parts.length) return;
+      const maxStacks = Math.max(...engine.conditional_buffs
+        .filter(b => !b.always_on).map(b => b.max_stacks));
+      const dflt = parts[0].auto ? maxStacks : 0;
+      const saved = keep != null ? keep
+        : (prev && prev.engine === engSel.value && prev.engineStacks != null
+           ? prev.engineStacks : dflt);
+      const per = parts.map(b => engineBuffPartLabel(b, rank, maxStacks))
+        .join(" & ");
+      const autoTag = parts[0].auto ? " (auto)" : "";
+      const name = parts[0].name;
+      wrap.innerHTML = maxStacks === 1 ? `
+        <div class="tgl" style="margin-top:6px">
+          <label><input type="checkbox" data-estacks ${saved > 0 ? "checked" : ""}>
+            ${name}${autoTag}</label>
+          <span>— ${per} (raises ${agent.name}'s own stat for the box above)</span>
+        </div>` : `
+        <label style="margin-top:6px">${name}${autoTag} stacks (0–${maxStacks}):
+          ${per} — raises ${agent.name}'s own stat for the box above</label>
+        <input type="number" min="0" max="${maxStacks}" step="1"
+               value="${saved}" data-estacks>`;
     };
     rankSel.addEventListener("change", () => { renderEngineBuffs(); onAnyChange(); });
     renderEngineBuffs();
@@ -2946,7 +3152,7 @@ function collectConfig() {
   const discs = equippedDiscs();
 
   const setStacks = {};
-  for (const inp of $("set-stacks").querySelectorAll("input")) {
+  for (const inp of $("set-stacks").querySelectorAll("input[data-set]")) {
     const v = setStackValue(inp);
     if (v) setStacks[inp.dataset.set] = v;
   }
@@ -2961,6 +3167,9 @@ function collectConfig() {
   const ownTeamBuffs = {};
   for (const [name, stacks] of Object.entries(kit.team || {}))
     if (stacks) ownTeamBuffs[name] = stacks;
+  const riders = {};
+  for (const [name, stacks] of Object.entries(kit.riders || {}))
+    if (stacks) riders[name] = stacks;
 
   const supports = [];
   for (const slot of document.querySelectorAll(".support")) {
@@ -2975,6 +3184,7 @@ function collectConfig() {
       engine_key: st.engine || null,
       engine_rank: st.engineRank || null,
       engine_buffs: st.engineBuffs,
+      engine_buff_stacks: st.engineStacks || 0,
       potentials: st.potential ? { [st.potential]: 1 } : {},
     });
   }
@@ -3020,10 +3230,12 @@ function collectConfig() {
     mindscapes,
     potentials,
     own_team_buffs: ownTeamBuffs,
+    riders,
     scaling_inputs: scalingPayload(kit.scaling),
     supports,
     discs,
     set_stacks: setStacks,
+    set_toggles: setTogglesState(),
     engine_squad_buffs: ownEngineSquadState(),
     engine_buff_stacks: engineBuffValue(),
     external_dmg_bonus: pct("dmg-bonus"),
@@ -3458,15 +3670,27 @@ function refreshMaximizeTolerance() {
     $("opt-maximize").value ? "" : "none";
 }
 
-function addConstraintRow(stat = "CRIT Rate", value = "") {
+/* One constraint row. `kind` picks what the minimum is checked against:
+   "combat" = the combat total (every kit / team / engine / set buff
+   counted), "base" = the BUILD's own out-of-combat panel — agent + core +
+   engine + discs + set sheet stats, no combat buffs (the "Final stats"
+   panel; API min_panel_stats). */
+function addConstraintRow(stat = "CRIT Rate", value = "", kind = "combat") {
   const row = document.createElement("div");
   row.className = "constraint-row";
-  row.style.cssText = "display:grid;grid-template-columns:1fr 110px 28px;"
+  row.style.cssText = "display:grid;grid-template-columns:1fr 118px 110px 28px;"
     + "gap:8px;margin-bottom:8px;align-items:end";
   const sel = document.createElement("select");
   sel.className = "constraint-stat";
   fillSelect(sel, constraintDefs().map(([k, label]) => [k, `min ${label}`]));
   sel.value = stat;
+  const kindSel = document.createElement("select");
+  kindSel.className = "constraint-kind";
+  kindSel.title = "In combat: every buff counted. Base (panel): the build's "
+    + "own out-of-combat stats only — no kit, team, engine-passive or "
+    + "combat buffs (the Final stats panel).";
+  fillSelect(kindSel, [["combat", "in combat"], ["base", "base (panel)"]]);
+  kindSel.value = kind === "base" ? "base" : "combat";
   const num = document.createElement("input");
   num.type = "number"; num.min = 0; num.step = "any";
   num.className = "constraint-min"; num.value = value;
@@ -3475,16 +3699,21 @@ function addConstraintRow(stat = "CRIT Rate", value = "") {
   del.className = "mini"; del.textContent = "✕";
   del.title = "Remove this constraint";
   del.addEventListener("click", () => { row.remove(); onAnyChange(); });
-  row.appendChild(sel); row.appendChild(num); row.appendChild(del);
+  row.appendChild(sel); row.appendChild(kindSel); row.appendChild(num);
+  row.appendChild(del);
   $("opt-constraints").appendChild(row);
   return row;
 }
 
-function collectMinStats() {
+/* The constraint rows of one kind ("combat" -> API min_stats, "base" ->
+   min_panel_stats) as {stat: minimum}, percent stats as fractions. */
+function collectMinStats(kind = "combat") {
   const pctStats = new Set(
     constraintDefs().filter(([, , pct]) => pct).map(([k]) => k));
   const minStats = {};
   for (const row of document.querySelectorAll(".constraint-row")) {
+    const rowKind = row.querySelector(".constraint-kind").value;
+    if (rowKind !== kind) continue;
     const stat = row.querySelector(".constraint-stat").value;
     const raw = parseFloat(row.querySelector(".constraint-min").value);
     if (!raw || raw <= 0) continue;
@@ -3510,7 +3739,8 @@ async function runOptimize() {
     set_assumption: $("opt-assumption").value,
     locked_slots: lockedSlots(),
     top_n: 5,
-    min_stats: collectMinStats(),
+    min_stats: collectMinStats("combat"),
+    min_panel_stats: collectMinStats("base"),
     required_4pc: $("opt-required").value || null,
     required_2pc: $("opt-required-2pc").value || null,
     slot_main_stats: slotMains,
@@ -3541,7 +3771,8 @@ async function runOptimize() {
     && !opt.candidate_cap
     && !opt.locked_slots.length
     && !Object.keys(opt.slot_main_stats).length
-    && !Object.keys(opt.min_stats).length;
+    && !Object.keys(opt.min_stats).length
+    && !Object.keys(opt.min_panel_stats).length;
   const bigInventory = Object.keys(DB.user_discs || {}).length > 100;
   btn.textContent = opt.ignore_budget && unrestricted && bigInventory
     ? "Optimizing… (⚠ no budget cap on an unrestricted search — this can "
@@ -3687,22 +3918,29 @@ function constraintsNote(data) {
     parts.push(`slot ${slot} main = ${main}`);
   for (const [stat, minimum] of Object.entries(data.min_stats || {}))
     parts.push(`${stat} ≥ ${pctStats.has(stat)
-      ? (minimum * 100).toFixed(1) + "%" : minimum}`);
-  // Auto-derived from the kit's self-scaling inputs: PANEL values
-  // (before kit/team/combat buffs), so the claimed input stays honest.
+      ? (minimum * 100).toFixed(1) + "%" : minimum} (combat)`);
+  // BASE (panel) minimums: the user's "base (panel)" rows merged with the
+  // ones derived from the kit's self-scaling inputs — values before any
+  // kit/team/combat buff, so a claimed panel input stays honest.
   for (const [stat, minimum] of Object.entries(data.min_panel_stats || {}))
-    parts.push(`panel ${stat} ≥ ${pctStats.has(stat)
+    parts.push(`base ${stat} ≥ ${pctStats.has(stat)
       ? (minimum * 100).toFixed(1) + "%" : minimum}`);
   if (!parts.length) return "";
   const infeasible = data.baseline_feasible === false
     ? ` <span class="delta-down">— your current build does not meet
        these requirements</span>` : "";
-  // Stat requirements are checked against combat totals; say so, or the
-  // lower "Final stats" panel number reads as a violated minimum.
-  const units = Object.keys(data.min_stats || {}).length || data.maximize_stat
-    ? ` <span class="note">Stat totals are ${COMBAT_TOTAL_NOTE}, not the
-       out-of-combat Final stats panel.</span>` : "";
-  return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}${units}</p>`;
+  // Say which total each kind is checked against, or a combat minimum
+  // reads as violated next to the lower "Final stats" panel.
+  const units = [
+    Object.keys(data.min_stats || {}).length || data.maximize_stat
+      ? `"(combat)" totals are ${COMBAT_TOTAL_NOTE}, not the out-of-combat
+         Final stats panel.` : "",
+    Object.keys(data.min_panel_stats || {}).length
+      ? `"base" totals are the build's out-of-combat panel — the Final stats
+         card (no kit, team, engine-passive or combat buffs).` : "",
+  ].filter(Boolean).join(" ");
+  return `<p class="note">Requirements: ${parts.join(" · ")}${infeasible}${
+    units ? ` <span class="note">${units}</span>` : ""}</p>`;
 }
 
 /* Team-element gate (§18): 4pc effects no squad member can trigger were
@@ -3837,7 +4075,7 @@ function applyBuild(option) {
     }
   }
   refreshSetStacks();
-  for (const inp of $("set-stacks").querySelectorAll("input")) {
+  for (const inp of $("set-stacks").querySelectorAll("input[data-set]")) {
     const stacks = (option.set_stacks || {})[inp.dataset.set] || 0;
     if (inp.type === "checkbox") inp.checked = stacks > 0;
     else inp.value = stacks;
@@ -3859,6 +4097,7 @@ function saveState() {
                     .map(row => ({
                       stat: row.querySelector(".constraint-stat").value,
                       min: row.querySelector(".constraint-min").value,
+                      kind: row.querySelector(".constraint-kind").value,
                     })) };
   for (const el of document.querySelectorAll("#inputs select, #inputs input")) {
     if (el.closest(".disc") || el.closest("#set-stacks")
@@ -3882,8 +4121,9 @@ function saveState() {
       })),
     });
   }
-  for (const inp of $("set-stacks").querySelectorAll("input"))
+  for (const inp of $("set-stacks").querySelectorAll("input[data-set]"))
     state.setStacks[inp.dataset.set] = setStackValue(inp);
+  state.setToggles = setTogglesState();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -3941,14 +4181,18 @@ function restoreState() {
     });
   });
   refreshSetStacks();
-  for (const inp of $("set-stacks").querySelectorAll("input")) {
+  for (const inp of $("set-stacks").querySelectorAll("input[data-set]")) {
     if (!(inp.dataset.set in (state.setStacks || {}))) continue;
     const saved = state.setStacks[inp.dataset.set];
     if (inp.type === "checkbox") inp.checked = saved > 0;
     else inp.value = saved;
   }
+  for (const inp of $("set-stacks").querySelectorAll("[data-settoggle]"))
+    inp.checked = !!((state.setToggles || {})[inp.dataset.settoggle] || {})[
+      inp.dataset.name];
+  // States saved before base-stat rows existed carry no kind: combat.
   for (const c of state.constraints || [])
-    addConstraintRow(c.stat, c.min);
+    addConstraintRow(c.stat, c.min, c.kind || "combat");
   return state;
 }
 

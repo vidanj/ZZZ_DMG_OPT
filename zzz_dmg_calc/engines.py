@@ -4,9 +4,11 @@ Engines live in their own data file (``data/engines.json``) and are combined
 with an agent only at build-aggregation time (``agent.aggregate_build``), so
 the same agent can be tested with different engines by swapping one argument.
 
-Scope (plan §1): engines are Lv. 60 / R1; refinement and passive effects are
-never auto-applied — each engine's ``passive_note`` documents what the user
-may enter manually as external buffs.
+Scope: engines are Lv. 60 with a runtime refinement rank. Every
+damage-relevant passive part is modeled and applied automatically (always-on
+parts, auto-defaulted conditionals, squad buffs); manual external inputs are
+reserved for effects outside the kit (Deadly Assault, boss mechanics). Each
+engine's ``passive_note`` documents its source and what is resource-only.
 
 Usage::
 
@@ -22,8 +24,29 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .enemies import ELEMENTS
+
 #: Default location of the engine data file, relative to this package.
 DATA_FILE = Path(__file__).parent / "data" / "engines.json"
+
+#: Conditional-buff brackets that land in the damage formula. The first
+#: six are read per mode by each calculation; ``atk_pct`` / ``res_shred``
+#: / ``pen_ratio`` reach every mode through the kit totals (the
+#: equipper's own engine is folded into ``api._kit_contributions``).
+DAMAGE_BRACKETS = ("dmg_bonus", "anomaly_buff", "sheer_dmg", "crit_dmg",
+                   "crit_rate", "anomaly_proficiency",
+                   "atk_pct", "res_shred", "pen_ratio")
+
+#: Conditional-buff brackets with NO damage term of their own: they raise a
+#: stat of the equipper that one of THEIR kit buffs reads in real time
+#: (Ice-Jade Teapot's Impact -> Qingyi's Impact -> ATK ability). Read only
+#: by ``api._realtime_stat_bonus``. ``impact_pct`` is a fraction of the
+#: equipper's base Impact; the other two are flat.
+SCALING_BRACKETS = ("impact", "impact_pct", "anomaly_mastery")
+
+#: Calculation modes a buff may be gated to (agent kit effects use the
+#: same list).
+BUFF_MODES = ("direct", "anomaly", "disorder", "vortex", "sheer")
 
 
 class EngineError(ValueError):
@@ -52,12 +75,23 @@ class EngineBuff:
     stacks); ``"anomaly_proficiency"`` adds
     FLAT AP per stack to the equipper's AP total in anomaly modes only
     (Weeping Gemini's per-anomaly stacks — per-stack values are plain
-    numbers, not fractions). ``modes`` optionally gates the
+    numbers, not fractions). ``"atk_pct"`` joins the combat ATK% bracket,
+    ``"res_shred"`` the enemy RES ignore and ``"pen_ratio"`` the
+    attacker's PEN Ratio ("DMG ignores X% DEF" — Cordis Germina); those
+    three reach every mode through the kit totals. The scaling-only
+    brackets (``SCALING_BRACKETS``) never touch damage directly — they
+    raise a stat one of the equipper's own kit buffs reads in real time.
+    ``modes`` optionally gates the
     buff to calculation modes (same semantics as agent kit effects: the
     element gate is checked in direct/anomaly/sheer modes only).
     ``skill_tags`` optionally gates it to hits of those damage types
     (e.g. Qingming Birdcage's Sheer DMG applies to Ultimate/EX Special
     hits only).
+
+    ``always_on`` marks an UNCONDITIONAL part listed beside a conditional
+    one: it applies at its rank value whatever the stack counter says,
+    which leaves the counter free for the conditional part (Heartstring
+    Nocturne: CRIT DMG always, Fire RES ignore per Heartstring stack).
 
     An engine may model SEVERAL conditional buffs that share one stack
     counter (``Engine.conditional_buffs``) — e.g. Qingming Companion
@@ -78,14 +112,18 @@ class EngineBuff:
     skill_tags: tuple[str, ...] | None = None
     at_max_only: bool = False
     auto: bool = False
+    always_on: bool = False
     note: str = ""
 
     def value_at(self, rank: int, stacks: float) -> float:
         """Contribution at ``rank`` for a counter standing at ``stacks``.
 
         Ordinary parts scale linearly and clamp at their own
-        ``max_stacks``; ``at_max_only`` parts are all-or-nothing.
+        ``max_stacks``; ``at_max_only`` parts are all-or-nothing;
+        ``always_on`` parts ignore the counter.
         """
+        if self.always_on:
+            return self.per_stack(rank)
         if self.at_max_only:
             return (self.per_stack(rank) if stacks >= self.max_stacks
                     else 0.0)
@@ -139,6 +177,12 @@ class EngineSquadBuff:
     Worn by an (off-field) support, it buffs the whole squad — i.e. the
     on-field agent — while its condition holds (asked at runtime).
     ``kind`` uses the agent-kit effect kinds (crit_dmg, atk_pct, ...).
+
+    Optional gates, checked against the calculated hit like kit effects:
+    ``elements`` (the dealt element must be one of them — Blazing
+    Laurel's Wilt only raises Ice and Fire CRIT DMG), ``modes`` and
+    ``skill_tags``. A buff whose ``modes`` explicitly lists disorder or
+    vortex skips the element check there, as everywhere else.
     """
 
     name: str
@@ -146,6 +190,9 @@ class EngineSquadBuff:
     values_by_rank: tuple[float, ...]
     max_stacks: int = 1
     auto: bool = False
+    elements: tuple[str, ...] | None = None
+    modes: tuple[str, ...] | None = None
+    skill_tags: tuple[str, ...] | None = None
     note: str = ""
 
     def value(self, rank: int) -> float:
@@ -306,6 +353,26 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     f"non-negative number"
                 )
 
+        def gate_list(raw: dict, field: str,
+                      allowed: tuple[str, ...] | None = None):
+            """Validate an optional non-empty gate list (``modes``,
+            ``skill_tags``, ``elements``); ``None`` when absent."""
+            values = raw.get(field)
+            if values is None:
+                return None
+            if (not isinstance(values, list) or not values
+                    or any(not isinstance(v, str) or not v.strip()
+                           for v in values)
+                    or (allowed is not None
+                        and any(v not in allowed for v in values))):
+                expected = (f"values from {list(allowed)}" if allowed
+                            else "keys")
+                raise EngineError(
+                    f"Engine '{key}': buff '{field}' must be a non-empty "
+                    f"list of {expected}"
+                )
+            return tuple(values)
+
         refinement_rank = 1
         max_rank = 1
         passive_dmg: list[EnginePassiveDmg] = []
@@ -393,46 +460,37 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                         f"Engine '{key}': buff is missing a valid 'name'"
                     )
                 bracket = buff_raw.get("bracket", "dmg_bonus")
-                if bracket not in ("dmg_bonus", "anomaly_buff", "sheer_dmg",
-                                   "crit_dmg", "crit_rate",
-                                   "anomaly_proficiency"):
+                if bracket not in DAMAGE_BRACKETS + SCALING_BRACKETS:
                     raise EngineError(
-                        f"Engine '{key}': buff 'bracket' must be 'dmg_bonus', "
-                        f"'anomaly_buff', 'sheer_dmg', 'crit_dmg', "
-                        f"'crit_rate' or 'anomaly_proficiency', "
+                        f"Engine '{key}': buff 'bracket' must be one of "
+                        f"{list(DAMAGE_BRACKETS + SCALING_BRACKETS)}, "
                         f"got {bracket!r}"
                     )
-                modes = buff_raw.get("modes")
-                if modes is not None:
-                    if (not isinstance(modes, list) or not modes
-                            or any(m not in ("direct", "anomaly", "disorder",
-                                             "vortex", "sheer")
-                                   for m in modes)):
-                        raise EngineError(
-                            f"Engine '{key}': buff 'modes' must be a "
-                            f"non-empty list of calculation modes"
-                        )
-                    modes = tuple(modes)
-                skill_tags = buff_raw.get("skill_tags")
-                if skill_tags is not None:
-                    if (not isinstance(skill_tags, list) or not skill_tags
-                            or any(not isinstance(t, str) or not t.strip()
-                                   for t in skill_tags)):
-                        raise EngineError(
-                            f"Engine '{key}': buff 'skill_tags' must be a "
-                            f"non-empty list of skill tag keys"
-                        )
-                    skill_tags = tuple(skill_tags)
+                element = buff_raw.get("element")
+                if element is not None and element not in ELEMENTS:
+                    raise EngineError(
+                        f"Engine '{key}': buff 'element' must be one of "
+                        f"{list(ELEMENTS)}, got {element!r}"
+                    )
+                always_on = bool(buff_raw.get("always_on", False))
+                at_max_only = bool(buff_raw.get("at_max_only", False))
+                if always_on and (max_stacks != 1 or at_max_only):
+                    raise EngineError(
+                        f"Engine '{key}': always_on buff '{buff_name}' must "
+                        f"have max_stacks 1 and no at_max_only - it ignores "
+                        f"the stack counter"
+                    )
                 return EngineBuff(
                     name=buff_name,
-                    element=buff_raw.get("element"),
+                    element=element,
                     per_stack_by_rank=per_rank,
                     max_stacks=max_stacks,
                     bracket=bracket,
-                    modes=modes,
-                    skill_tags=skill_tags,
-                    at_max_only=bool(buff_raw.get("at_max_only", False)),
+                    modes=gate_list(buff_raw, "modes", BUFF_MODES),
+                    skill_tags=gate_list(buff_raw, "skill_tags"),
+                    at_max_only=at_max_only,
                     auto=bool(buff_raw.get("auto", False)),
+                    always_on=always_on,
                     note=str(buff_raw.get("note", "")),
                 )
 
@@ -480,6 +538,9 @@ def load_engines(path: Path = DATA_FILE) -> dict[str, Engine]:
                     values_by_rank=rank_values(item.get("values"), "values"),
                     max_stacks=max_stacks,
                     auto=bool(item.get("auto", False)),
+                    elements=gate_list(item, "elements", ELEMENTS),
+                    modes=gate_list(item, "modes", BUFF_MODES),
+                    skill_tags=gate_list(item, "skill_tags"),
                     note=str(item.get("note", "")),
                 ))
 

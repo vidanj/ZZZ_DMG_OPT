@@ -32,13 +32,14 @@ from typing import Sequence
 from . import formulas
 from .agent import (
     LUMIFLUX, PERCENT_SCALING_INPUT_MAX, PERCENT_SCALING_INPUTS,
-    TOTAL_CRIT_DMG_INPUT, Agent, aggregate_build, load_agents,
+    REALTIME_SCALING_STATS, SCALING_ONLY_KINDS, TOTAL_CRIT_DMG_INPUT,
+    TOTAL_CRIT_RATE_INPUT, Agent, KitBuff, aggregate_build, load_agents,
 )
 from .anomalies import AnomalyData, load_anomalies
 from .constants import Constants, load_constants
 from .discs import (
     Disc, DiscData, DiscSet, load_disc_data, load_disc_sets,
-    set_tagged_dmg_bonuses,
+    set_tagged_dmg_bonuses, set_toggle_names,
 )
 from .enemies import ELEMENTS, Boss, load_bosses
 from .engines import Engine, load_engines
@@ -104,6 +105,12 @@ class SupportConfig:
             :attr:`CalcConfig.potentials`. Only that level's ``squad``
             effects reach the on-field agent (Koleda's squad DMG / CRIT
             DMG, Rina's squad ATK); self-only ones stay with the support.
+        engine_buff_stacks: The stack counter of the support's OWN engine
+            conditional parts. They buff the wearer only, so the on-field
+            agent never receives them — they matter only where they raise
+            a stat one of the support's real-time scaling inputs reads
+            (Ice-Jade Teapot's Impact under Qingyi's ability, see
+            ``EffectScaling.realtime``).
     """
 
     agent_key: str
@@ -115,6 +122,7 @@ class SupportConfig:
     engine_rank: int | None = None
     engine_buffs: dict[str, int] = field(default_factory=dict)
     potentials: dict[int, int] = field(default_factory=dict)
+    engine_buff_stacks: float = 0.0
 
 
 @dataclass
@@ -257,6 +265,16 @@ class CalcConfig:
             responsibility (each buff's note says; e.g. Zhao's M2 ATK%
             is "OTHER squad members" — don't tick it here). Scaled
             effects read ``scaling_inputs``.
+        riders: The on-field agent's ``riders`` stacks (rider name ->
+            stacks): self-only kit parts with their own toggle — a core's
+            squad-composition clause (Severian + another Wind agent) or a
+            one-hit mindscape / Potential rider. A rider whose
+            ``requires`` unlock is not active is rejected.
+        set_toggles: Windowed 4-piece conditions (set key -> {toggle name
+            -> 0/1}) — Polar Metal's "+20% more Basic/Dash DMG for 12s
+            after a squad Freeze", Chaos Jazz's off-field EX / Assist DMG.
+            Applies to whichever build wears that set's 4 pieces (the
+            optimizer included); off by default.
         engine_buff_stacks: Stacks of the engine's refinement-scaled
             conditional buff (pilot: Sharpened Stinger's Predatory Instinct).
             The per-stack value comes from the engine's refinement rank; the
@@ -401,6 +419,8 @@ class CalcConfig:
     set_stacks: dict[str, int] = field(default_factory=dict)
     engine_squad_buffs: dict[str, int] = field(default_factory=dict)
     own_team_buffs: dict[str, int] = field(default_factory=dict)
+    riders: dict[str, int] = field(default_factory=dict)
+    set_toggles: dict[str, dict[str, int]] = field(default_factory=dict)
     engine_buff_stacks: float = 0.0
     external_dmg_bonuses: list[float] = field(default_factory=list)
     external_crit_rate: float = 0.0
@@ -629,6 +649,46 @@ def _tag_matches(gate_tag: str, hit_tag: str | None,
     )
 
 
+def _check_engine_stacks(engine: Engine, stacks: float) -> None:
+    """Validate an engine's conditional stack counter (0 always passes).
+
+    Raises:
+        CalcError: stacks for an engine whose counter drives nothing, or
+            outside 0..the largest part cap.
+    """
+    if stacks == 0:
+        return
+    counted = [b for b in engine.conditional_buffs if not b.always_on]
+    if not counted:
+        raise CalcError(
+            f"Engine '{engine.name}' has no modeled conditional buff driven "
+            f"by stacks (its modeled parts, if any, are always on)"
+        )
+    stack_cap = max(b.max_stacks for b in counted)
+    if (isinstance(stacks, bool) or not isinstance(stacks, (int, float))
+            or not 0 <= stacks <= stack_cap):
+        raise CalcError(
+            f"{counted[0].name} stacks must be a number 0..{stack_cap}, "
+            f"got {stacks!r}"
+        )
+
+
+def _engine_stat_bonus(engine: Engine, rank: int, stacks: float,
+                       bracket: str) -> float:
+    """The equipper's own combat bonus to one stat from the engine's
+    conditional parts in ``bracket`` — read by real-time scaling inputs
+    (see :func:`_realtime_stat_bonus`). A stat bonus belongs to the
+    wearer whatever hit is calculated, so the mode / element gates are
+    not checked; skill-tag-gated parts (one hit type only) never count.
+    """
+    _check_engine_stacks(engine, stacks)
+    return sum(
+        b.value_at(rank, stacks) for b in engine.conditional_buffs
+        if b.bracket == bracket and b.skill_tags is None
+        and (stacks or b.always_on)
+    )
+
+
 def _engine_buff_bonuses(
     engine: Engine, stacks: float, dealt_element: str, rank: int,
     mode: str = "direct", bracket: str = "dmg_bonus",
@@ -655,28 +715,17 @@ def _engine_buff_bonuses(
     disorder/vortex mode skips the element check there (those bursts deal
     another element on the equipper's behalf — Joyau Doré); a plain
     element-gated part (Sharpened Stinger) stays element-checked in every
-    mode, including sheer.
+    mode, including sheer. ``always_on`` parts apply even at 0 stacks.
 
     Raises:
         CalcError: stacks requested for an engine without a modeled buff,
             or out of the buffs' range.
     """
-    if stacks == 0:
-        return []
-    buffs = engine.conditional_buffs
-    if not buffs:
-        raise CalcError(
-            f"Engine '{engine.name}' has no modeled conditional buff; "
-            f"enter its passive manually as external buffs instead"
-        )
-    stack_cap = max(b.max_stacks for b in buffs)
-    if isinstance(stacks, bool) or not isinstance(stacks, (int, float)) or not 0 <= stacks <= stack_cap:
-        raise CalcError(
-            f"{buffs[0].name} stacks must be a number 0..{stack_cap}, "
-            f"got {stacks!r}"
-        )
+    _check_engine_stacks(engine, stacks)
     entries: list[dict] = []
-    for buff in buffs:
+    for buff in engine.conditional_buffs:
+        if not stacks and not buff.always_on:
+            continue
         if buff.bracket != bracket:
             continue
         if buff.modes is not None and mode not in buff.modes:
@@ -758,6 +807,90 @@ def _resolve_deferred_crit_dmg(
     return added, items
 
 
+def _resolve_deferred_flat_atk(
+    kit: dict, crit_rate_total: float
+) -> tuple[float, list[dict]]:
+    """Resolve kit flat ATK that scales with the owner's TOTAL CRIT Rate.
+
+    Called once ``crit_rate_total`` holds every CRIT Rate source (build
+    panel + external + kit + engine passive + engine conditional) — before
+    the ATK zone is built, since the result is flat ATK. Severian's Optimal
+    Setup is the pilot (+8.5 ATK per 1% CRIT Rate, capped at 100%; the
+    scaling's own cap encodes the CRIT Rate cap).
+
+    Returns:
+        ``(added, items)`` — the flat ATK to add, and one buff-breakdown
+        entry per contribution.
+    """
+    added = 0.0
+    items: list[dict] = []
+    for pending in kit["deferred_flat_atk"]:
+        value = pending["scaling"].resolve(crit_rate_total) * pending["stacks"]
+        if not value:
+            continue
+        added += value
+        items.append({"source": pending["source"],
+                      "kind": "flat_atk", "value": value})
+    return added, items
+
+
+#: Kit effect kind that feeds each real-time stat from the owner's own
+#: active kit (``REALTIME_SCALING_STATS`` values). Anomaly Mastery has no
+#: kit kind — only engines raise it in combat (Metanukimorphosis).
+_REALTIME_KIT_KIND = {
+    "impact": "impact_pct",
+    "anomaly_proficiency": "anomaly_proficiency",
+    "crit_dmg": "crit_dmg",
+    "pen_ratio": "pen_ratio",
+}
+
+
+def _realtime_stat_bonus(
+    owner: Agent, engine: Engine | None, rank: int, engine_stacks: float,
+    own_buffs: list[tuple[KitBuff, float]], input_name: str,
+) -> float:
+    """The owner's own combat bonus to the stat a real-time scaling input
+    reads (``EffectScaling.realtime``), added to the entered PANEL value.
+
+    Two sources, both the owner's own: their W-Engine (always-on parts,
+    passive AP / CRIT DMG, and conditional parts at ``engine_stacks``) and
+    their active fixed-value kit effects of the matching kind
+    (``own_buffs``: ``(buff, stacks)``). Impact% parts multiply the
+    owner's base Impact (agent base + core), as Impact% does on the panel.
+    Skill-tag-gated effects count for one hit type only, and scaled ones
+    would resolve circularly, so neither is added.
+    """
+    stat = REALTIME_SCALING_STATS[input_name]
+    base_impact = owner.base_impact + owner.core_bonus_impact
+    total = 0.0
+    if engine is not None:
+        if stat == "impact":
+            total += _engine_stat_bonus(engine, rank, engine_stacks, "impact")
+            total += base_impact * _engine_stat_bonus(
+                engine, rank, engine_stacks, "impact_pct")
+        elif stat == "anomaly_proficiency":
+            total += engine.passive_ap(rank) + _engine_stat_bonus(
+                engine, rank, engine_stacks, "anomaly_proficiency")
+        elif stat == "crit_dmg":
+            total += engine.passive_crit_dmg(rank) + _engine_stat_bonus(
+                engine, rank, engine_stacks, "crit_dmg")
+        else:   # anomaly_mastery / pen_ratio: conditional parts only
+            total += _engine_stat_bonus(engine, rank, engine_stacks, stat)
+    kit_kind = _REALTIME_KIT_KIND.get(stat)
+    for buff, stacks in own_buffs:
+        for effect in buff.effects:
+            if (effect.kind != kit_kind or effect.skill_tag is not None
+                    or effect.scaling is not None):
+                continue
+            if effect.at_max_stacks:
+                amount = effect.value if stacks >= buff.max_stacks else 0.0
+            else:
+                amount = effect.value * stacks
+            total += amount * (base_impact if kit_kind == "impact_pct"
+                               else 1.0)
+    return total
+
+
 def _kit_contributions(
     agent: Agent, config: CalcConfig,
     agents: dict[str, Agent], disc_sets: dict[str, DiscSet],
@@ -777,12 +910,18 @@ def _kit_contributions(
     An ``abloom_only`` effect applies only to an Abloom instance: anomaly
     mode with ``config.abloom`` or ``config.anomaly_mult_override`` set.
 
+    The on-field agent's OWN engine joins here too: its squad buffs (the
+    wearer is a squad member) and its ``atk_pct`` / ``res_shred`` /
+    ``pen_ratio`` conditional parts, so every mode and optimizer that
+    reads the kit totals gets them without per-mode code.
+
     Returns a dict with keys ``crit_rate``, ``crit_dmg``, ``res_shred``,
     ``flat_atk``, ``atk_pct``, ``anomaly_proficiency``,
     ``disorder_mult_add``, ``refringe``, ``anomaly_crit_rate``,
-    ``anomaly_crit_dmg`` (floats) and ``dmg_bonus``,
-    ``dmg_taken``, ``daze_bonus``, ``anomaly_buff`` (lists of bracket
-    entries).
+    ``anomaly_crit_dmg``, ``anomaly_hits_add`` (floats) and
+    ``dmg_bonus``, ``dmg_taken``, ``daze_bonus``, ``anomaly_buff`` (lists
+    of bracket entries), plus ``deferred_crit_dmg`` / ``deferred_flat_atk``
+    (effects scaling on a total the caller resolves last).
 
     Raises:
         CalcError: unmodeled/unknown buffs or mindscapes, stacks out of
@@ -795,9 +934,10 @@ def _kit_contributions(
               "sheer_force": 0.0, "hp_pct": 0.0, "def_red": 0.0,
               "refringe": 0.0,
               "anomaly_crit_rate": 0.0, "anomaly_crit_dmg": 0.0,
+              "anomaly_hits_add": 0.0,
               "dmg_bonus": [], "dmg_taken": [], "daze_bonus": [],
               "anomaly_buff": [], "sheer_dmg": [],
-              "deferred_crit_dmg": [],
+              "deferred_crit_dmg": [], "deferred_flat_atk": [],
               "items": []}
 
     def record(source: str, kind: str, value: float) -> None:
@@ -810,9 +950,25 @@ def _kit_contributions(
     is_abloom = mode == "anomaly" and (
         config.abloom or config.anomaly_mult_override is not None)
 
+    # The hit's damage type. Anomaly / Disorder / Vortex procs carry none,
+    # so a tag set on the config never reaches skill-tag gates there.
+    hit_tag = config.skill_tag if mode in ("direct", "sheer") else None
+    hit_aftershock = (config.counts_as_aftershock
+                      if mode in ("direct", "sheer") else False)
+
     def apply(buff, stacks: float, scaling_inputs: dict | None = None,
-              owner: str = "") -> None:
+              owner: str = "", realtime_bonus=None) -> None:
+        """Route one active buff's effects into the totals.
+
+        ``realtime_bonus(input_name)`` returns the OWNER's combat bonus
+        to the stat a real-time scaling input reads (see
+        :func:`_realtime_stat_bonus`); ``None`` adds nothing.
+        """
         for effect in buff.effects:
+            # Scaling-only kinds (Lighter's Morale Impact%) have no damage
+            # term: they are read by the owner's real-time inputs only.
+            if effect.kind in SCALING_ONLY_KINDS:
+                continue
             # Abloom-only riders (Phoenix's Abloom CRIT DMG, her M6 DEF
             # ignore) skip every other hit.
             if effect.abloom_only and not is_abloom:
@@ -821,8 +977,7 @@ def _kit_contributions(
             # Catwalk buffs EX Specials only); a hit that also counts as
             # Aftershock matches aftershock gates on top of its own tag.
             if effect.skill_tag is not None and not _tag_matches(
-                    effect.skill_tag, config.skill_tag,
-                    config.counts_as_aftershock):
+                    effect.skill_tag, hit_tag, hit_aftershock):
                 continue
             # Mode gate (anomaly_buff / disorder_mult_add carriers etc.).
             if effect.modes is not None and mode not in effect.modes:
@@ -836,6 +991,23 @@ def _kit_contributions(
             )
             if (effect.element is not None and not element_gate_waived
                     and effect.element != dealt_element):
+                continue
+            if (effect.element_not is not None and not element_gate_waived
+                    and effect.element_not == dealt_element):
+                continue
+            # Severian's Optimal Setup: flat ATK from the owner's TOTAL
+            # CRIT Rate — parked like the CRIT DMG case below, resolved by
+            # calculate() / calculate_sheer() once every CRIT Rate source
+            # is summed and before the ATK zone is built.
+            if (effect.scaling is not None
+                    and effect.scaling.input == TOTAL_CRIT_RATE_INPUT):
+                if effect.at_max_stacks and stacks < buff.max_stacks:
+                    continue
+                totals["deferred_flat_atk"].append({
+                    "source": f"{owner}{buff.name}",
+                    "scaling": effect.scaling,
+                    "stacks": 1.0 if effect.at_max_stacks else stacks,
+                })
                 continue
             # Effects scaling on the owner's TOTAL combat CRIT DMG cannot
             # be resolved yet: that total is only known once every other
@@ -882,6 +1054,11 @@ def _kit_contributions(
                         f" — this input is a FRACTION (0.78 = 78%). The web "
                         f"page takes the percentage and converts it for you."
                     )
+                # A real-time input reads the owner's COMBAT stat: the
+                # entered panel value plus the owner's own engine / kit
+                # combat bonuses (Qingyi + Ice-Jade Teapot's Impact).
+                if effect.scaling.realtime and realtime_bonus is not None:
+                    x = float(x) + realtime_bonus(effect.scaling.input)
                 value = effect.scaling.resolve(float(x))
             else:
                 value = effect.value
@@ -925,6 +1102,18 @@ def _kit_contributions(
         check_stacks(stacks, buff.max_stacks, f"{engine.name}: {buff.name}")
         if not stacks:
             return
+        # Hit gates, same semantics as kit effects (Blazing Laurel's Wilt
+        # only raises Ice / Fire CRIT DMG).
+        if buff.modes is not None and mode not in buff.modes:
+            return
+        waived = buff.modes is not None and mode in ("disorder", "vortex")
+        if (buff.elements is not None and not waived
+                and dealt_element not in buff.elements):
+            return
+        if buff.skill_tags is not None and not any(
+                _tag_matches(t, hit_tag, hit_aftershock)
+                for t in buff.skill_tags):
+            return
         amount = buff.value(rank) * stacks
         if buff.kind in _LIST_KINDS:
             totals[buff.kind].append(amount)
@@ -937,12 +1126,64 @@ def _kit_contributions(
             )
         record(f"{owner_label}: {buff.name} (R{rank})", buff.kind, amount)
 
+    # Windowed 4pc toggles must name a real set and one of its toggles —
+    # a typo would otherwise silently never apply.
+    for set_key, picks in config.set_toggles.items():
+        entry = disc_sets.get(set_key)
+        if entry is None:
+            raise CalcError(f"Toggles given for unknown set '{set_key}'")
+        names = set_toggle_names(entry)
+        for name in picks:
+            if name not in names:
+                raise CalcError(
+                    f"Set '{entry.name}' has no 4pc toggle named '{name}'; "
+                    f"options: {list(names)}"
+                )
+
+    # The on-field agent's own engine: its squad buffs, its kit-routed
+    # conditional parts and its real-time stat bonuses all read it.
+    own_engine_key = (config.engine_key if config.engine_key is not None
+                      else agent.default_engine)
+    if own_engine_key not in engines:
+        raise CalcError(
+            f"Unknown engine '{own_engine_key}'; options: {sorted(engines)}"
+        )
+    own_engine = engines[own_engine_key]
+    own_rank = _resolve_engine_rank(own_engine, config.engine_rank)
+
+    # The on-field agent's active kit, collected up front for the
+    # real-time scaling inputs (each slot is validated where applied).
+    main_buffs: list[tuple[KitBuff, float]] = []
+    if config.core_passive_active and agent.core_passive is not None:
+        main_buffs.append((agent.core_passive, 1))
+    if config.additional_ability_stacks and agent.additional_ability is not None:
+        main_buffs.append((agent.additional_ability,
+                           config.additional_ability_stacks))
+    for slots, picks in ((agent.mindscapes, config.mindscapes),
+                         (agent.potentials, config.potentials)):
+        for level_raw, stacks in picks.items():
+            entry = slots.get(int(level_raw))
+            if stacks and entry is not None and entry.buff is not None:
+                main_buffs.append((entry.buff, stacks))
+    for pool, picks in ((agent.team_buffs, config.own_team_buffs),
+                        (agent.riders, config.riders)):
+        by_name = {b.name: b for b in pool}
+        for name, stacks in picks.items():
+            if stacks and name in by_name:
+                main_buffs.append((by_name[name], stacks))
+
+    def main_realtime(input_name: str) -> float:
+        return _realtime_stat_bonus(agent, own_engine, own_rank,
+                                    config.engine_buff_stacks, main_buffs,
+                                    input_name)
+
     if config.core_passive_active:
         if agent.core_passive is None:
             raise CalcError(
                 f"Agent '{agent.name}' has no modeled core passive"
             )
-        apply(agent.core_passive, 1, config.scaling_inputs)
+        apply(agent.core_passive, 1, config.scaling_inputs,
+              realtime_bonus=main_realtime)
 
     if config.additional_ability_stacks:
         ability = agent.additional_ability
@@ -953,7 +1194,7 @@ def _kit_contributions(
         check_stacks(config.additional_ability_stacks, ability.max_stacks,
                      f"Additional ability {ability.name}")
         apply(ability, config.additional_ability_stacks,
-              config.scaling_inputs)
+              config.scaling_inputs, realtime_bonus=main_realtime)
 
     for level_raw, stacks in config.mindscapes.items():
         level = int(level_raw)
@@ -970,7 +1211,8 @@ def _kit_contributions(
         check_stacks(stacks, mindscape.buff.max_stacks,
                      f"Mindscape {level} ({mindscape.name})")
         if stacks:
-            apply(mindscape.buff, stacks, config.scaling_inputs)
+            apply(mindscape.buff, stacks, config.scaling_inputs,
+                  realtime_bonus=main_realtime)
 
     def active_potential(owner: Agent, potentials: dict) -> list:
         """Validate one agent's Potential selection; return its active
@@ -1008,9 +1250,46 @@ def _kit_contributions(
                 chosen.append((level, potential, stacks))
         return chosen
 
-    for level, potential, stacks in active_potential(agent, config.potentials):
+    main_potentials = active_potential(agent, config.potentials)
+    for level, potential, stacks in main_potentials:
         apply(potential.buff, stacks, config.scaling_inputs,
-              owner=f"{agent.potential_name} P{level}: ")
+              owner=f"{agent.potential_name} P{level}: ",
+              realtime_bonus=main_realtime)
+
+    # --- On-field agent's RIDERS: self-only kit parts with their own
+    # toggle (a core's squad-composition clause, a one-hit mindscape /
+    # Potential rider). ``requires`` is checked against the active slots.
+    if config.riders:
+        riders_by_name = {b.name: b for b in agent.riders}
+        active_mindscapes = {int(lv) for lv, s in config.mindscapes.items()
+                             if s}
+        potential_level = max((lv for lv, _, _ in main_potentials), default=0)
+        for name, stacks in config.riders.items():
+            buff = riders_by_name.get(name)
+            if buff is None:
+                raise CalcError(
+                    f"Agent '{agent.name}' has no rider named '{name}'; "
+                    f"options: {sorted(riders_by_name)}"
+                )
+            check_stacks(stacks, buff.max_stacks,
+                         f"{agent.name}: {buff.name}")
+            if not stacks:
+                continue
+            required = buff.requires or {}
+            if ("mindscape" in required
+                    and required["mindscape"] not in active_mindscapes):
+                raise CalcError(
+                    f"Agent '{agent.name}': '{buff.name}' requires Mindscape "
+                    f"{required['mindscape']} - activate M"
+                    f"{required['mindscape']} too"
+                )
+            if potential_level < required.get("potential_min", 0):
+                raise CalcError(
+                    f"Agent '{agent.name}': '{buff.name}' requires Potential "
+                    f"level {required['potential_min']} or higher"
+                )
+            apply(buff, stacks, config.scaling_inputs,
+                  owner=f"{agent.name}: ", realtime_bonus=main_realtime)
 
     # --- On-field agent's equipped-set AUTO 4pc DMG% (effectively-always-on
     # 4pc parts that ramp up in a rotation, e.g. Wuthering Salon's +18% on
@@ -1048,18 +1327,22 @@ def _kit_contributions(
     # member too, so they receive their own engine's squad buffs — e.g.
     # Velina + Joyau Doré's +60 AP at 2 stacks). Off-field supports' squad
     # buffs are handled below.
-    if config.engine_squad_buffs:
-        own_engine_key = (config.engine_key if config.engine_key is not None
-                          else agent.default_engine)
-        if own_engine_key not in engines:
-            raise CalcError(
-                f"Unknown engine '{own_engine_key}'; options: {sorted(engines)}"
-            )
-        own_engine = engines[own_engine_key]
-        own_rank = _resolve_engine_rank(own_engine, config.engine_rank)
-        for name, stacks in config.engine_squad_buffs.items():
-            apply_squad_buff(own_engine, own_rank, name, stacks,
-                             f"{agent.name} (self)")
+    for name, stacks in config.engine_squad_buffs.items():
+        apply_squad_buff(own_engine, own_rank, name, stacks,
+                         f"{agent.name} (self)")
+
+    # --- On-field agent's OWN engine: conditional parts that land in a
+    # kit bracket (Incarcerating Grip's ATK% / Wind RES ignore, Cordis
+    # Germina's Basic/Ult DEF ignore). Routed here so every calculation
+    # and optimizer reading the kit totals gets them; same stack counter
+    # and gates as the per-mode engine parts.
+    for bracket in ("atk_pct", "res_shred", "pen_ratio"):
+        for part in _engine_buff_bonuses(
+                own_engine, config.engine_buff_stacks, dealt_element or "",
+                own_rank, mode=mode, bracket=bracket,
+                skill_tag=hit_tag, counts_as_aftershock=hit_aftershock):
+            totals[bracket] += part["value"]
+            record(f"{part['name']} (R{own_rank})", bracket, part["value"])
 
     # --- On-field agent's OWN team buffs: squad-wide buffs and enemy
     # debuffs cover their owner too (Norma's En-Nah +20% / Tech Divide /
@@ -1137,7 +1420,8 @@ def _kit_contributions(
                         )
             if stacks:
                 apply(buff, stacks, config.scaling_inputs,
-                      owner=f"{agent.name} (self): ")
+                      owner=f"{agent.name} (self): ",
+                      realtime_bonus=main_realtime)
 
     # --- Off-field supports: team buffs + squad set effects ---------------
     if len(config.supports) > 2:
@@ -1155,7 +1439,37 @@ def _kit_contributions(
             )
         seen_supports.add(support.agent_key)
         member = agents[support.agent_key]
+        support_engine_key = (support.engine_key
+                              if support.engine_key is not None
+                              else member.default_engine)
+        if support_engine_key not in engines:
+            raise CalcError(
+                f"Unknown support engine '{support_engine_key}'; "
+                f"options: {sorted(engines)}"
+            )
+        support_engine = engines[support_engine_key]
+        support_rank = _resolve_engine_rank(support_engine,
+                                            support.engine_rank)
         buffs_by_name = {b.name: b for b in member.team_buffs}
+        support_potentials = active_potential(member, support.potentials)
+        # The support's OWN active kit for their real-time inputs — the
+        # ticked team buffs and the WHOLE Potential level (its self parts
+        # raise the support's own stats even though they never leave her).
+        support_buffs: list[tuple[KitBuff, float]] = [
+            (buffs_by_name[name], stacks)
+            for name, stacks in support.buffs.items()
+            if stacks and name in buffs_by_name
+        ] + [(p.buff, stacks) for _, p, stacks in support_potentials]
+
+        def support_realtime(input_name: str, member=member,
+                             support_engine=support_engine,
+                             support_rank=support_rank,
+                             support=support,
+                             support_buffs=support_buffs) -> float:
+            return _realtime_stat_bonus(
+                member, support_engine, support_rank,
+                support.engine_buff_stacks, support_buffs, input_name)
+
         for name, stacks in support.buffs.items():
             buff = buffs_by_name.get(name)
             if buff is None:
@@ -1167,11 +1481,11 @@ def _kit_contributions(
                          f"{member.name}: {buff.name}")
             if stacks:
                 apply(buff, stacks, support.scaling_inputs,
-                      owner=f"{member.name}: ")
+                      owner=f"{member.name}: ",
+                      realtime_bonus=support_realtime)
         # The support's Potential level: only its squad-facing effects
         # leave the support (Koleda's squad DMG, Rina's squad ATK).
-        for level, potential, stacks in active_potential(
-                member, support.potentials):
+        for level, potential, stacks in support_potentials:
             squad = potential.buff.squad_part()
             if squad is None:
                 raise CalcError(
@@ -1181,7 +1495,8 @@ def _kit_contributions(
                     f"is the on-field agent"
                 )
             apply(squad, stacks, support.scaling_inputs,
-                  owner=f"{member.name} {member.potential_name} P{level}: ")
+                  owner=f"{member.name} {member.potential_name} P{level}: ",
+                  realtime_bonus=support_realtime)
         if support.squad_set is not None:
             entry = disc_sets.get(support.squad_set)
             if entry is None or entry.squad_4pc is None:
@@ -1202,15 +1517,7 @@ def _kit_contributions(
 
         # Team-facing engine buffs (support signature engines)
         if support.engine_buffs:
-            engine_key = (support.engine_key if support.engine_key is not None
-                          else member.default_engine)
-            if engine_key not in engines:
-                raise CalcError(
-                    f"Unknown support engine '{engine_key}'; "
-                    f"options: {sorted(engines)}"
-                )
-            support_engine = engines[engine_key]
-            rank = _resolve_engine_rank(support_engine, support.engine_rank)
+            rank = support_rank
             for name, stacks in support.engine_buffs.items():
                 apply_squad_buff(support_engine, rank, name, stacks,
                                  member.name)
@@ -1417,18 +1724,9 @@ def calculate(
     )
     buff_items = kit["items"]
 
-    # Team ATK% buffs join the SAME additive panel bracket as Combat ATK%
-    # (each applies to the unbuffed panel — in-game validation #4,
-    # 2026-07-03); team flat ATK (e.g. Zhao's +1,000) is added after.
-    atk_total = (
-        build.atk_pre_combat
-        * (1.0 + build.combat_atk_pct + kit["atk_pct"])
-        + kit["flat_atk"]
-    )
-
     # --- Multiplier zones (formulas.py, plain numbers only) ---------------
-    base = formulas.base_dmg(config.skill_multiplier, atk_total)
-
+    # The crit totals come first: Severian's Optimal Setup turns the TOTAL
+    # CRIT Rate into flat ATK, so the ATK zone is built after them.
     crit_rate = build.crit_rate + config.external_crit_rate + kit["crit_rate"]
     crit_dmg = build.crit_dmg + config.external_crit_dmg + kit["crit_dmg"]
     engine_crit = engine.passive_crit(rank)
@@ -1471,6 +1769,19 @@ def calculate(
         crit_rate, crit_dmg, consts.crit_rate_cap
     )
 
+    # Team ATK% buffs join the SAME additive panel bracket as Combat ATK%
+    # (each applies to the unbuffed panel — in-game validation #4,
+    # 2026-07-03); team flat ATK (e.g. Zhao's +1,000) is added after, with
+    # the flat ATK scaling on the owner's total CRIT Rate (Severian).
+    scaled_atk, atk_items = _resolve_deferred_flat_atk(kit, crit_rate)
+    buff_items.extend(atk_items)
+    atk_total = (
+        build.atk_pre_combat
+        * (1.0 + build.combat_atk_pct + kit["atk_pct"])
+        + kit["flat_atk"] + scaled_atk
+    )
+    base = formulas.base_dmg(config.skill_multiplier, atk_total)
+
     bonus_entries = build.dmg_bonuses + list(config.external_dmg_bonuses)
     for passive_value in _engine_passive_bonuses(engine, attr, rank):
         bonus_entries.append(passive_value)
@@ -1493,6 +1804,7 @@ def calculate(
         config.discs, disc_sets, config.skill_tag,
         valid_tags=frozenset(consts.skill_tags),
         counts_as_aftershock=config.counts_as_aftershock,
+        toggles=config.set_toggles,
     )
     bonus_entries.extend(tagged.values())
     bonus = formulas.dmg_bonus_mult(bonus_entries)
@@ -1822,6 +2134,13 @@ def calculate_anomaly(
         agent, config, agents, disc_sets, engines,
         mode=kind, dealt_element=dealt_element,
     )
+    # Duration extensions (Phoenix M2: Burn lasts 2s longer = 4 more
+    # ticks) add procs to a plain anomaly's full duration — never to an
+    # Abloom / Luminize instance or a burst.
+    if (kind == "anomaly" and not config.abloom
+            and config.anomaly_mult_override is None
+            and luminize_mult is None and kit["anomaly_hits_add"]):
+        hits += int(round(kit["anomaly_hits_add"]))
     if kind == "vortex":
         per_proc_mult = formulas.burst_conversion_mult(
             rule.mult, rule.time_mult, rule.window,
@@ -2244,25 +2563,8 @@ def calculate_sheer(
     )
     buff_items = kit["items"]
 
-    # ATK: same bracket structure as the direct-hit path (validation #4).
-    atk_total = (
-        build.atk_pre_combat
-        * (1.0 + build.combat_atk_pct + kit["atk_pct"])
-        + kit["flat_atk"]
-    )
-    # HP: team HP% buffs (Lucia, Dreamlit Hearth) multiply the finished
-    # panel — the combat HP bracket (datamine: final hp = initial ×
-    # (1 + combat hp_)).
-    hp_total = build.hp * (1.0 + kit["hp_pct"])
-
-    # --- Sheer Force (the Rupture base stat) ------------------------------
-    flat_sf = config.sheer_force_flat + kit["sheer_force"]
-    sf_atk_part = atk_total * consts.sheer_force_atk_conversion
-    sf_hp_part = hp_total * agent.sheer_force_hp_conversion
-    sf = sf_atk_part + sf_hp_part + flat_sf
-
-    base = formulas.base_dmg(config.skill_multiplier, sf)
-
+    # Crit totals first — a flat ATK scaling on the TOTAL CRIT Rate
+    # (Severian's Optimal Setup) feeds the ATK that Sheer Force reads.
     crit_rate = build.crit_rate + config.external_crit_rate + kit["crit_rate"]
     crit_dmg = build.crit_dmg + config.external_crit_dmg + kit["crit_dmg"]
     engine_crit = engine.passive_crit(rank)
@@ -2304,6 +2606,27 @@ def calculate_sheer(
         crit_rate, crit_dmg, consts.crit_rate_cap
     )
 
+    # ATK: same bracket structure as the direct-hit path (validation #4).
+    scaled_atk, atk_items = _resolve_deferred_flat_atk(kit, crit_rate)
+    buff_items.extend(atk_items)
+    atk_total = (
+        build.atk_pre_combat
+        * (1.0 + build.combat_atk_pct + kit["atk_pct"])
+        + kit["flat_atk"] + scaled_atk
+    )
+    # HP: team HP% buffs (Lucia, Dreamlit Hearth) multiply the finished
+    # panel — the combat HP bracket (datamine: final hp = initial ×
+    # (1 + combat hp_)).
+    hp_total = build.hp * (1.0 + kit["hp_pct"])
+
+    # --- Sheer Force (the Rupture base stat) ------------------------------
+    flat_sf = config.sheer_force_flat + kit["sheer_force"]
+    sf_atk_part = atk_total * consts.sheer_force_atk_conversion
+    sf_hp_part = hp_total * agent.sheer_force_hp_conversion
+    sf = sf_atk_part + sf_hp_part + flat_sf
+
+    base = formulas.base_dmg(config.skill_multiplier, sf)
+
     bonus_entries = build.dmg_bonuses + list(config.external_dmg_bonuses)
     for passive_value in _engine_passive_bonuses(engine, attr, rank):
         bonus_entries.append(passive_value)
@@ -2324,6 +2647,7 @@ def calculate_sheer(
         config.discs, disc_sets, config.skill_tag,
         valid_tags=frozenset(consts.skill_tags),
         counts_as_aftershock=config.counts_as_aftershock,
+        toggles=config.set_toggles,
     )
     bonus_entries.extend(tagged.values())
     bonus = formulas.dmg_bonus_mult(bonus_entries)

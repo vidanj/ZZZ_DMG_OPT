@@ -261,16 +261,44 @@ class SetBonus4pc:
     OPTIMIZER credits it at 0 stacks when no squad member has that
     element; the calculation itself still uses the entered stacks.
     ``None`` = no team requirement.
+
+    ``also``: extra stats granted PER STACK beside ``stat`` (Shadow
+    Harmony: +4% CRIT Rate AND +4% ATK per stack).
+
+    ``base``: UNCONDITIONAL stats of the 4-piece, applied whenever 4
+    pieces are worn, whatever the stack count (Chaotic Metal's CRIT DMG
+    +20% before its Corruption stacks). A 4-piece may be base-only
+    (``stat`` None, ``max_stacks`` 0 — Chaos Jazz's Fire/Electric DMG).
+    ``base_min_stat`` ``(stat, threshold)`` gates the base on the
+    wearer's panel stat (Branch & Blade Song: CRIT DMG +30% while Anomaly
+    Mastery >= 115) — resolved by ``agent.aggregate_build`` once that
+    stat is final, see :func:`set_gated_4pc_stats`.
+
+    ``attributes``: the whole wearer-side 4pc applies only to damage
+    DEALT as one of these elements (Chaos Jazz: Fire / Electric DMG).
     """
 
-    stat: str
-    per_stack: float
-    max_stacks: int
+    stat: str | None = None
+    per_stack: float = 0.0
+    max_stacks: int = 0
     auto: bool = False
     at_max_extra_stat: str | None = None
     at_max_extra_value: float = 0.0
     needs_squad_element: str | None = None
     note: str = ""
+    also: dict[str, float] = field(default_factory=dict)
+    base: dict[str, float] = field(default_factory=dict)
+    base_min_stat: tuple[str, float] | None = None
+    attributes: tuple[str, ...] | None = None
+
+
+#: Wearer stats a 4pc ``base_min_stat`` may gate on — the ones
+#: ``aggregate_build`` finishes before the gated part is folded in.
+SET_GATE_STATS = ("Anomaly Mastery",)
+
+#: Stats a GATED 4pc base may grant: folded after the gate stat is final,
+#: so they must not feed back into it (CRIT DMG never changes AM).
+SET_GATED_BASE_STATS = ("CRIT DMG",)
 
 
 @dataclass(frozen=True)
@@ -282,11 +310,17 @@ class SetDmgBonus:
     +20% applies only to hits tagged ``"ultimate"``. Tag keys are defined
     in ``constants.json`` (``skill_tags``) and validated at calculation
     time so a typo here can't silently never-apply.
+
+    ``toggle`` (4-piece only) names a WINDOWED condition the part also
+    needs — Polar Metal's "+20% more for 12s after a squad Freeze /
+    Shatter". It applies only while ``CalcConfig.set_toggles[set][name]``
+    is on (a checkbox, default off); parts sharing a name share it.
     """
 
     skill_tag: str
     value: float
     note: str = ""
+    toggle: str | None = None
 
 
 #: Effect kinds a squad-facing 4-piece may grant the on-field agent.
@@ -420,20 +454,76 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                     f"'Attribute DMG%' 2pc bonus"
                 )
 
+        def stat_map(raw, field_name: str) -> dict[str, float]:
+            """Validate an optional ``{stat: positive number}`` object."""
+            if raw is None:
+                return {}
+            if (not isinstance(raw, dict) or not raw or any(
+                    not isinstance(s, str) or not s.strip()
+                    or isinstance(v, bool) or not isinstance(v, (int, float))
+                    or v <= 0 for s, v in raw.items())):
+                raise DiscError(
+                    f"Set '{key}': 4pc '{field_name}' must be a non-empty "
+                    f"object of stat -> positive number"
+                )
+            return {s: float(v) for s, v in raw.items()}
+
         bonus_4pc = None
         raw_4pc = entry.get("bonus_4pc")
         if raw_4pc is not None:
             if not isinstance(raw_4pc, dict):
                 raise DiscError(f"Set '{key}': 'bonus_4pc' must be an object")
+            base = stat_map(raw_4pc.get("base"), "base")
+            also = stat_map(raw_4pc.get("also"), "also")
             stat = raw_4pc.get("stat")
-            per_stack = raw_4pc.get("per_stack")
-            max_stacks = raw_4pc.get("max_stacks")
-            if not isinstance(stat, str) or not stat.strip():
-                raise DiscError(f"Set '{key}': 4pc bonus needs a 'stat' name")
-            if isinstance(per_stack, bool) or not isinstance(per_stack, (int, float)) or per_stack <= 0:
-                raise DiscError(f"Set '{key}': 4pc 'per_stack' must be positive")
-            if isinstance(max_stacks, bool) or not isinstance(max_stacks, int) or max_stacks < 1:
-                raise DiscError(f"Set '{key}': 4pc 'max_stacks' must be an integer >= 1")
+            per_stack = raw_4pc.get("per_stack", 0.0)
+            max_stacks = raw_4pc.get("max_stacks", 0)
+            # A stacked part (stat / per_stack / max_stacks) and/or an
+            # unconditional base; a base-only 4pc has no stack control.
+            if stat is not None or not base:
+                if not isinstance(stat, str) or not stat.strip():
+                    raise DiscError(f"Set '{key}': 4pc bonus needs a 'stat' name")
+                if isinstance(per_stack, bool) or not isinstance(per_stack, (int, float)) or per_stack <= 0:
+                    raise DiscError(f"Set '{key}': 4pc 'per_stack' must be positive")
+                if isinstance(max_stacks, bool) or not isinstance(max_stacks, int) or max_stacks < 1:
+                    raise DiscError(f"Set '{key}': 4pc 'max_stacks' must be an integer >= 1")
+            elif also or raw_4pc.get("at_max_extra") is not None:
+                raise DiscError(
+                    f"Set '{key}': 4pc 'also' / 'at_max_extra' need a stacked "
+                    f"'stat' part"
+                )
+            gate = raw_4pc.get("base_min_stat")
+            if gate is not None:
+                if (not isinstance(gate, dict) or len(gate) != 1
+                        or not set(gate) <= set(SET_GATE_STATS)
+                        or any(isinstance(v, bool)
+                               or not isinstance(v, (int, float)) or v <= 0
+                               for v in gate.values())):
+                    raise DiscError(
+                        f"Set '{key}': 4pc 'base_min_stat' must be one "
+                        f"{{stat: threshold}} with stat in {list(SET_GATE_STATS)}"
+                    )
+                if not base or not set(base) <= set(SET_GATED_BASE_STATS):
+                    raise DiscError(
+                        f"Set '{key}': a gated 4pc 'base' may only grant "
+                        f"{list(SET_GATED_BASE_STATS)}"
+                    )
+                ((gate_stat, gate_value),) = gate.items()
+                gate = (gate_stat, float(gate_value))
+            attributes = raw_4pc.get("attributes")
+            if attributes is not None:
+                if (not isinstance(attributes, list) or not attributes
+                        or any(a not in ELEMENTS for a in attributes)):
+                    raise DiscError(
+                        f"Set '{key}': 4pc 'attributes' must be a non-empty "
+                        f"list from {list(ELEMENTS)}"
+                    )
+                if gate is not None:
+                    raise DiscError(
+                        f"Set '{key}': a stat-gated 4pc 'base' cannot also "
+                        f"be attribute-gated"
+                    )
+                attributes = tuple(attributes)
             extra_stat = None
             extra_value = 0.0
             raw_extra = raw_4pc.get("at_max_extra")
@@ -470,6 +560,10 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                 at_max_extra_value=float(extra_value or 0.0),
                 needs_squad_element=squad_element,
                 note=str(raw_4pc.get("note", "")),
+                also=also,
+                base=base,
+                base_min_stat=gate,
+                attributes=attributes,
             )
 
         def typed_dmg_bonuses(field: str) -> list[SetDmgBonus]:
@@ -493,10 +587,19 @@ def load_disc_sets(path: Path = SETS_FILE) -> dict[str, DiscSet]:
                     raise DiscError(
                         f"Set '{key}': typed DMG bonus 'value' must be positive"
                     )
+                toggle = item.get("toggle")
+                if toggle is not None and (
+                        field != "bonus_4pc_dmg" or not isinstance(toggle, str)
+                        or not toggle.strip()):
+                    raise DiscError(
+                        f"Set '{key}': a typed DMG bonus 'toggle' must be a "
+                        f"name, and only 4-piece bonuses take one"
+                    )
                 parsed.append(SetDmgBonus(
                     skill_tag=tag,
                     value=float(value),
                     note=str(item.get("note", "")),
+                    toggle=toggle,
                 ))
             return parsed
 
@@ -601,25 +704,70 @@ def set_4pc_max_stacks(entry: DiscSet) -> int:
     return 0
 
 
-def set_4pc_stats(entry: DiscSet, stacks: int) -> dict[str, float]:
-    """Stat contributions of one set's wearer-side 4pc at ``stacks``."""
-    if not stacks:
-        return {}
+def set_4pc_stats(entry: DiscSet, stacks: int,
+                  dealt_element: str | None = None) -> dict[str, float]:
+    """Stat contributions of one set's wearer-side 4pc at ``stacks``.
+
+    Includes the UNCONDITIONAL ``base`` (at any stack count) — except a
+    stat-gated base (Branch & Blade Song), which :func:`set_gated_4pc_stats`
+    adds once the wearer's stat is known. An ``attributes``-gated 4pc
+    (Chaos Jazz) gives nothing to damage dealt as another element;
+    ``dealt_element=None`` assumes it matches.
+    """
     if entry.bonus_4pc is not None:
         b = entry.bonus_4pc
-        stats = {b.stat: b.per_stack * stacks}
-        # Extra part granted only at MAX stacks (Yunkui Tales: "at 3
-        # stacks, Sheer DMG +10%" — calibrated 2026-07-10).
-        if b.at_max_extra_stat is not None and stacks == b.max_stacks:
-            stats[b.at_max_extra_stat] = (
-                stats.get(b.at_max_extra_stat, 0.0) + b.at_max_extra_value
-            )
+        if (b.attributes is not None and dealt_element is not None
+                and dealt_element not in b.attributes):
+            return {}
+        stats: dict[str, float] = {}
+        if b.base_min_stat is None:
+            stats.update(b.base)
+        if stacks and b.stat is not None:
+            for stat, value in ((b.stat, b.per_stack), *b.also.items()):
+                stats[stat] = stats.get(stat, 0.0) + value * stacks
+            # Extra part granted only at MAX stacks (Yunkui Tales: "at 3
+            # stacks, Sheer DMG +10%" — calibrated 2026-07-10).
+            if b.at_max_extra_stat is not None and stacks == b.max_stacks:
+                stats[b.at_max_extra_stat] = (
+                    stats.get(b.at_max_extra_stat, 0.0) + b.at_max_extra_value
+                )
         return stats
-    if (entry.squad_4pc is not None
+    if (stacks and entry.squad_4pc is not None
             and entry.squad_4pc.kind in _SQUAD_KIND_STAT):
         return {_SQUAD_KIND_STAT[entry.squad_4pc.kind]:
                 entry.squad_4pc.value * stacks}
     return {}
+
+
+def set_gated_4pc_stats(
+    discs: list[Disc] | tuple[Disc, ...], sets: dict[str, DiscSet],
+    wearer: dict[str, float],
+) -> dict[str, float]:
+    """The stat-gated 4pc bases a build earns (Branch & Blade Song: CRIT
+    DMG +30% while Anomaly Mastery >= 115), given the wearer's finished
+    panel ``wearer`` stats. Unknown sets were already rejected by
+    :func:`set_bonus_stats`."""
+    counts: dict[str, int] = {}
+    for disc in discs:
+        if disc.disc_set is not None:
+            counts[disc.disc_set] = counts.get(disc.disc_set, 0) + 1
+    bonuses: dict[str, float] = {}
+    for key, count in counts.items():
+        b = sets[key].bonus_4pc
+        if count < 4 or b is None or b.base_min_stat is None:
+            continue
+        stat, threshold = b.base_min_stat
+        if wearer.get(stat, 0.0) >= threshold - 1e-9:
+            for name, value in b.base.items():
+                bonuses[name] = bonuses.get(name, 0.0) + value
+    return bonuses
+
+
+def set_toggle_names(entry: DiscSet) -> tuple[str, ...]:
+    """The windowed 4pc conditions a set exposes as checkboxes
+    (``SetDmgBonus.toggle``), in data order, without repeats."""
+    return tuple(dict.fromkeys(
+        b.toggle for b in entry.bonus_4pc_dmg if b.toggle is not None))
 
 
 def set_bonus_stats(
@@ -641,10 +789,13 @@ def set_bonus_stats(
       assume-it-matches behavior for callers that don't know the agent.
     - 4+ pieces -> additionally, its modeled 4-piece stacking bonus applies
       at ``set_stacks[key]`` active stacks (default 0 — 4-piece effects are
-      combat-conditional and OFF unless the user says they're up). A set
+      combat-conditional and OFF unless the user says they're up), plus
+      its unconditional ``base`` at any stack count. A set
       whose modeled 4pc is squad-facing counts for its WEARER too (the
       wearer is a squad member; e.g. King of the Summit worn by the
       on-field stunner) when the effect kind maps to a build stat.
+      ``set_stacks=None`` means OUT OF COMBAT (the character panel): no
+      4-piece part at all.
     - 4 pieces always include the 2-piece bonus as well.
 
     Args:
@@ -658,6 +809,7 @@ def set_bonus_stats(
         DiscError: unknown set key on a disc; stacks for a set without 4
             equipped pieces (or without a modeled 4pc); stacks out of range.
     """
+    in_combat = set_stacks is not None
     set_stacks = set_stacks or {}
 
     counts: dict[str, int] = {}
@@ -697,9 +849,9 @@ def set_bonus_stats(
                 if off_element and stat == "Attribute DMG%":
                     continue     # a different element's DMG% — worth 0 here
                 bonuses[stat] = bonuses.get(stat, 0.0) + value
-        if count >= 4:
+        if count >= 4 and in_combat:
             for stat, value in set_4pc_stats(
-                    entry, set_stacks.get(key, 0)).items():
+                    entry, set_stacks.get(key, 0), dealt_element).items():
                 bonuses[stat] = bonuses.get(stat, 0.0) + value
     return bonuses
 
@@ -710,12 +862,14 @@ def set_tagged_dmg_bonuses(
     skill_tag: str | None,
     valid_tags: set[str] | frozenset[str] | None = None,
     counts_as_aftershock: bool = False,
+    toggles: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, float]:
     """Skill-type-conditional DMG% granted by equipped sets.
 
     Both tiers contribute: a set with >= 2 equipped pieces grants its
     ``bonus_2pc_dmg`` entries (Shadow Harmony's Aftershock & Dash +15%),
-    and >= 4 pieces additionally grants ``bonus_4pc_dmg``.
+    and >= 4 pieces additionally grants ``bonus_4pc_dmg`` — a part with a
+    ``toggle`` only while ``toggles[set][toggle]`` is on.
 
     Returns:
         set key -> total DMG% (fraction) for every equipped set whose
@@ -755,6 +909,9 @@ def set_tagged_dmg_bonuses(
                     f"Set '{key}': typed DMG bonus names unknown skill tag "
                     f"'{bonus.skill_tag}'; valid tags: {sorted(valid_tags)}"
                 )
+            if (bonus.toggle is not None
+                    and not (toggles or {}).get(key, {}).get(bonus.toggle)):
+                continue         # windowed part, its window is off
             if ((skill_tag is not None and bonus.skill_tag == skill_tag)
                     or (counts_as_aftershock
                         and bonus.skill_tag == "aftershock")):

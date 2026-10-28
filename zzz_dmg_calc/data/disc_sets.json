@@ -4,7 +4,7 @@
     "sources": "DOCS/sources.md (Phase 2 section, 'Disc set bonuses')",
     "verified": "2026-07-02",
     "game_patch": "3.0",
-    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). 'bonus_4pc_auto_anomaly_dmg' is the same idea for the separate Anomaly/Disorder Buff Multiplier bracket instead of the DMG% one (Feathered Fate's Attribute Anomaly DMG +15%), applied in anomaly modes only; 'bonus_4pc_auto_attribute' restricts THAT part to a wearer of the named attribute (Feathered Fate: 'lumiflux'), so the same set gives a non-Lumiflux wearer only its AP halves. Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter). TEAM-ELEMENT GATE (2026-10-20): 'needs_squad_element' inside a bonus_4pc names the element whose anomaly triggers it (Thunder Metal = electric / Shock, Fanged Metal = physical / Assault, Inferno Metal = fire / Burn, Chaotic Metal = ether / Corruption). The OPTIMIZER credits that 4pc at 0 stacks when no squad member (main agent - its dealt element - or an entered support) has the element; the calculator itself is unchanged (stacks stay the user's call). It gates only the stacking bonus_4pc part."
+    "conventions": "Stat names and fractions match discs.json, plus 'Combat ATK%': an in-combat ATK buff that MULTIPLIES final (panel) ATK instead of scaling base ATK - measured in-game 2026-07-02 (see DOCS/sources.md). bonus_2pc is unconditional (shows on the in-game stat sheet). bonus_4pc, when present, is a stacking conditional stat: total = per_stack x active stacks (0..max_stacks), asked at runtime; 4 pieces always include the 2-piece bonus too. bonus_4pc_dmg is a list of skill-type-conditional DMG% bonuses ({skill_tag, value}) applied automatically when the calculated hit's damage type matches - tag keys come from constants.json 'skill_tags'. RAMP-UP convention (2026-07-04): a 4pc/squad_4pc effect with 'auto': true defaults to max in the front end (the user needn't toggle it) because it ramps up early and holds through a rotation - the anomaly range's unbuffed floor (70-100%) covers the ramp/uptime; still overridable; situational effects leave auto off. 'bonus_4pc_auto_dmg' is an always-assumed-on general DMG% part of the 4pc (e.g. Wuthering Salon's +18% on Windswept), auto-applied to the ON-FIELD wearer via the dilutable kit-DMG% path (so the floor covers its ramp). 'bonus_4pc_auto_anomaly_dmg' is the same idea for the separate Anomaly/Disorder Buff Multiplier bracket instead of the DMG% one (Feathered Fate's Attribute Anomaly DMG +15%), applied in anomaly modes only; 'bonus_4pc_auto_attribute' restricts THAT part to a wearer of the named attribute (Feathered Fate: 'lumiflux'), so the same set gives a non-Lumiflux wearer only its AP halves. Reserve manual 'Extra %' inputs for EXTERNAL buffs only (season / boss-encounter). TEAM-ELEMENT GATE (2026-10-20): 'needs_squad_element' inside a bonus_4pc names the element whose anomaly triggers it (Thunder Metal = electric / Shock, Fanged Metal = physical / Assault, Inferno Metal = fire / Burn, Chaotic Metal = ether / Corruption). The OPTIMIZER credits that 4pc at 0 stacks when no squad member (main agent - its dealt element - or an entered support) has the element; the calculator itself is unchanged (stacks stay the user's call). It gates only the stacking bonus_4pc part. AUTO-APPLY SWEEP (2026-10-24 - set effects count automatically, nothing to enter by hand): inside bonus_4pc, 'base' is the UNCONDITIONAL part applied at any stack count (Chaotic Metal CRIT DMG +20%; a base-only 4pc has no stack control - Chaos Jazz), 'also' adds more stats PER STACK (Shadow Harmony ATK% beside CRIT Rate), 'attributes' limits the whole wearer 4pc to damage DEALT as those elements (Chaos Jazz Fire/Electric), and 'base_min_stat' gates the base on the wearer's panel stat (Branch & Blade Song: AM >= 115 - checked automatically, the optimizer included). A bonus_4pc_dmg entry with 'toggle' is a WINDOWED part shown as a checkbox (default off) and applied only while ticked (Polar Metal's Freeze/Shatter window, Chaos Jazz's off-field EX/Assist window). bonus_2pc_dmg holds skill-gated 2-piece DMG% (Shadow Harmony, Dawn's Bloom). The 4-piece never shows on the out-of-combat panel."
   },
   "sets": {
     "WOODPECKER_ELECTRO": {
@@ -20,7 +20,17 @@
     "BRANCH_BLADE_SONG": {
       "name": "Branch & Blade Song",
       "bonus_2pc": { "CRIT DMG": 0.16 },
-      "notes": "4-piece exists in-game (CRIT DMG +30% while Anomaly Mastery >= 115; CRIT Rate +12% on squad Freeze/Shatter) but is not modeled yet — only the 2-piece is used for now."
+      "bonus_4pc": {
+        "stat": "CRIT Rate",
+        "per_stack": 0.12,
+        "max_stacks": 1,
+        "auto": true,
+        "needs_squad_element": "ice",
+        "base": { "CRIT DMG": 0.30 },
+        "base_min_stat": { "Anomaly Mastery": 115 },
+        "note": "(1) CRIT DMG +30% while the wearer's Anomaly Mastery >= 115 - checked automatically against the build's panel AM (no toggle; the optimizer credits it only to builds that reach 115). (2) When ANY squad member applies Freeze or triggers Shatter: the wearer's CRIT Rate +12% for 15s - RAMP-UP in an Ice team, auto-applied; Freeze is the Ice anomaly, so it needs an Ice squad member (the optimizer won't credit it otherwise)."
+      },
+      "notes": "Ice / anomaly-mastery CRIT set. 4pc modeled 2026-10-24 (nanoka 3.3 equipment 32700: 'When Anomaly Mastery exceeds or equals 115 points, the equipper's CRIT DMG increases by 30%. When any squad member applies Freeze or triggers the Shatter effect on an enemy, the equipper's CRIT Rate increases by 12%, lasting 15s.'). The AM gate reads the panel AM (combat AM bonuses such as Metanukimorphosis' are not added - only Yuzuha wears that engine)."
     },
     "HORMONE_PUNK": {
       "name": "Hormone Punk",
@@ -141,12 +151,31 @@
       "name": "Chaos Jazz",
       "bonus_2pc": { "Anomaly Proficiency": 30 },
       "bonus_4pc": {
-        "stat": "Attribute DMG%",
-        "per_stack": 0.15,
-        "max_stacks": 1,
-        "note": "Fire DMG and Electric DMG +15%, always active - answer yes on Fire/Electric agents (Evelyn, Yanagi), no on anyone else (the schema's stats aren't element-gated; assume-it-matches)."
+        "base": { "Attribute DMG%": 0.15 },
+        "attributes": ["fire", "electric"],
+        "note": "Fire DMG and Electric DMG +15%, always active - applied automatically, and only to damage DEALT as Fire or Electric (attribute-gated since 2026-10-24; it used to need a manual yes/no)."
       },
-      "notes": "Fire/Electric anomaly set (added 2026-07-04, zenless-optimizer datamine). The 4pc's second part - off-field EX Special and Assist Attack DMG +20% (persisting 5s after switch-in, once per 7.5s) - is a separate skill-gated conditional the single-4pc-slot schema can't hold: enter 20 as external DMG% on qualifying hits."
+      "bonus_4pc_dmg": [
+        {
+          "skill_tag": "ex_special",
+          "value": 0.20,
+          "toggle": "Off-field EX / Assist window",
+          "note": "While the wearer is OFF-field (and for 5s after switching in, once per 7.5s): EX Special Attack DMG +20%."
+        },
+        {
+          "skill_tag": "quick_assist",
+          "value": 0.20,
+          "toggle": "Off-field EX / Assist window",
+          "note": "Same window: Assist Attack DMG +20% (Quick Assist)."
+        },
+        {
+          "skill_tag": "assist_followup",
+          "value": 0.20,
+          "toggle": "Off-field EX / Assist window",
+          "note": "Same window: Assist Attack DMG +20% (Assist Follow-Up)."
+        }
+      ],
+      "notes": "Fire/Electric anomaly set (added 2026-07-04, zenless-optimizer datamine; nanoka 3.3 equipment 31800). The 4pc's second part - off-field EX Special and Assist Attack DMG +20% (persisting 5s after switch-in, once per 7.5s) - is the 'Off-field EX / Assist window' toggle (since 2026-10-24): tick it for an off-field / just-switched-in EX or Assist hit."
     },
     "THUNDER_METAL": {
       "name": "Thunder Metal",
@@ -219,12 +248,19 @@
     },
     "DAWNS_BLOOM": {
       "name": "Dawn's Bloom",
-      "bonus_2pc": { "Basic Attack DMG%": 0.15 },
+      "bonus_2pc": {},
+      "bonus_2pc_dmg": [
+        {
+          "skill_tag": "basic",
+          "value": 0.15,
+          "note": "2pc 'Basic Attack DMG +15%' - applied from 2 pieces up (skill-gated 2pc slot, since 2026-10-24)."
+        }
+      ],
       "bonus_4pc_dmg": [
         {
           "skill_tag": "basic",
-          "value": 0.35,
-          "note": "Basic Attack DMG +20% (4pc, unconditional) PLUS the 2pc's +15% folded in - the schema's 2pc stats can't be skill-gated, so the full-set total lives here."
+          "value": 0.20,
+          "note": "Basic Attack DMG +20% (4pc, unconditional) - on top of the 2pc's +15%."
         },
         {
           "skill_tag": "basic",
@@ -232,7 +268,7 @@
           "note": "ATTACK-character part: using an EX Special / Ultimate further raises Basic Attack DMG by 20% for 25s (refreshing). RAMP-UP, auto-applied on tag match - only equip on Attack characters (assume-it-matches)."
         }
       ],
-      "notes": "Basic Attack set (added 2026-07-14, zenless-optimizer datamine). The 2pc 'Basic Attack DMG +15%' is skill-gated, which bonus_2pc can't express: the stat name here is tracked-only (lands in 'other', no damage effect) and the 15% is instead folded into the 4pc's basic-tag bonus. Running 2 PIECES ONLY: enter 15 as external DMG% on Basic Attack hits."
+      "notes": "Basic Attack set (added 2026-07-14, zenless-optimizer datamine). The 2pc 'Basic Attack DMG +15%' lives in bonus_2pc_dmg since 2026-10-24 (it used to be folded into the 4pc's +35%, which left a 2-piece Dawn's Bloom worth nothing): 2 pieces = +15% Basic, 4 pieces = +35%, plus the Attack-character +20% ramp."
     },
     "NOTES_FROM_THE_CHAINED": {
       "name": "Notes From the Chained",
@@ -245,7 +281,9 @@
         "auto": true,
         "note": "Triggering Abloom grants +48 Anomaly Proficiency for 30s (refreshing). RAMP-UP in an Abloom rotation - auto-applied."
       },
-      "notes": "Ice Abloom anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's second part - triggering Freeze grants All-Attribute Anomaly DMG and Disorder DMG +16% for 30s (refreshing) - is an anomaly-only bracket the single-4pc-slot schema can't hold: enter 16 as external DMG% on anomaly/Disorder calcs while active (Chaos Jazz convention)."
+      "bonus_4pc_auto_anomaly_dmg": 0.16,
+      "bonus_4pc_auto_attribute": "ice",
+      "notes": "Ice Abloom anomaly set (added 2026-07-14, zenless-optimizer datamine; nanoka 3.3 equipment 33800). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's second part - when the EQUIPPER triggers Freeze, their All-Attribute Anomaly DMG and Disorder DMG +16% for 30s (refreshing) - is auto-applied since 2026-10-24 in the Anomaly/Disorder Buff bracket (anomaly modes), for an ICE wearer only (Freeze is the Ice anomaly they must apply themselves). RAMP-UP in an Ice anomaly loop."
     },
     "CHAOTIC_METAL": {
       "name": "Chaotic Metal",
@@ -256,9 +294,9 @@
         "per_stack": 0.055,
         "max_stacks": 6,
         "auto": true,
-        "at_max_extra": { "stat": "CRIT DMG", "value": 0.20 },
+        "base": { "CRIT DMG": 0.20 },
         "needs_squad_element": "ether",
-        "note": "Squad Corruption DMG triggers grant +5.5% CRIT DMG per stack (max 6) for 8s (refreshing). The 4pc's UNCONDITIONAL base CRIT DMG +20% is carried as at_max_extra: with auto defaulting to max stacks the full 53% applies; when overriding to partial stacks the schema drops the base (it's tied to max) - add the 20 manually there. RAMP-UP - Corruption ticks hold max in an Ether anomaly team. Corruption is the Ether anomaly: needs an Ether squad member (main or support) - the optimizer won't credit it otherwise, and since the base +20% rides at_max_extra it is not credited either (accepted 2026-10-20: the set is never worth wearing off an Ether team)."
+        "note": "The wearer's CRIT DMG +20%, UNCONDITIONAL (the 'base', applied at any stack count since 2026-10-24 - partial stacks are exact now); squad Corruption DMG triggers add +5.5% per stack (max 6) for 8s (refreshing): 53% at full stacks. RAMP-UP - Corruption ticks hold max in an Ether anomaly team. Corruption is the Ether anomaly: the stacks need an Ether squad member (main or support) - the optimizer won't credit them otherwise, but it does credit the +20% base."
       },
       "notes": "Ether anomaly set (added 2026-07-14, zenless-optimizer datamine). 2pc is ETHER DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. RAMP-UP: Corruption ticks keep stacks near max in an Ether anomaly team."
     },
@@ -290,9 +328,21 @@
           "skill_tag": "dash",
           "value": 0.20,
           "note": "Dash Attack DMG +20%, unconditional."
+        },
+        {
+          "skill_tag": "basic",
+          "value": 0.20,
+          "toggle": "Freeze/Shatter window",
+          "note": "For 12s after ANY squad member inflicts Freeze or Shatter: Basic Attack DMG +20% more."
+        },
+        {
+          "skill_tag": "dash",
+          "value": 0.20,
+          "toggle": "Freeze/Shatter window",
+          "note": "Same window: Dash Attack DMG +20% more."
         }
       ],
-      "notes": "Ice attack set (added 2026-07-14, zenless-optimizer datamine). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's conditional part - squad Freeze/Shatter raises the Basic/Dash bonus by an ADDITIONAL 20% for 12s - is windowed (not ramp-up-stable) and bonus_4pc_dmg has no stack toggle: enter 20 as external DMG% on Basic/Dash hits inside the window."
+      "notes": "Ice attack set (added 2026-07-14, zenless-optimizer datamine; nanoka 3.3 equipment 32500). 2pc is ICE DMG +10% - ELEMENT-GATED via 'bonus_2pc_attribute' (2026-08-01): it is credited only when the damage is DEALT as that element (Attribute Mutation included), so wearing it off-element is worth 0 instead of a phantom +10%. The 4pc's windowed part - squad Freeze/Shatter raises the Basic/Dash bonus by an ADDITIONAL 20% for 12s - is the 'Freeze/Shatter window' toggle (since 2026-10-24): tick it for Basic/Dash hits inside the window."
     },
     "SHADOW_HARMONY": {
       "name": "Shadow Harmony",
@@ -314,8 +364,8 @@
         "per_stack": 0.04,
         "max_stacks": 3,
         "auto": true,
-        "at_max_extra": { "stat": "Combat ATK%", "value": 0.12 },
-        "note": "Aftershock/Dash hits matching the wearer's attribute grant a stack (max 3, 15s, refreshing; once per skill use): +4% CRIT Rate each. The paired +4% ATK per stack has no second per-stack slot - carried as at_max_extra Combat ATK% 12% (full ATK part at max only; at partial stacks add 4 x stacks manually). Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured. RAMP-UP for aftershock/dash agents - auto-applied."
+        "also": { "Combat ATK%": 0.04 },
+        "note": "Aftershock/Dash hits matching the wearer's attribute grant a stack (max 3, 15s, refreshing; once per skill use): +4% CRIT Rate AND +4% ATK each (both per stack since 2026-10-24 - partial stacks are exact now). Combat ATK% (panel-multiplying) by analogy with Woodpecker/Puffer - not measured. RAMP-UP for aftershock/dash agents - auto-applied."
       },
       "notes": "Aftershock/Dash set (added 2026-07-14, zenless-optimizer datamine). The 2pc 'Aftershock & Dash Attack DMG +15%' is skill-gated, so it lives in bonus_2pc_dmg (added 2026-08-02) and is applied automatically from 2 pieces up - do NOT also enter 15 as external DMG% (that double-counts). Before 2026-08-02 the Aftershock half was unmodeled and the Dash half sat in bonus_4pc_dmg, wrongly needing 4 pieces. CONFIRMED in-game 2026-08-02 (Anby S calibration)."
     },

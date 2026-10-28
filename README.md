@@ -19,13 +19,45 @@ let the optimizer search your saved discs for a better build.
 
 ## Recent additions (patch 3.3)
 
+- **Banyue** (Fire Rupture) and his signature **Wrathful Vajra**, plus
+  **Pan Yinhu** (Physical Defense, a Rupture support) and his signature
+  **Tremor Trigram Vessel**. Banyue runs in Sheer mode like Yixuan and
+  Starlight Billy (Max HP feeds his Sheer Force). Pan gives the squad
+  Sheer Force from his initial ATK (enter his panel ATK on his Team
+  card) and makes the enemy take +20% DMG (+30% at M1). Banyue's M1
+  bonus that only reaches six named skills is its own one-hit toggle,
+  so ticking M1 never buffs the wrong move. ⚠️ From the datamine, not
+  yet checked in game.
+- **Severian** (Wind Attack) and his signature **Incarcerating Grip**.
+  His Additional Ability turns CRIT Rate into ATK (+8.5 per 1%, up to
+  100%) and reads his **total** CRIT Rate in combat — nothing to type:
+  the calculator, and the optimizer for every candidate build, work it
+  out from the discs, engine and buffs. ⚠️ From live 3.3 data, not yet
+  checked in game.
+- **Kit, W-Engine and disc-set effects now all count automatically.**
+  Effects that used to ask you to type them into the external fields
+  are modeled:
+  - W-Engines: Cordis Germina's DEF ignore, Sol Exuvia's, Heartstring
+    Nocturne's, Chief Sidekick's and Knight's Extolment's RES ignore.
+  - Agents: Lycaon's non-Ice vulnerability (now skips Ice damage on its
+    own), Yanagi's M1, Phoenix's longer Burn.
+  - Disc sets: Chaos Jazz, Polar Metal and Dawn's Bloom (2pc), Notes
+    From the Chained, Chaotic Metal and Shadow Harmony at partial
+    stacks, and the Branch & Blade Song 4pc.
+  - Windowed bonuses (Polar Metal's Freeze window, Chaos Jazz's
+    off-field window) are checkboxes on the set card.
+
+  The external fields are now only for Deadly Assault and boss effects.
+  **If you typed any of these in before, clear them** or they count
+  twice.
+- **Optimizer: base-stat constraints** — a minimum can now be checked
+  against the build's out-of-combat panel instead of the combat total.
 - **Phoenix**, the first agent whose anomalies can **crit**: her Sear
   gives the squad's Anomaly DMG a CRIT Rate (scaling with her initial
   Anomaly Mastery) and CRIT DMG, so Anomaly mode now shows non-crit /
   crit rows and averages the totals. Her Ablooms run through the
   multiplier override, and her signature **Plume of Rebirth** is
-  included. ⚠️ Built from 3.3 *beta* data — provisional until the patch
-  goes live.
+  included. Re-checked against the live 3.3 data.
 - **Koleda**, with her 3.2 Potential Awakening (squad DMG +35%, squad
   CRIT DMG up to +35%). Supports can now carry the **Potential level
   they own** when it reaches the squad (Koleda, Rina).
@@ -90,10 +122,11 @@ inputs are remembered between sessions.
 
 - **Target & Agent** — pick the boss (sets enemy DEF, elemental
   RES/weakness, and default stun multiplier), the agent, and a
-  W-Engine with its **refinement rank** (R1–R5). Modeled engine
-  passives apply automatically at the chosen rank; anything not modeled
-  is shown as a note telling you what to enter manually as an external
-  buff. A matchup line shows the resulting RES/DEF/stun numbers.
+  W-Engine with its **refinement rank** (R1–R5). Engine passives apply
+  automatically at the chosen rank — the unconditional parts always,
+  the conditional ones through one stack control that starts at its
+  usual in-rotation value. A matchup line shows the resulting
+  RES/DEF/stun numbers.
   Picking a **Lumiflux** agent adds a **Mutated attribute** dropdown —
   see below.
 - **Agent Kit** — the agent's conditionals as real controls: core
@@ -101,9 +134,16 @@ inputs are remembered between sessions.
   met" hint based on your team), mindscape (M1–M6) toggles/stacks, and
   a Potential dropdown (the one level you own, plus its stacks where it
   stacks) where an agent has one. A squad buff that is the same effect
-  as one of these slots is shown once, under the slot. Only
-  damage-relevant parts are modeled; unmodeled ones are listed as
-  reference notes so you can add them as external buffs.
+  as one of these slots is shown once, under the slot. **Riders** are
+  the parts with their own toggle — a core clause that depends on the
+  squad (Severian's +30% DMG with another Wind agent) or a one-hit
+  mindscape / Potential bonus. Every damage-relevant part is modeled;
+  the notes list only what has no damage term (resources, Daze buildup)
+  and motion values, which you type into the skill multiplier.
+  Where a buff scales off a stat the agent has *in combat* (Qingyi's
+  and Lighter's Impact, Yuzuha's Anomaly Mastery…), you enter the
+  **panel** value and their W-Engine / kit combat bonuses are added
+  for you.
 - **Team** — up to two **off-field supports**: their team buffs (with
   owner-stat inputs where a buff scales off the support's stats), the
   Potential level they own when it reaches the squad (Koleda, Rina), their
@@ -115,7 +155,10 @@ inputs are remembered between sessions.
   4pc Ultimate DMG), an Aftershock checkbox for hits that also count as
   Aftershocks, and totals for external DMG%, CRIT Rate/DMG, RES shred,
   "DMG taken" debuffs, and the stun multiplier straight off the daze
-  bar.
+  bar. The external fields are only for buffs from **outside** the
+  kit — Deadly Assault effects, boss mechanics: agents, W-Engines and
+  disc sets already count on their own, so typing them here would
+  count them twice.
 
 The results panel shows the damage table for the selected mode, the
 **Zones** line (each multiplier of the formula, for cross-checking other
@@ -301,13 +344,17 @@ is constant during the search. The page states this above the controls.
   Ratio), Impact, Energy Regen, Anomaly Proficiency/Mastery (plus Sheer
   Force in Rupture mode). Note the trade-off: the best build *meeting
   the constraints* may deal less damage than your unconstrained
-  current build.
-  **These are combat totals** — agent base + core + discs + set 2pc,
-  *plus* the always-on W-Engine passive, the 4-piece stacks the search
-  assumes, and kit/team buffs. The **Final stats** card is the
-  out-of-combat panel and excludes the last three, so it reads lower:
-  a build satisfying "AP ≥ 400" can show 382 there. Both numbers are
-  right; the combat one is what the damage math uses.
+  current build. Each row picks what its minimum is checked against:
+  - **in combat** — agent base + core + discs + set 2pc, *plus* the
+    always-on W-Engine passive, the 4-piece stacks the search assumes,
+    and kit/team buffs. The **Final stats** card is the out-of-combat
+    panel and excludes the last three, so it reads lower: a build
+    satisfying "AP ≥ 400" can show 382 there. Both numbers are right;
+    the combat one is what the damage math uses.
+  - **base (panel)** — the build's own out-of-combat stats only, exactly
+    the **Final stats** card: no kit, team, engine-passive or combat
+    buffs. Use it for a requirement the build itself must reach (an
+    agent whose kit reads an *initial* stat, an in-game breakpoint).
 - **Maximize stat** — make a stat outrank damage: the search reports the
   build carrying the most of it among those within the *allowed damage
   loss* (default 5%) of the best build found. For a stat the optimized
