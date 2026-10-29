@@ -19,6 +19,20 @@ let the optimizer search your saved discs for a better build.
 
 ## Recent additions (patch 3.3)
 
+- **Anby Demara** (A-rank Electric Stun, Cunning Hares) and her signature
+  **Demara Battery Mark II** (+15% to +24% Electric DMG, applied
+  automatically). Her M2 (+30% Basic Attack: Thunderbolt vs a Stunned
+  enemy) and M6 (+45% Basic / Dash Attack while Charge is held) are
+  checkboxes. Her first three Basic hits and her Dash Attack deal
+  Physical damage in game, but the calculator treats them as Electric.
+  ⚠️ From the datamine, not yet checked in game.
+- **Yidhari** (Ice Rupture) and her signature **Kraken's Cradle**. She
+  runs in Sheer mode like the other Rupture agents (Max HP feeds her
+  Sheer Force). Most of her kit asks for her HP to be at or below 50%:
+  her core (+100% DMG), her Additional Ability (+30% CRIT DMG) and the
+  engine's CRIT Rate. Tick them for hits at half HP or lower. Her Ether
+  Veil squad Max HP is the same buff Lucia gives, so tick only one of
+  the two. ⚠️ From the datamine, not yet checked in game.
 - **Banyue** (Fire Rupture) and his signature **Wrathful Vajra**, plus
   **Pan Yinhu** (Physical Defense, a Rupture support) and his signature
   **Tremor Trigram Vessel**. Banyue runs in Sheer mode like Yixuan and

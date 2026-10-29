@@ -2110,7 +2110,7 @@
           "name": "Ether Veil: squad Max HP",
           "max_stacks": 1,
           "effects": [ { "kind": "hp_pct", "value": 0.05 } ],
-          "note": "Core (Wellspring): while her Ether Veil is active, all squad members' Max HP +5% (40s, extendable to 300s - effectively always up in rotation). Multiplies the finished HP panel (combat HP bracket). Feeds Yixuan's HP->Sheer Force conversion. Datamine coreParams hp_ 0.05."
+          "note": "Core (Wellspring): while her Ether Veil is active, all squad members' Max HP +5% (40s, extendable to 300s - effectively always up in rotation). Multiplies the finished HP panel (combat HP bracket). Feeds Yixuan's HP->Sheer Force conversion. SAME buff as Yidhari's 'Ether Veil: Wellspring: squad Max HP' (Lin-0: either agent can supply it) - with Yidhari in the squad, tick only one of the two. Datamine coreParams hp_ 0.05."
         },
         {
           "name": "Dreamer's Nursery Rhyme: squad DMG",
@@ -3174,6 +3174,140 @@
       ],
       "default_engine": "tremor_trigram_vessel",
       "_note": "Physical DEFENSE support for RUPTURE teams, Yunkui Summit (Yixuan's faction key). A-RANK. Added 2026-10-27 from the frzyc datamine (allStat_gen + PanYinhu.ts sheet), cross-checked against nanoka LIVE 3.3 character 1421 (identical); Lin-0's Banyue guide names him the F2P alternative to Lucia (no guide of his own). Lv. 60: HP 680 + 92.2338 x 59 + 2332 = 8453.79, ATK 95 + 5.4562 x 59 + 170 = 586.92, DEF 57 + 7.7787 x 59 + 197 = 712.94 -> stored 8453 / 586 / 712; Impact 94, AM 91, AP 90, Energy Regen 1.2; max core ATK +75, Energy Regen +0.36. His value: squad flat SHEER FORCE (Meridian Flow, 18% of his initial ATK, cap 540; M6 24% / 720) and the +20% DMG-taken debuff (Depleted Qi, +30% at M1). NO core_passive block: Meridian Flow only reaches the agent entering the field (datamine notOwnBuff), never Pan, so it exists as a team buff only. His Ultimate's heals and M4 are healing only - not modeled. PROVISIONAL until an in-game check. His own hits are normal (ATK-based) Physical damage. MULTIPLIERS at skill Lv. 12: Basic Attack: Unyielding Strikes 100.3 / 100.4 / 219.4 / 423.6%; Dash Attack: Sizzling Oil Supreme 167.0%; Dodge Counter: Moving Mountains and Seas 439.2%; Special Attack: Sonic Pressure-Point Strike 125.2%; Special Attack: Touch of Death 195.2% per hit (x3); EX Special Attack: Mountainous Pulse Strike 769.1%; Chain Attack: Anointed with Wok Steam 1264.8%; Ultimate: A Feast Fit for an Emperor! 3255.9%; Quick Assist: Lift Your Gaze to Good Fortune 184.1%; Assist Follow-Up: Ride the Momentum 675.1%."
+    },
+    "yidhari": {
+      "name": "Yidhari",
+      "attribute": "ice",
+      "specialty": "rupture",
+      "faction": "spook_shack",
+      "level": 60,
+      "base_hp": 8497,
+      "base_atk": 784,
+      "base_def": 448,
+      "impact": 95,
+      "energy_regen": 0,
+      "anomaly_mastery": 87,
+      "anomaly_proficiency": 90,
+      "core_skill_bonuses": { "base_atk": 75, "crit_rate": 0.144 },
+      "sheer_force_hp_conversion": 0.1,
+      "core_passive": {
+        "name": "Dreamscape Collection: DMG (HP at or below 50%)",
+        "max_stacks": 1,
+        "effects": [ { "kind": "dmg_bonus", "value": 1.00 } ],
+        "note": "Core passive, max rank F (level 7): Yidhari's DMG rises as her current HP% falls - +2% per 1% of Max HP missing (frzyc: missingHp x 0.02 x core value) - reaching the maximum +100% at or below 50% HP; once her HP is restored to 50%, the maximum stays for 5s more. Her charged Basic Attack drains HP (down to 25%) and Lin-0 plays her under the 50% threshold as long as possible, so the maximum is her normal state: tick it for every hit, untick it only for a hit landing above 50% HP after the 5s linger. The partial range (50-100% HP) is deliberately NOT modeled (user decision 2026-10-28) - the toggle is all-or-nothing at the maximum. Ordinary DMG% bracket (datamine common_dmg_). Core A..F: 50/58/66/74/82/90/100%. Her HP -> Sheer Force conversion (0.1 per Max HP point) and the Rupture 30% ATK conversion are separate always-on fields, not this toggle; ALL her Ice DMG is Sheer DMG (use the Sheer calc mode). Not modeled (resources): 60 Adrenaline on entry, fewer Decibels from skills and 10 Decibels per 1% HP lost. Datamine coreParams [0.5..1.0], linger 5s."
+      },
+      "additional_ability": {
+        "name": "Narrative Completion: CRIT DMG (HP at or below 50%)",
+        "max_stacks": 1,
+        "condition": { "teammate_specialty_any_of": ["stun", "support"] },
+        "effects": [ { "kind": "crit_dmg", "value": 0.30 } ],
+        "note": "Needs a Stun or Support squadmate (Lucia, Qingyi, Koleda...). While Yidhari's HP is below 50%: CRIT DMG +30% (and DMG taken -25%, defensive - not modeled). Unlike the core it does NOT linger (Lin-0): the moment her HP goes above 50% it is gone, so untick it for a hit landing above half HP. EXTRA HIT (not this toggle): while she is within Ether Veil: Wellspring, the final hit of a level-3 Basic Attack: Frostbite Embrace or of EX Special Attack: Glacial Crush summons an Icy Tentacle (once per 12s) - a separate hit that counts as an EX Special: run it with tag EX Special and skill multiplier 1.584 (158.4% at EX Special Lv. 12). Datamine abilityParams [0.5, 0.3, 0.25, 3, 12]."
+      },
+      "mindscapes": {
+        "1": {
+          "name": "The Past Lost Beneath the Abyss",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "res_shred", "value": 0.20, "element": "ice", "skill_tag": "basic" },
+            { "kind": "res_shred", "value": 0.20, "element": "ice", "skill_tag": "ex_special" }
+          ],
+          "note": "Yidhari's Basic Attacks and EX Special Attacks ignore 20% of the target's Ice RES - applies when the calculated hit carries the Basic or EX Special tag (the Icy Tentacle counts as an EX Special); NOT her Chain, Ultimate, Specials, Dash, Dodge Counter or Assists. The 10 Adrenaline discount and the Glacial Crush -> Glacial Crush chain (35 Adrenaline, +100% healing) are resource / QoL. Datamine mindscapeParams[0] [10, 35, 1, 0.2]."
+        },
+        "2": {
+          "name": "Who Lingers Here, Lost in Thought?",
+          "max_stacks": 1,
+          "effects": [ { "kind": "crit_dmg", "value": 0.40 } ],
+          "note": "Yidhari's CRIT DMG +40% (unconditional). The Adrenaline regen (0.5/s for up to 30s after Surging Cold or Crushing Pursuit) is resource-only. Datamine mindscapeParams[1] [0.4, 0.5, 30]."
+        },
+        "3": {
+          "name": "A Story Without an Audience",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled (project convention: enter the higher multiplier)."
+        },
+        "4": {
+          "name": "Blooming in Silence",
+          "max_stacks": 1,
+          "effects": [ { "kind": "hp_pct", "value": 0.05, "modes": ["sheer"] } ],
+          "note": "While Yidhari is within Ether Veil: Wellspring (hers, or Lucia's - Lin-0: the same buff), her Max HP is further increased by 5% - combat HP bracket, ON TOP of the squad Ether Veil +5% (tick both: +10%). Feeds her HP -> Sheer Force conversion. Gated to Sheer mode on purpose: her HP only matters through Sheer Force, and the gate keeps this entry distinct from the identical-looking squad buff, so the kit card shows both. The +10% Decibels from HP loss is resource-only. Datamine mindscapeParams[3] [0.1, 0.05]."
+        },
+        "5": {
+          "name": "This Solace Is Real",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "At Last, a Peaceful Dream",
+          "max_stacks": 1,
+          "effects": [ { "kind": "sheer_dmg", "value": 0.25, "modes": ["sheer"] } ],
+          "note": "After spending Decibels to activate or extend Ether Veil: Wellspring she gains Erudition for 30s: her Sheer DMG +25% (dedicated Sheer DMG bracket). The once-per-battle death prevention (HP held at 1, 5s undefeatable, 25% HP restored over time) is survival-only. Datamine mindscapeParams[5] [30, 0.25, 1, 5, 0.25]."
+        }
+      },
+      "riders": [
+        {
+          "name": "Charged follow-up: Crushing Strike DMG",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "basic" } ],
+          "note": "ONE-HIT rider: after a level-2+ Basic Attack: Frostbite Embrace, pressing Basic follows up with the 3rd hit of Basic Attack: Crushing Strike, whose DMG increases with the charge level, up to +30% at level 3 (her core loop per Lin-0: level-3 Charged Smash -> Basic 3, repeated). Tick it only when calculating THAT Crushing Strike 3rd hit (tag Basic Attack, 415.7% at Lv. 12); untick it for every other hit, including the Charged Smash itself and a Dodge Counter -> Basic 3 shortcut. The level-2 value is not datamined - only level 3 is modeled. Bracket PROVISIONAL: the game text says the DMG 'increases' and Lin-0 calls it a DMG Bonus (ordinary DMG% bracket); frzyc's sheet does not model it."
+        }
+      ],
+      "team_buffs": [
+        {
+          "name": "Ether Veil: Wellspring: squad Max HP",
+          "max_stacks": 1,
+          "effects": [ { "kind": "hp_pct", "value": 0.05 } ],
+          "note": "When her Decibels activate Ether Veil: Wellspring, all squad members' Max HP +5% for 30s (repeated triggers extend it, up to 300s) - combat HP bracket (datamine teamBuff hp_). Covers Yidhari herself: as main, tick it under 'Squad buff (self)' (it feeds her HP -> Sheer Force conversion). Lin-0: without Decibel help she cannot hold it permanently. SAME buff as Lucia's 'Ether Veil: squad Max HP' (Lin-0: the Ether Veil: Wellspring buff can also be supplied by Lucia) - with Lucia in the squad, tick only one of the two."
+        }
+      ],
+      "default_engine": "krakens_cradle",
+      "_note": "Ice RUPTURE (Sheer) DPS, Spook Shack (nanoka camp 11 - Lucia/Yuzuha's faction key). Added 2026-10-28 from the frzyc datamine (allStat_gen + Yidhari.ts sheet), cross-checked against nanoka LIVE 3.3 character 1051 (identical text) and Lin-0's guide (mobalytics.gg/zzz/builds/yidhari, updated 2026-09-25: core linger / ability no-linger behaviour). Lv. 60: HP 683 + 92.7143 x 59 + 2344 = 8497.14, ATK 124 + 7.4561 x 59 + 221 = 784.91, DEF 36 + 4.8889 x 59 + 124 = 448.45 -> stored 8497 / 784 / 448; Impact 95, AM 87, AP 90, no Energy (Rupture); max core ATK +75, CRIT Rate +14.4%. SHEER AGENT like Yixuan / Billy / Banyue: Sheer Force = 30% ATK (global rupture rate) + 0.1 x Max HP (her conversion field) + flat Sheer Force buffs; ALL her Ice DMG is Sheer DMG - ignores enemy DEF, use the Sheer calc mode. HP is her premium stat (Lin-0: HP% disc 6, Ice DMG or HP% disc 5, CRIT Rate / CRIT DMG disc 4, Kraken's Cradle's HP% 30, Yunkui Tales 4pc). Her kit wants HP AT OR BELOW 50%: the core maximum, the Additional Ability and Kraken's Cradle's CRIT Rate all read that state. Not modeled: Adrenaline / Decibel resources, healing, the 25% DMG reduction, the M6 death prevention; her Ultimate is unlocked by Ether Veil: Wellspring (3,000 Decibels), not by Energy. No Potential Awakening. PROVISIONAL until an in-game Sheer calibration. MULTIPLIERS at skill Lv. 12 (enter them with the matching tag): Basic Attack: Crushing Strike 122.3 (alt 125.1) / 172.9 / 415.7%; Basic Attack: Frostbite Embrace level-1 323.1%, level-2 508.2%, level-3 Charged Smash 692.4%, level-3 Charged Spin 472.3%; Frost's Crushing Weight (auto-counter) 98.2% (all 'basic'); Dash Attack: Frostbloom Impact 142.0%; Dodge Counter: Icehaul Reverb 371.2%; Special Attack: Cease Thoughts 79.2%, Surging Cold, Crushing Pursuit 168.4% (both 'special'); EX Special Attack: Frost Coil 1020.6%, Glacial Crush 2015.2%, Icy Tentacle (Additional Ability) 158.4% (all 'ex_special'); Chain Attack: Frostbound Oath 1145.8% (1260.2% within Ether Veil: Wellspring); Ultimate: Final Act - Crossing the River of Regret 3044.5%; Quick Assist: Frostshock Reinforcement 164.7%; Assist Follow-Up: Glacial Onslaught 626.9%."
+    },
+    "anby": {
+      "name": "Anby Demara",
+      "attribute": "electric",
+      "specialty": "stun",
+      "faction": "cunning_hares",
+      "level": 60,
+      "base_hp": 7500,
+      "base_atk": 583,
+      "base_def": 612,
+      "impact": 118,
+      "energy_regen": 1.2,
+      "anomaly_mastery": 94,
+      "anomaly_proficiency": 93,
+      "core_skill_bonuses": { "base_atk": 75, "impact": 18 },
+      "mindscapes": {
+        "1": {
+          "name": "Rapid Charge Mode",
+          "note": "When the 4th hit of her Basic Attack hits: Energy Generation Rate +12% for 30s - resource only, not modeled. Datamine mindscapeParams[0] [0.12, 30]."
+        },
+        "2": {
+          "name": "Precision Discharge",
+          "max_stacks": 1,
+          "effects": [ { "kind": "dmg_bonus", "value": 0.30, "skill_tag": "basic" } ],
+          "note": "SELF-ONLY: Basic Attack: Thunderbolt's DMG +30% against a STUNNED enemy. THUNDERBOLT ONLY - the 'basic' tag also matches her Turbo Volt hits, so tick it only for Thunderbolt, and read the STUNNED column (the bonus does not exist on an unstunned target). The other half (EX Special Daze +10% vs a NOT-stunned enemy) is Daze buildup only - not modeled. Datamine mindscapeParams[1] [0.3, 0.1]; frzyc Anby.ts gates the DMG part on isStunned and the Thunderbolt hit."
+        },
+        "3": {
+          "name": "Well-Disciplined",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled (project convention: enter the higher multiplier)."
+        },
+        "4": {
+          "name": "Conducting Charge",
+          "note": "When she launches a Chain Attack or Ultimate: off-field Electric agents recover 3 Energy, +2 per 12% of her Energy Generation Rate (max +6) - resource only, not modeled. Datamine mindscapeParams[3] [3, 0.12, 2, 6]."
+        },
+        "5": {
+          "name": "Street Experience",
+          "note": "Basic Attack, Dodge, Assist, Special Attack and Chain Attack Lv. +2 - motion values only, not modeled."
+        },
+        "6": {
+          "name": "Charging Field",
+          "max_stacks": 1,
+          "effects": [
+            { "kind": "dmg_bonus", "value": 0.45, "skill_tag": "basic" },
+            { "kind": "dmg_bonus", "value": 0.45, "skill_tag": "dash" }
+          ],
+          "note": "Her EX Special grants 8 Charge (max 8); each Basic Attack or Dash Attack hit consumes 1 Charge for +45% DMG on that hit - tick it for a Basic / Dash hit landing while Charge is held (8 hits per EX). Applies when the calculated hit carries the Basic or Dash tag; NOT EX Special. SOURCE CONFLICT: the game text (nanoka live 3.3 and frzyc's own loc file) says 'Basic Attack or Dash Attack', but frzyc's Anby.ts sheet codes Basic + EX Special - the text wins (Pan Yinhu precedent). Her Dash Attack: Taser Blast deals PHYSICAL DMG in-game, which this calculator cannot express (see _note) - the dash part is kept so the tag gate stays right. Datamine mindscapeParams[5] [8, 8, 1, 0.45]."
+        }
+      },
+      "default_engine": "demara_battery_mark_ii",
+      "_note": "A-RANK electric STUNNER, the original Cunning Hares Anby (added 2026-10-29, zenless-optimizer datamine allStat_gen 'Anby' 1011 + sheet Anby.ts; nanoka live 3.3 character 1011 prints the same numbers). Not Soldier 0 - Anby (the S-rank 'anby_s'). Lv. 60 stats = base + growth x 59 + promotion: HP 603 + 81.8426 x 59 + 2069 = 7500.71, ATK 95 + 5.423 x 59 + 169 = 583.96, DEF 49 + 6.6882 x 59 + 169 = 612.60 -> stored 7500/583/612; Impact 118, AM 94, AP 93, Energy Regen 1.2; max core ATK+75, Impact+18 (buildup only). Cunning Hares (Nicole, Nekomata, Starlight Billy) - she satisfies their shared-Faction requirements, and the Electric agents' shared-Attribute ones. NO core_passive / additional_ability blocks: her Core (Fluctuating Voltage - Basic Attack: Thunderbolt, Special or EX Special launched after the 3rd Basic hit inflicts +32% to +64% (rank F) extra Daze, datamine coreParams) is Daze BUILDUP only, and her Additional Ability (Parallel Connection - needs a squadmate sharing her Attribute or Faction: +7.2 Energy when her Dodge Counter hits, once per 5s, abilityParams [7.2, 5]) is resource only. Her damage effects are M2 and M6 only; no team buffs, no Potential Awakening. ELEMENT CAVEAT (user decision 2026-10-29): her Basic Attack: Turbo Volt hits 1-3 and her Dash Attack: Taser Blast deal PHYSICAL DMG in-game, but this calculator deals her attribute (Electric) for every hit - those hits compute with Electric RES, Electric DMG% and Demara Battery Mark II's Electric bonus, which is wrong for them (low-multiplier filler; every other hit is Electric). No Lin-0 guide exists (the Mobalytics Anby page is a staff guide, not an approved source). PROVISIONAL until an in-game calibration. MULTIPLIERS at skill Lv. 12 (enter them with the matching tag): Basic Attack: Turbo Volt 63.1 / 67.8 / 228.0 (Physical) / 478.9% (Electric); Basic Attack: Thunderbolt 657.5% (all 'basic'); Dash Attack: Taser Blast 113.9% (Physical, 'dash'); Dodge Counter: Thunderclap 360.6%; Special Attack: Fork Lightning 186.9% ('special'); EX Special Attack: Lightning Bolt 1166.0% ('ex_special'); Chain Attack: Electro Engine 1085.8%; Ultimate: Overdrive Engine 3026.2%; Quick Assist: Thunderfall 124.4%; Assist Follow-Up: Lightning Whirl 670.7% (Defensive Assist: Flash deals Daze only)."
     }
   }
 }

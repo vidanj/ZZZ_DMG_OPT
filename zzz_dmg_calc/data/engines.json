@@ -878,6 +878,53 @@
         ]
       },
       "passive_note": "Pan Yinhu's signature, A-RANK (added 2026-10-27, zenless-optimizer datamine, wengine params [0.25, 2, 5] at R1 to [0.4, 3.2, 5] at R5; matches nanoka live 3.3 weapon 13142). Lv. 60 base ATK 624 (atk_base 42, the A-rank curve), advanced stat ATK% 25 (0.10 x 2.5) - it raises Pan's ATK, so it raises his Meridian Flow (18% of his initial ATK): include it in the panel ATK you enter as his 'initial_atk'. The energy part (+2 to +3.2 Energy when any squad member takes DMG or heals, once per 5s) is resource-only, not modeled."
+    },
+    "krakens_cradle": {
+      "name": "Kraken's Cradle",
+      "base_atk": 713,
+      "advanced_stat": { "HP%": 0.30 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "conditional_buffs": [
+          {
+            "name": "Heartfelt Caress: Ice Sheer DMG",
+            "element": "ice",
+            "bracket": "sheer_dmg",
+            "modes": ["sheer"],
+            "per_stack_by_rank": [0.06, 0.07, 0.08, 0.09, 0.10],
+            "max_stacks": 3,
+            "auto": true,
+            "note": "Each time the equipper's HP decreases (once per 0.5s): their Ice Sheer DMG +6% (R1) to +10% (R5), max 3 stacks, 25s each (durations tracked separately). Yidhari drains her own HP while charging every Basic Attack, so 3 stacks are effectively permanent - RAMP-UP, auto-applied at 3. Dedicated Sheer DMG bracket, element-gated to Ice (all of her damage). The engine's stack counter is THESE HP-loss stacks (0-3)."
+          },
+          {
+            "name": "Heartfelt Caress: CRIT Rate (HP at or below 50%)",
+            "bracket": "crit_rate",
+            "per_stack_by_rank": [0.20, 0.23, 0.26, 0.29, 0.32],
+            "max_stacks": 1,
+            "auto": true,
+            "note": "While the equipper's HP is at or below 50% of Max HP: CRIT Rate +20% (R1) to +32% (R5). An independent condition that RIDES the HP-loss stack counter (user decision 2026-10-28, Deep Sea Visitor precedent): it clamps at 1, so it is ON at any counter >= 1 - Yidhari lives under half HP and loses HP all the time. Set the counter to 0 for a hit landing above 50% HP (that also drops the Ice Sheer DMG stacks; the brief post-heal 'stacks up, HP above half' moment is not expressible)."
+          }
+        ]
+      },
+      "passive_note": "Yidhari's signature (added 2026-10-28, zenless-optimizer datamine KrakensCradle: rarity S, type rupture, wengine params R1 [0.06, 3, 25, 0.5, 0.5, 0.2] to R5 [0.1, 3, 25, 0.5, 0.5, 0.32]; matches nanoka live 3.3 weapon 14105 R1-R5 text to the digit). Lv. 60 base ATK 713 (atk_base 48), advanced stat HP% 30 (0.12 x 2.5) - HP feeds her HP -> Sheer Force conversion (0.1 SF per Max HP). Unlike Starlight Rider Faceplate / Wrathful Vajra its CRIT Rate is CONDITIONAL (HP at or below 50%), so it is a counter part, not passive_crit. One counter (HP-loss stacks 0-3) drives both parts; nothing to enter manually. PROVISIONAL until Sheer calibration."
+    },
+    "demara_battery_mark_ii": {
+      "name": "Demara Battery Mark II",
+      "base_atk": 624,
+      "advanced_stat": { "Impact%": 0.15 },
+      "refinement": {
+        "rank": 1,
+        "max_rank": 5,
+        "passive_dmg_by_rank": [
+          {
+            "element": "electric",
+            "values": [0.15, 0.175, 0.20, 0.22, 0.24],
+            "note": "In a Flash of Light: the equipper's Electric DMG +15% (R1) to +24% (R5), always active while equipped - applied automatically to Electric hits."
+          }
+        ]
+      },
+      "passive_note": "Anby's signature, A-RANK Stun engine (added 2026-10-29, zenless-optimizer datamine DemaraBatteryMarkII: wengine params R1 [0.15, 0.18, 8] to R5 [0.24, 0.275, 8]; matches nanoka live 3.3 weapon 13101 R1-R5 text). Lv. 60 base ATK 624 (atk_base 42, the A-rank curve), advanced stat Impact% 15 (0.06 x 2.5) - Daze buildup only, tracked but not damage. The Electric DMG% part is modeled (always on). The Energy Generation Rate +18% (R1) to +27.5% (R5) for 8s after a Dodge Counter or Assist Attack hit is resource-only, not modeled. In-game a W-Engine's passive only works on an agent of the matching Specialty (Stun) - the calculator does not check this, as for every engine. On Anby her Physical hits (Turbo Volt 1-3, Dash Attack) wrongly get the Electric bonus - see her _note."
     }
   }
 }
