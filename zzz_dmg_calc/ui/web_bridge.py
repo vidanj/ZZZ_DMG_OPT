@@ -12,7 +12,8 @@ request/response JSON, same ValueError -> 400 error contract — so
 
 All heavy lifting is reused from :mod:`~zzz_dmg_calc.ui.server` (the
 pure functions ``load_app_data`` / ``frontend_payload`` /
-``run_calculation`` / ``run_optimization``) and the validated writers in
+``run_calculation`` / ``run_optimization`` / ``run_disc_advice``) and
+the validated writers in
 :mod:`~zzz_dmg_calc.discs`. The writers hit ``data/user_discs.json`` /
 ``data/loadouts.json`` exactly as they do locally — under Pyodide those
 paths live in the in-memory filesystem, so :func:`seed` restores them
@@ -33,7 +34,8 @@ from urllib.parse import unquote
 
 from .server import (
     AppData, frontend_payload, load_app_data, loadouts_payload,
-    run_calculation, run_optimization, user_discs_payload, _parse_disc,
+    run_calculation, run_disc_advice, run_optimization, user_discs_payload,
+    _parse_disc,
 )
 from ..discs import (
     LOADOUTS_FILE, USER_DISCS_FILE, delete_loadout, delete_user_disc,
@@ -185,6 +187,7 @@ def handle(method: str, path: str, body_text: str | None) -> str:
         routes = {
             "/calculate": lambda b: run_calculation(_data, b),
             "/optimize": lambda b: run_optimization(_data, b),
+            "/disc-advice": lambda b: run_disc_advice(_data, b),
             "/discs": _post_disc,
             "/loadouts": _post_loadout,
         }

@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "description": "Drop model for a freshly farmed S-rank drive disc: how many substats it starts with, how its substats are drawn, and how likely each main stat is per slot. Read by the disc upgrade advisor (DOCS/disc_advice_plan.md).",
+    "provisional": true,
+    "sources": "DOCS/sources.md, section 'Disc drop model (PROVISIONAL)'",
+    "game_patch": "3.3",
+    "mechanics": "Confirmed (frzyc libs/zzz/consts disc.ts discSubstatRollData.S = {low 3, high 4, numUpgrades 5}): an S-rank disc starts with 3 or 4 substats and gets 5 upgrades; a 3-substat disc spends its first upgrade revealing the 4th substat, every other upgrade adds one roll to one of the 4 substats picked uniformly at random. Substats are drawn by weight without replacement and never duplicate the main stat.",
+    "provenance": "No approved ZZZ source publishes drop weights, so the weights are PROVISIONAL and borrowed from Genshin Impact artifacts (frzyc genshin-optimizer libs/gi/upopt/src/consts.ts, citing the Genshin wiki page Artifact/Distribution), mapped to the closest ZZZ stat: Elemental Mastery -> Anomaly Proficiency / Anomaly Mastery / PEN Ratio, Energy Recharge -> flat PEN (substats) and Energy Regen (slot 6). Slot 4 = Circlet without Healing, slot 5 = Goblet (6 elements), slot 6 = Sands with Impact at the special-stat weight. initial_substats comes from a 711-disc sample of Lv. 15 S-rank discs (533 with 8 total rolls, 178 with 9). sets_per_source: guides report each Area Patrol stage drops 2 sets (verify on the stage card).",
+    "conventions": "Weights are relative (any positive scale); only their ratios matter. Slots 1-3 have a single main stat and are omitted. The slot-5 'Attribute DMG%' entry is an object of element -> weight, one weight per element variant of the disc."
+  },
+  "initial_substats": {
+    "3": 0.75,
+    "4": 0.25
+  },
+  "upgrades": 5,
+  "substat_weights": {
+    "HP": 6,
+    "ATK": 6,
+    "DEF": 6,
+    "HP%": 4,
+    "ATK%": 4,
+    "DEF%": 4,
+    "PEN": 4,
+    "Anomaly Proficiency": 4,
+    "CRIT Rate": 3,
+    "CRIT DMG": 3
+  },
+  "main_stat_weights": {
+    "4": {
+      "HP%": 22,
+      "ATK%": 22,
+      "DEF%": 22,
+      "CRIT Rate": 10,
+      "CRIT DMG": 10,
+      "Anomaly Proficiency": 4
+    },
+    "5": {
+      "HP%": 77,
+      "ATK%": 77,
+      "DEF%": 76,
+      "PEN Ratio": 10,
+      "Attribute DMG%": {
+        "physical": 20,
+        "fire": 20,
+        "ice": 20,
+        "electric": 20,
+        "ether": 20,
+        "wind": 20
+      }
+    },
+    "6": {
+      "HP%": 80,
+      "ATK%": 80,
+      "DEF%": 80,
+      "Anomaly Mastery%": 30,
+      "Impact%": 30,
+      "Energy Regen%": 30
+    }
+  },
+  "sets_per_source": 2
+}

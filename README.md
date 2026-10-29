@@ -19,6 +19,13 @@ let the optimizer search your saved discs for a better build.
 
 ## Recent additions (patch 3.3)
 
+- **Disc advice: which disc to replace first.** After a calculation,
+  **Analyze discs** shows how much damage each equipped disc adds. It
+  also gives the odds that a newly farmed S-rank disc for the same slot
+  (same main stat, and the same set when a set bonus depends on it)
+  would beat the disc, and the slot with the best expected gain per
+  drop. Every substat outcome is counted exactly. ⚠️ The drop odds are
+  borrowed from Genshin artifacts until real ZZZ odds are known.
 - **Anby Demara** (A-rank Electric Stun, Cunning Hares) and her signature
   **Demara Battery Mark II** (+15% to +24% Electric DMG, applied
   automatically). Her M2 (+30% Basic Attack: Thunderbolt vs a Stunned

@@ -44,6 +44,9 @@ SETS_FILE = Path(__file__).parent / "data" / "disc_sets.json"
 #: Default location of the user disc inventory (user data, optional).
 USER_DISCS_FILE = Path(__file__).parent / "data" / "user_discs.json"
 
+#: Default location of the (provisional) disc drop model.
+DROPS_FILE = Path(__file__).parent / "data" / "disc_drops.json"
+
 #: Slots whose main stat is fixed (single option in the table).
 SLOTS = (1, 2, 3, 4, 5, 6)
 
@@ -165,6 +168,168 @@ def load_disc_data(path: Path = DATA_FILE) -> DiscData:
         substats_per_disc=_require_positive_int(limits, "substats_per_disc"),
         max_rolls_per_substat=_require_positive_int(limits, "max_rolls_per_substat"),
         max_total_rolls=_require_positive_int(limits, "max_total_rolls"),
+    )
+
+
+@dataclass(frozen=True)
+class DropModel:
+    """Validated, immutable view of ``data/disc_drops.json`` — the odds of
+    a freshly farmed S-rank disc (DOCS/disc_advice_plan.md).
+
+    Attributes:
+        initial_substats: starting substat count -> probability (sums to 1).
+        upgrades: upgrades a disc gets on its way to Lv. 15; the first
+            ``substats_per_disc - start`` of them reveal missing substats.
+        substat_weights: substat name -> relative draw weight.
+        main_stat_weights: slot -> ``(main stat, element)`` -> relative
+            weight. ``element`` is set only for the per-element variants of
+            ``Attribute DMG%``; single-main slots carry ``{(main, None): 1}``.
+        sets_per_source: disc sets one farming source drops (a set-bound
+            replacement is 1 in this many drops of the source).
+        provisional: the weights are not verified game data.
+    """
+
+    initial_substats: dict[int, float]
+    upgrades: int
+    substat_weights: dict[str, float]
+    main_stat_weights: dict[int, dict[tuple[str, str | None], float]]
+    sets_per_source: int
+    provisional: bool
+
+
+def _positive_weight(value, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise DiscError(f"{what} must be a positive number, got {value!r}")
+    return float(value)
+
+
+def load_drop_model(disc_data: DiscData, path: Path = DROPS_FILE) -> DropModel:
+    """Load and validate the disc drop model against the disc tables.
+
+    The model must describe exactly the discs :func:`validate_disc`
+    accepts: the same substat names, the same main stats per slot, every
+    element for ``Attribute DMG%``, and roll limits that match
+    ``substat_limits`` (the biggest start plus every upgrade is
+    ``max_total_rolls``; one substat can take the initial roll plus every
+    upgrade, ``max_rolls_per_substat``).
+
+    Raises:
+        DiscError: missing/malformed file or any mismatch with the tables.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise DiscError(f"Disc drop model file not found: {path}") from None
+    except json.JSONDecodeError as exc:
+        raise DiscError(f"Disc drop model is not valid JSON: {exc}") from None
+
+    upgrades = raw.get("upgrades")
+    if isinstance(upgrades, bool) or not isinstance(upgrades, int) or upgrades < 0:
+        raise DiscError(f"'upgrades' must be an integer >= 0, got {upgrades!r}")
+
+    initial_raw = raw.get("initial_substats")
+    if not isinstance(initial_raw, dict) or not initial_raw:
+        raise DiscError("'initial_substats' must be a non-empty object of "
+                        "starting substat count -> probability")
+    initial: dict[int, float] = {}
+    for count_str, prob in initial_raw.items():
+        try:
+            count = int(count_str)
+        except ValueError:
+            raise DiscError(
+                f"Starting substat count {count_str!r} is not an integer"
+            ) from None
+        if not 1 <= count <= disc_data.substats_per_disc:
+            raise DiscError(
+                f"Starting substat count {count} must be 1.."
+                f"{disc_data.substats_per_disc}"
+            )
+        if disc_data.substats_per_disc - count > upgrades:
+            raise DiscError(
+                f"A disc starting with {count} substats cannot reveal all "
+                f"{disc_data.substats_per_disc} in {upgrades} upgrades"
+            )
+        initial[count] = _positive_weight(
+            prob, f"Probability of starting with {count} substats")
+    if abs(sum(initial.values()) - 1.0) > 1e-9:
+        raise DiscError(
+            f"'initial_substats' probabilities must sum to 1, got "
+            f"{sum(initial.values())!r}"
+        )
+    if max(initial) + upgrades != disc_data.max_total_rolls:
+        raise DiscError(
+            f"Drop model reaches {max(initial) + upgrades} total rolls; "
+            f"discs.json allows {disc_data.max_total_rolls}"
+        )
+    if 1 + upgrades != disc_data.max_rolls_per_substat:
+        raise DiscError(
+            f"Drop model allows {1 + upgrades} rolls on one substat; "
+            f"discs.json allows {disc_data.max_rolls_per_substat}"
+        )
+
+    subs_raw = raw.get("substat_weights")
+    if not isinstance(subs_raw, dict) or set(subs_raw) != set(disc_data.substat_rolls):
+        raise DiscError(
+            f"'substat_weights' must name exactly the legal substats: "
+            f"{sorted(disc_data.substat_rolls)}"
+        )
+    substat_weights = {
+        stat: _positive_weight(w, f"Substat weight for '{stat}'")
+        for stat, w in subs_raw.items()
+    }
+
+    mains_raw = raw.get("main_stat_weights")
+    if not isinstance(mains_raw, dict):
+        raise DiscError("'main_stat_weights' must be an object of slot -> weights")
+    main_stat_weights: dict[int, dict[tuple[str, str | None], float]] = {}
+    for slot, table in disc_data.main_stats.items():
+        entry = mains_raw.get(str(slot))
+        if entry is None:
+            if len(table) != 1:
+                raise DiscError(
+                    f"'main_stat_weights' is missing slot {slot} "
+                    f"(it has {len(table)} main stats)"
+                )
+            main_stat_weights[slot] = {(next(iter(table)), None): 1.0}
+            continue
+        if not isinstance(entry, dict) or set(entry) != set(table):
+            raise DiscError(
+                f"Slot {slot} main stat weights must name exactly its main "
+                f"stats: {sorted(table)}"
+            )
+        weights: dict[tuple[str, str | None], float] = {}
+        for main, w in entry.items():
+            if main == "Attribute DMG%":
+                if not isinstance(w, dict) or set(w) != set(ELEMENTS):
+                    raise DiscError(
+                        f"Slot {slot} 'Attribute DMG%' weights must be an "
+                        f"object naming every element: {list(ELEMENTS)}"
+                    )
+                for element, ew in w.items():
+                    weights[(main, element)] = _positive_weight(
+                        ew, f"Slot {slot} '{element}' Attribute DMG% weight")
+            else:
+                weights[(main, None)] = _positive_weight(
+                    w, f"Slot {slot} main stat weight for '{main}'")
+        main_stat_weights[slot] = weights
+    extra = sorted(set(mains_raw) - {str(s) for s in disc_data.main_stats})
+    if extra:
+        raise DiscError(f"'main_stat_weights' names unknown slots: {extra}")
+
+    sets_per_source = raw.get("sets_per_source")
+    if (isinstance(sets_per_source, bool) or not isinstance(sets_per_source, int)
+            or sets_per_source < 1):
+        raise DiscError(
+            f"'sets_per_source' must be an integer >= 1, got {sets_per_source!r}"
+        )
+
+    return DropModel(
+        initial_substats=initial,
+        upgrades=upgrades,
+        substat_weights=substat_weights,
+        main_stat_weights=main_stat_weights,
+        sets_per_source=sets_per_source,
+        provisional=bool((raw.get("_meta") or {}).get("provisional", True)),
     )
 
 

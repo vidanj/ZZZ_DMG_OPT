@@ -3270,6 +3270,169 @@ def _anomaly_model(config, objective, agent, attr, engine, boss, rank, data,
                       anomaly_sets=True)
 
 
+@dataclass(frozen=True)
+class _FastPath:
+    """A config's disc-independent evaluation context — everything a
+    consumer of the mode's fast path needs before it looks at a disc (the
+    optimizer search here, the disc advisor in :mod:`.disc_advisor`).
+
+    ``config`` is the baseline with team-element-gated 4pc stacks dropped
+    (§18) and ``options`` carries the automatic panel minimums of the
+    main's self-scaling kit inputs; ``baseline_results`` /
+    ``baseline_value`` are the exact calculation of that config.
+    ``base_buckets`` is the disc-free bucket vector (engine advanced
+    stat); ``feasible`` / ``stat_total`` are the constraint closures.
+    """
+
+    config: CalcConfig
+    options: OptimizeOptions
+    baseline_results: object
+    baseline_value: float
+    agent: Agent
+    attr: str
+    gated: dict[str, str]
+    model: _ModeModel
+    base_buckets: tuple[float, ...]
+    panel_consts: dict
+    feasible: object
+    stat_total: object
+
+
+def _prepare_fast_path(
+    config: CalcConfig, options: OptimizeOptions, *, data: dict, calc,
+    build_model, anomaly_data: AnomalyData | None, constraint_stats: tuple,
+) -> _FastPath:
+    """Run the baseline and build the mode's fast path (plan §4, §17, §18).
+
+    ``data`` holds the loaded databases (``consts``, ``disc_data``,
+    ``bosses``, ``agents``, ``engines``, ``disc_sets``); ``calc`` /
+    ``build_model`` are the mode's exact calculation and model factory.
+
+    Raises:
+        CalcError / DiscError / AgentError: the baseline config itself is
+            invalid (the same errors the calculation would raise).
+    """
+    # Baseline: validates the whole config (discs, mode inputs, agent
+    # specialty) — the same errors the calculation would raise.
+    baseline_results = calc(config, data)
+    agents = data["agents"]
+    agent = agents[config.agent_key]
+    # Lumiflux (Attribute Mutation): the element this agent's damage
+    # is dealt as — her own attribute for everyone else.
+    attr = attack_element(agent, config)
+    # Team-element gate (§18): 4pc effects no squad member can trigger
+    # count 0 stacks in EVERY build. The baseline's own entered stacks of
+    # such a set are dropped too (and the baseline re-run), so it is
+    # valued on the same footing as the candidates it is compared with.
+    gated = _gated_sets(data["disc_sets"],
+                        _squad_elements(attr, config, agents))
+    if any(key in gated for key in config.set_stacks):
+        config = replace(config, set_stacks={
+            key: stacks for key, stacks in config.set_stacks.items()
+            if key not in gated
+        })
+        baseline_results = calc(config, data)
+    baseline_value = getattr(baseline_results, options.objective)
+    # Self-scaling kit inputs (the MAIN's own panel values) become
+    # minimum-stat constraints — the buff amount is a constant, so no
+    # build may fall short of the panel the user claimed.
+    options = _apply_scaling_input_minimums(agent, config, options,
+                                            constraint_stats)
+
+    # Constant factors (disc-independent; the baseline validated them).
+    engine_key = (config.engine_key if config.engine_key is not None
+                  else agent.default_engine)
+    engine = data["engines"][engine_key]
+    boss = data["bosses"][config.boss_name]
+    rank = _resolve_engine_rank(engine, config.engine_rank)
+    model = build_model(config, options.objective, agent, attr, engine, boss,
+                        rank, data, anomaly_data)
+    stats = model.stats
+
+    def stat_total(stat: str, buckets: list[float], _aux=None) -> float:
+        """One constraint / maximize stat's final total for a bucket
+        vector (the totals the results panel reports)."""
+        return stats.total(stat, buckets)
+
+    panel_consts = _panel_constants(agent, engine, data["consts"])
+    return _FastPath(
+        config=config, options=options, baseline_results=baseline_results,
+        baseline_value=baseline_value, agent=agent, attr=attr, gated=gated,
+        model=model, base_buckets=_bucket_vector(engine.advanced_stat),
+        panel_consts=panel_consts,
+        feasible=_make_feasible(options, panel_consts, stat_total),
+        stat_total=stat_total,
+    )
+
+
+def _set_vectors(
+    keys, *, disc_sets: dict[str, DiscSet], attr: str, agent: Agent,
+    config: CalcConfig, model: _ModeModel, stacks_for,
+) -> tuple[dict, dict, dict, dict]:
+    """Per-set precomputation for ``keys`` (§5): each set's 2-piece and
+    4-piece bucket vectors, the 4pc stacks they assume
+    (``stacks_for(key)``) and its ``(dmg, anomaly)`` bracket additives —
+    the ``set_2pc, set_4pc, set_stacks_used, set_tag_bonus`` that
+    :func:`_fold_sets` consumes."""
+    set_2pc: dict[str, tuple[float, ...]] = {}
+    set_4pc: dict[str, tuple[float, ...]] = {}
+    set_stacks_used: dict[str, int] = {}
+    set_tag_bonus: dict[str, tuple[float, float]] = {}
+    teammate_present = bool(config.supports)
+    for key in keys:
+        entry = disc_sets[key]
+        # Anomaly hits carry no skill tag, so no tag-gated 2pc DMG% (Shadow
+        # Harmony) applies there.
+        set_2pc[key] = (
+            _set_2pc_buckets(entry, attr) if model.anomaly_sets
+            else _set_2pc_buckets(entry, attr, config.skill_tag,
+                                  config.counts_as_aftershock))
+        stacks = stacks_for(key)
+        set_stacks_used[key] = stacks
+        # Wearer-side 4pc stats at the assumed stacks (mirrors
+        # set_bonus_stats: classic bonus incl. the at-max extra — Yunkui
+        # Tales' Sheer DMG% lands in _B_SHEER_DMG, which only the sheer
+        # fast path reads — or a squad-facing part mapped to a build stat),
+        # incl. the unconditional base and the attribute gate. A stat-gated
+        # base (Branch & Blade Song) goes to its own bucket, credited only
+        # when the combination clears the gate (_StatModel.gated_crit_dmg).
+        vector = list(_bucket_vector(set_4pc_stats(entry, stacks, attr)))
+        if (entry.bonus_4pc is not None
+                and entry.bonus_4pc.base_min_stat is not None):
+            vector[_B_GATED_CD] += sum(entry.bonus_4pc.base.values())
+        set_4pc[key] = tuple(vector)
+        # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
+        # skill-tag-gated ones (Puffer Electro's Ultimate +20%; a windowed
+        # one only while its config toggle is on) and a set's
+        # auto 4pc DMG% (Wuthering Salon +18%; Phaethon's Melody needs a
+        # teammate) — the auto part mirrors _kit_contributions, which is why
+        # the mode's kit excludes it (discs=[]).
+        toggles = config.set_toggles.get(key, {})
+        tag_skill = sum(
+            b.value for b in entry.bonus_4pc_dmg
+            if (b.toggle is None or toggles.get(b.toggle))
+            and ((config.skill_tag is not None
+                  and b.skill_tag == config.skill_tag)
+                 or (config.counts_as_aftershock
+                     and b.skill_tag == "aftershock"))
+        )
+        auto = 0.0
+        if entry.auto_4pc_dmg and (
+                not entry.auto_4pc_dmg_needs_teammate or teammate_present):
+            auto = entry.auto_4pc_dmg
+        # Second channel (anomaly modes): a 4pc part in the separate
+        # Anomaly Buff bracket, optionally gated to the wearer's attribute
+        # (Feathered Fate is Lumiflux-only). Mirrors _kit_contributions
+        # exactly, or the section-4 re-check fails.
+        anom = 0.0
+        if model.anomaly_sets and entry.auto_4pc_anomaly_dmg and (
+                entry.auto_4pc_attribute is None
+                or entry.auto_4pc_attribute == agent.attribute):
+            anom = entry.auto_4pc_anomaly_dmg
+        set_tag_bonus[key] = (tag_skill + auto, anom)
+    return set_2pc, set_4pc, set_stacks_used, set_tag_bonus
+
+
 def _optimize(
     config: CalcConfig,
     options: OptimizeOptions,
@@ -3318,47 +3481,19 @@ def _optimize(
             )
     _validate_slot_mains(options, disc_data)
 
-    # --- Baseline: validates the whole config (discs, mode inputs, agent
-    # specialty) — the same errors the calculation would raise ------------
-    baseline_results = calc(config, data)
+    # --- Baseline + constant factors (shared with the disc advisor) -------
+    fast = _prepare_fast_path(config, options, data=data, calc=calc,
+                              build_model=build_model,
+                              anomaly_data=anomaly_data,
+                              constraint_stats=constraint_stats)
+    config, options = fast.config, fast.options
+    baseline_results = fast.baseline_results
+    baseline_value = fast.baseline_value
     equipped = {d.slot: d for d in config.discs}
-    agent = agents[config.agent_key]
-    # Lumiflux (Attribute Mutation): the element this agent's damage
-    # is dealt as — her own attribute for everyone else.
-    attr = attack_element(agent, config)
-    # Team-element gate (§18): 4pc effects no squad member can trigger
-    # count 0 stacks in EVERY build. The baseline's own entered stacks of
-    # such a set are dropped too (and the baseline re-run), so it is
-    # valued on the same footing as the candidates it is compared with.
-    gated = _gated_sets(disc_sets, _squad_elements(attr, config, agents))
-    if any(key in gated for key in config.set_stacks):
-        config = replace(config, set_stacks={
-            key: stacks for key, stacks in config.set_stacks.items()
-            if key not in gated
-        })
-        baseline_results = calc(config, data)
-    baseline_value = getattr(baseline_results, options.objective)
-    # Self-scaling kit inputs (the MAIN's own panel values) become
-    # minimum-stat constraints — the buff amount is a constant, so no
-    # build may fall short of the panel the user claimed.
-    options = _apply_scaling_input_minimums(agent, config, options,
-                                            constraint_stats)
-
-    # --- Constant factors (disc-independent; the baseline validated them) -
-    engine_key = (config.engine_key if config.engine_key is not None
-                  else agent.default_engine)
-    engine = engines[engine_key]
-    boss = bosses[config.boss_name]
-    rank = _resolve_engine_rank(engine, config.engine_rank)
-    model = build_model(config, options.objective, agent, attr, engine, boss,
-                        rank, data, anomaly_data)
+    agent, attr, gated, model = fast.agent, fast.attr, fast.gated, fast.model
     evaluate = model.evaluate
     stats = model.stats
-
-    def stat_total(stat: str, buckets: list[float], _aux=None) -> float:
-        """One constraint / maximize stat's final total for a bucket
-        vector (the totals the results panel reports)."""
-        return stats.total(stat, buckets)
+    stat_total = fast.stat_total
 
     # --- Candidates per slot (plan §2): inventory + equipped virtuals -----
     watched = _watched_stats(options)
@@ -3406,9 +3541,8 @@ def _optimize(
                 f"included)"
             )
 
-    base_buckets = _bucket_vector(engine.advanced_stat)
-    panel_consts = _panel_constants(agent, engine, consts)
-    feasible = _make_feasible(options, panel_consts, stat_total)
+    base_buckets = fast.base_buckets
+    feasible = fast.feasible
 
     # --- Per-set precomputation (§5 policy) --------------------------------
     baseline_counts: dict[str, int] = {}
@@ -3429,67 +3563,14 @@ def _optimize(
             return config.set_stacks.get(key, 0)
         return max_stacks if options.set_assumption == "max" else 0
 
-    set_2pc: dict[str, tuple[float, ...]] = {}
-    set_4pc: dict[str, tuple[float, ...]] = {}
-    set_stacks_used: dict[str, int] = {}
-    set_tag_bonus: dict[str, tuple[float, float]] = {}
     candidate_sets = {
         c.disc.disc_set
         for slot_list in candidates.values() for c in slot_list
         if c.disc.disc_set is not None
     }
-    teammate_present = bool(config.supports)
-    for key in candidate_sets:
-        entry = disc_sets[key]
-        # Anomaly hits carry no skill tag, so no tag-gated 2pc DMG% (Shadow
-        # Harmony) applies there.
-        set_2pc[key] = (
-            _set_2pc_buckets(entry, attr) if model.anomaly_sets
-            else _set_2pc_buckets(entry, attr, config.skill_tag,
-                                  config.counts_as_aftershock))
-        stacks = assumed_stacks(key)
-        set_stacks_used[key] = stacks
-        # Wearer-side 4pc stats at the assumed stacks (mirrors
-        # set_bonus_stats: classic bonus incl. the at-max extra — Yunkui
-        # Tales' Sheer DMG% lands in _B_SHEER_DMG, which only the sheer
-        # fast path reads — or a squad-facing part mapped to a build stat),
-        # incl. the unconditional base and the attribute gate. A stat-gated
-        # base (Branch & Blade Song) goes to its own bucket, credited only
-        # when the combination clears the gate (_StatModel.gated_crit_dmg).
-        vector = list(_bucket_vector(set_4pc_stats(entry, stacks, attr)))
-        if (entry.bonus_4pc is not None
-                and entry.bonus_4pc.base_min_stat is not None):
-            vector[_B_GATED_CD] += sum(entry.bonus_4pc.base.values())
-        set_4pc[key] = tuple(vector)
-        # 4pc DMG% additives in the ordinary bonus bracket, folded per combo:
-        # skill-tag-gated ones (Puffer Electro's Ultimate +20%; a windowed
-        # one only while its config toggle is on) and a set's
-        # auto 4pc DMG% (Wuthering Salon +18%; Phaethon's Melody needs a
-        # teammate) — the auto part mirrors _kit_contributions, which is why
-        # the mode's kit excludes it (discs=[]).
-        toggles = config.set_toggles.get(key, {})
-        tag_skill = sum(
-            b.value for b in entry.bonus_4pc_dmg
-            if (b.toggle is None or toggles.get(b.toggle))
-            and ((config.skill_tag is not None
-                  and b.skill_tag == config.skill_tag)
-                 or (config.counts_as_aftershock
-                     and b.skill_tag == "aftershock"))
-        )
-        auto = 0.0
-        if entry.auto_4pc_dmg and (
-                not entry.auto_4pc_dmg_needs_teammate or teammate_present):
-            auto = entry.auto_4pc_dmg
-        # Second channel (anomaly modes): a 4pc part in the separate
-        # Anomaly Buff bracket, optionally gated to the wearer's attribute
-        # (Feathered Fate is Lumiflux-only). Mirrors _kit_contributions
-        # exactly, or the section-4 re-check fails.
-        anom = 0.0
-        if model.anomaly_sets and entry.auto_4pc_anomaly_dmg and (
-                entry.auto_4pc_attribute is None
-                or entry.auto_4pc_attribute == agent.attribute):
-            anom = entry.auto_4pc_anomaly_dmg
-        set_tag_bonus[key] = (tag_skill + auto, anom)
+    set_2pc, set_4pc, set_stacks_used, set_tag_bonus = _set_vectors(
+        candidate_sets, disc_sets=disc_sets, attr=attr, agent=agent,
+        config=config, model=model, stacks_for=assumed_stacks)
 
     def combo_set_stacks(counts: dict[str, int]) -> dict[str, int]:
         """The ``CalcConfig.set_stacks`` this combination is evaluated at."""

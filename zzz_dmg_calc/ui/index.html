@@ -172,6 +172,8 @@
   button.primary.optimize:hover { background: #a5deff; }
   button.primary.optimize-stop { background: var(--error); margin-top: 6px; }
   button.primary.optimize-stop:hover { background: #ff8f8f; }
+  button.primary.advise { background: #c9a8ff; margin-top: 10px; }
+  button.primary.advise:hover { background: #dac4ff; }
   button.primary:disabled { opacity: .55; cursor: wait; }
 
   /* Optimizer comparison panel */
@@ -185,6 +187,13 @@
   details.alts { margin-top: 10px; }
   details.alts summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   .alt { border-top: 1px solid #333; padding: 6px 0; font-size: 12px; }
+
+  /* Disc advice panel */
+  table.advice { font-size: 12px; }
+  table.advice td { vertical-align: top; }
+  table.advice .adv-sub { color: var(--muted); font-size: 11px; font-weight: 400; }
+  table.advice tr.adv-rec td { background: #2a2440; }
+  table.advice tr.adv-rec td:first-child { box-shadow: inset 3px 0 0 #c9a8ff; }
 
   /* Results */
   #results { position: sticky; top: 16px; }
@@ -519,6 +528,13 @@
       take <b>minutes</b> on a large inventory; narrowing it with any of
       the above speeds it up. Spotted a wrong input mid-search? <b>Stop
       search</b> aborts it right away.</p>
+      <button class="primary advise" id="disc-advice"
+              title="Scores every equipped disc: how much damage it adds, and how likely a newly farmed S-rank disc for the same slot (same main stat, same set when a set bonus depends on it) is to beat it.">
+        Analyze discs — which one to replace first?</button>
+      <p class="hint">Uses only <b>Optimize for</b> above. Ranks the
+      equipped discs by expected damage gain per S-rank drop, so you know
+      which slot to farm first. Drop odds are provisional (borrowed from
+      Genshin artifacts).</p>
     </div>
   </div>
 </div>
@@ -532,6 +548,12 @@
   <div class="card" id="opt-card" style="display:none">
     <h2>Optimizer</h2>
     <div id="opt-out"></div>
+  </div>
+  <div class="card" id="advice-card" style="display:none">
+    <h2>Disc advice</h2>
+    <p class="note" id="advice-stale" hidden style="color:var(--error)">⚠
+    Inputs changed since this analysis — click <b>Analyze discs</b> again.</p>
+    <div id="advice-out"></div>
   </div>
 </div>
 </div>
@@ -598,6 +620,7 @@ let DB = null;
 let autoCalc = false;
 let lastResults = null;    // last /calculate response (optimizer baseline)
 let lastOptimize = null;   // last /optimize response (for Apply buttons)
+let lastAdviceConfig = null;  // config JSON the shown disc advice is for
 let activeSearch = null;   // running optimize: {id, stopped, btnText}
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = "zzz-dmg-ui-state";
@@ -3267,6 +3290,9 @@ async function runCalc() {
     autoCalc = true;
     syncOptimizeObjectives(data.mode);
     $("optimize-wrap").style.display = "";
+    // Disc advice describes one build; flag it once the inputs move on.
+    if (lastAdviceConfig !== null)
+      $("advice-stale").hidden = JSON.stringify(config) === lastAdviceConfig;
   } catch (exc) {
     if (exc.data) showError(exc.message);
     else showError(`Server unreachable — is run_ui.py still running?\n${exc}`);
@@ -4059,6 +4085,128 @@ function renderOptimize(data) {
   }
 }
 
+/* Disc advice (DOCS/disc_advice_plan.md): each equipped disc's share of
+   the damage, the odds that a newly farmed disc of the same slot / main
+   stat (same set when a set bonus depends on it) beats it, and the slot
+   with the best expected gain per S-rank drop — the one to farm first. */
+async function runDiscAdvice() {
+  $("error").style.display = "none";
+  let body;
+  try {
+    body = collectConfig();
+  } catch (exc) {
+    showError(exc.message);
+    return;
+  }
+  const snapshot = JSON.stringify(body);
+  body.advice = { objective: $("opt-objective").value };
+  const btn = $("disc-advice");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Analyzing discs…";
+  try {
+    const data = await postJSON("/disc-advice", body);
+    lastAdviceConfig = snapshot;
+    renderDiscAdvice(data);
+  } catch (exc) {
+    showError(exc.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+const fmtPct = (v, digits = 1) => `${(v * 100).toFixed(digits)}%`;
+
+/* A probability that can be vanishingly small but must not read as 0. */
+function fmtOdds(p) {
+  if (!p) return "0%";
+  return p < 0.001 ? "<0.1%" : fmtPct(p);
+}
+
+function fmtDrops(n) {
+  return n == null ? "never"
+    : `~1 in ${Math.max(1, Math.round(n)).toLocaleString("en-US")}`;
+}
+
+function adviceDiscName(s) {
+  const d = s.disc;
+  const main = d.main_stat === "Attribute DMG%"
+    ? `${d.main_stat} [${d.element || "any"}]` : d.main_stat;
+  return `${main} · ${s.set_name || "no set"}`;
+}
+
+function renderDiscAdvice(data) {
+  $("advice-card").style.display = "";
+  $("advice-stale").hidden = true;
+  const out = $("advice-out");
+  const objectiveLabel =
+    $("opt-objective").selectedOptions[0].textContent.toLowerCase();
+  // Priority = rank by expected gain per drop (the recommendation key).
+  const order = [...data.slots]
+    .filter(s => s.gain_per_drop > 0)
+    .sort((a, b) => b.gain_per_drop - a.gain_per_drop || b.p_beat - a.p_beat
+                    || a.slot - b.slot);
+  const rank = new Map(order.map((s, i) => [s.slot, i + 1]));
+  const rec = data.slots.find(s => s.slot === data.recommended_slot);
+
+  const verdict = rec
+    ? `<div class="verdict better">▲ Replace slot ${rec.slot} first
+         (${adviceDiscName(rec)}) — ${fmtDrops(rec.drops_needed)} S-rank
+         drops beats it, +${fmtPct(rec.avg_gain_when_beat)} ${objectiveLabel}
+         on average when one does.</div>`
+    : data.slots.length
+    ? `<div class="verdict optimal">✅ No new disc can beat any of your
+         equipped discs for ${objectiveLabel}.</div>`
+    : `<div class="verdict">No discs equipped.</div>`;
+  const empty = data.empty_slots.length
+    ? `<p class="note" style="color:var(--error)">Empty slot(s):
+         ${data.empty_slots.join(", ")} — fill those first, any disc there
+         adds damage.</p>` : "";
+
+  const rows = data.slots.map(s => {
+    const setNote = s.load_bearing
+      ? `same set needed (1 in ${data.sets_per_source} drops)` : "any set";
+    const odds = `P(main) ${fmtOdds(s.p_main)} · ${setNote}`;
+    const prio = rank.has(s.slot) ? `#${rank.get(s.slot)}` : "—";
+    return `<tr class="${s.slot === data.recommended_slot ? "adv-rec" : ""}">
+      <td><b>Slot ${s.slot}</b>${s.slot === data.recommended_slot ? " ★" : ""}
+        <div class="adv-sub">${adviceDiscName(s)}</div>
+        <div class="adv-sub">${s.useful_rolls}/${s.total_rolls} useful rolls</div></td>
+      <td class="num">${fmtPct(s.damage_share)}
+        <div class="adv-sub">subs ${fmtPct(s.substat_share)}</div></td>
+      <td class="num">${fmtOdds(s.p_beat)}
+        <div class="adv-sub">beats ${fmtPct(s.percentile, 0)} of drops</div></td>
+      <td class="num">${s.p_beat ? "+" + fmtPct(s.avg_gain_when_beat) : "—"}
+        <div class="adv-sub">max ${s.ceiling_gain > 0
+          ? "+" + fmtPct(s.ceiling_gain) : "already best"}</div></td>
+      <td class="num" title="${odds}">${fmtDrops(s.drops_needed)}
+        <div class="adv-sub">${odds}</div></td>
+      <td class="num" title="Expected gain per S-rank drop: ${
+        (s.gain_per_drop * 100).toPrecision(3)}%">${prio}</td></tr>`;
+  }).join("");
+
+  const relevant = data.relevant_substats.length
+    ? data.relevant_substats.join(", ") : "none";
+  out.innerHTML = `
+    ${verdict}${empty}${gatedNote(data)}
+    <table class="advice">
+      <thead><tr><th>Disc</th><th>Share</th><th>New disc beats it</th>
+        <th>Avg gain</th><th>Drops / upgrade</th><th>Priority</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="note"><b>Share</b>: damage lost without the disc ("subs":
+    without just its substats). Damage multiplies, so shares don't add up
+    to 100%. <b>New disc</b>: a freshly farmed S-rank disc for the same slot
+    with the same main stat, every substat outcome enumerated exactly.
+    <b>Priority</b> ranks expected gain per S-rank drop (odds × size).
+    Useful substats here: ${relevant}.</p>
+    ${data.provisional
+      ? `<p class="note">⚠ Drop odds are PROVISIONAL — substat and main-stat
+         weights are borrowed from Genshin artifacts until real ZZZ odds
+         are known (data/disc_drops.json).</p>` : ""}`;
+}
+
 /* Equip a searched build into the disc grid (sets + 4pc stacks included);
    the normal auto-recalc then confirms the exact number the optimizer
    reported (they match by the exactness guarantee, plan §4). */
@@ -4293,6 +4441,7 @@ async function init() {
   $("calc").addEventListener("click", runCalc);
   $("optimize").addEventListener("click", runOptimize);
   $("optimize-stop").addEventListener("click", stopOptimize);
+  $("disc-advice").addEventListener("click", runDiscAdvice);
   $("opt-maximize").addEventListener("change", refreshMaximizeTolerance);
   $("opt-add-constraint").addEventListener("click", () => {
     addConstraintRow().querySelector(".constraint-min").focus();

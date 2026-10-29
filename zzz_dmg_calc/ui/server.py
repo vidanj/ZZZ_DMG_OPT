@@ -22,6 +22,9 @@ Endpoints::
                         ``optimize.search_id`` makes it stoppable
     POST   /optimize/cancel  {search_id} -> stop that running search
                         (it answers 409 with ``"cancelled": true``)
+    POST   /disc-advice same payload + an optional ``advice`` object ->
+                        each equipped disc's damage contribution and the
+                        slot to replace first (DOCS/disc_advice_plan.md)
     POST   /discs       save one disc to the inventory (deduped) -> its id
     DELETE /discs/{id}  remove an inventory disc (blocked if referenced)
     POST   /loadouts    save equipped discs as a loadout of inventory
@@ -56,11 +59,15 @@ try:
     from ..agent import Agent, load_agents
     from ..anomalies import AnomalyData, load_anomalies
     from ..constants import Constants, load_constants
+    from ..disc_advisor import (
+        analyze_discs, analyze_discs_anomaly, analyze_discs_sheer,
+    )
     from ..discs import (
-        Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
-        load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
-        save_loadout, save_user_disc, set_bonus_stats,
-        set_gated_4pc_stats, set_tagged_dmg_bonuses, set_toggle_names,
+        Disc, DiscData, DiscSet, DropModel, Loadout, delete_loadout,
+        delete_user_disc, load_disc_data, load_disc_sets, load_drop_model,
+        load_loadouts, load_user_discs, save_loadout, save_user_disc,
+        set_bonus_stats, set_gated_4pc_stats, set_tagged_dmg_bonuses,
+        set_toggle_names,
     )
     from ..enemies import Boss, load_bosses
     from ..engines import Engine, load_engines
@@ -82,11 +89,15 @@ except ImportError:
     from zzz_dmg_calc.agent import Agent, load_agents
     from zzz_dmg_calc.anomalies import AnomalyData, load_anomalies
     from zzz_dmg_calc.constants import Constants, load_constants
+    from zzz_dmg_calc.disc_advisor import (
+        analyze_discs, analyze_discs_anomaly, analyze_discs_sheer,
+    )
     from zzz_dmg_calc.discs import (
-        Disc, DiscData, DiscSet, Loadout, delete_loadout, delete_user_disc,
-        load_disc_data, load_disc_sets, load_loadouts, load_user_discs,
-        save_loadout, save_user_disc, set_bonus_stats,
-        set_gated_4pc_stats, set_tagged_dmg_bonuses, set_toggle_names,
+        Disc, DiscData, DiscSet, DropModel, Loadout, delete_loadout,
+        delete_user_disc, load_disc_data, load_disc_sets, load_drop_model,
+        load_loadouts, load_user_discs, save_loadout, save_user_disc,
+        set_bonus_stats, set_gated_4pc_stats, set_tagged_dmg_bonuses,
+        set_toggle_names,
     )
     from zzz_dmg_calc.enemies import Boss, load_bosses
     from zzz_dmg_calc.engines import Engine, load_engines
@@ -108,6 +119,8 @@ class AppData:
 
     ``user_discs`` and ``loadouts`` are user data the UI can write; after a
     write the handler swaps in a fresh AppData (see ``_refresh_user_data``).
+    ``drop_model`` (the disc advisor's odds) is loaded on first use when
+    absent.
     """
 
     consts: Constants
@@ -119,6 +132,7 @@ class AppData:
     anomalies: AnomalyData
     user_discs: dict[str, Disc]
     loadouts: dict[str, Loadout]
+    drop_model: DropModel | None = None
 
 
 def load_app_data() -> AppData:
@@ -139,6 +153,7 @@ def load_app_data() -> AppData:
         loadouts=load_loadouts(disc_data, user_discs=user_discs,
                                valid_agents=set(agents),
                                valid_engines=set(engines)),
+        drop_model=load_drop_model(disc_data),
     )
 
 
@@ -1085,6 +1100,93 @@ def run_optimization(data: AppData, body: dict,
     }
 
 
+def run_disc_advice(data: AppData, body: dict) -> dict:
+    """Each equipped disc's damage contribution and the slot to replace
+    first (DOCS/disc_advice_plan.md).
+
+    The body is the same payload as ``/calculate`` plus an optional
+    ``advice`` object ``{objective}`` — default ``average`` for direct
+    hits and Sheer, ``full`` for the anomaly modes, as in
+    :func:`run_optimization`. Direct mode runs
+    :func:`~zzz_dmg_calc.disc_advisor.analyze_discs`, rupture
+    :func:`~zzz_dmg_calc.disc_advisor.analyze_discs_sheer` and the anomaly
+    family :func:`~zzz_dmg_calc.disc_advisor.analyze_discs_anomaly`. Each
+    slot carries its disc (with its inventory id when it is saved), its
+    set's display name, the contribution / odds metrics, and the best
+    possible replacement (``ceiling_disc``).
+
+    Raises:
+        ValueError: invalid body, an invalid config, or an unknown
+            objective — all with user-facing messages.
+    """
+    mode = _body_mode(body)
+    config = _build_config(body)
+    advice_raw = body.get("advice") or {}
+    if not isinstance(advice_raw, dict):
+        raise ValueError("'advice' must be a JSON object")
+    default_objective = "average" if mode in ("direct", "rupture") else "full"
+    objective = str(advice_raw.get("objective") or default_objective)
+    common = dict(
+        consts=data.consts, disc_data=data.disc_data, bosses=data.bosses,
+        agents=data.agents, engines=data.engines, disc_sets=data.disc_sets,
+        drop_model=(data.drop_model if data.drop_model is not None
+                    else load_drop_model(data.disc_data)),
+    )
+    if mode == "direct":
+        advice = analyze_discs(config, objective, **common)
+    elif mode == "rupture":
+        advice = analyze_discs_sheer(config, objective, **common)
+    else:
+        advice = analyze_discs_anomaly(config, objective, **common,
+                                       anomaly_data=data.anomalies)
+
+    def disc_payload(disc: Disc) -> dict:
+        disc_id = next((i for i, d in data.user_discs.items() if d == disc),
+                       None)
+        return dict(_disc_json(disc), id=disc_id)
+
+    def set_name(disc: Disc) -> str | None:
+        entry = data.disc_sets.get(disc.disc_set) if disc.disc_set else None
+        return entry.name if entry is not None else None
+
+    return {
+        "mode": mode,
+        "objective": advice.objective,
+        "baseline_value": advice.baseline_value,
+        "recommended_slot": advice.recommended_slot,
+        "empty_slots": list(advice.empty_slots),
+        "relevant_substats": list(advice.relevant_substats),
+        "provisional": advice.provisional,
+        "sets_per_source": advice.sets_per_source,
+        "gated_sets": advice.gated_sets,
+        "slots": [
+            {
+                "slot": s.slot,
+                "disc": disc_payload(s.disc),
+                "set_name": set_name(s.disc),
+                "damage_share": s.damage_share,
+                "substat_share": s.substat_share,
+                "useful_rolls": s.useful_rolls,
+                "total_rolls": s.total_rolls,
+                "load_bearing": s.load_bearing,
+                "p_set": s.p_set,
+                "p_slot": s.p_slot,
+                "p_main": s.p_main,
+                "p_beat": s.p_beat,
+                "percentile": s.percentile,
+                "avg_gain_when_beat": s.avg_gain_when_beat,
+                "expected_gain": s.expected_gain,
+                "ceiling_gain": s.ceiling_gain,
+                "ceiling_disc": (_disc_json(s.ceiling_disc)
+                                 if s.ceiling_disc is not None else None),
+                "drops_needed": s.drops_needed,
+                "gain_per_drop": s.gain_per_drop,
+            }
+            for s in advice.slots
+        ],
+    }
+
+
 class UIRequestHandler(BaseHTTPRequestHandler):
     """Routes the endpoints; ``app_data`` is set once at startup.
 
@@ -1146,6 +1248,7 @@ class UIRequestHandler(BaseHTTPRequestHandler):
             "/calculate": self._post_calculate,
             "/optimize": self._post_optimize,
             "/optimize/cancel": self._post_optimize_cancel,
+            "/disc-advice": self._post_disc_advice,
             "/discs": self._post_disc,
             "/loadouts": self._post_loadout,
         }
@@ -1213,6 +1316,9 @@ class UIRequestHandler(BaseHTTPRequestHandler):
                 with self.searches_lock:
                     self.searches.pop(search_id, None)
         self._send_json(payload)
+
+    def _post_disc_advice(self, body: dict) -> None:
+        self._send_json(run_disc_advice(self.app_data, body))
 
     def _post_optimize_cancel(self, body: dict) -> None:
         """Stop the running search with this ``search_id`` (Stop button)."""
